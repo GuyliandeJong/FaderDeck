@@ -3,6 +3,7 @@ import math
 import json
 import logging
 import os
+import re
 import time
 import warnings
 import threading
@@ -336,6 +337,24 @@ ROUTING_BUTTON_HEIGHT = 28
 APPLICATION_PANEL_HEIGHT = 300
 APPLICATION_PANEL_MIN_HEIGHT = 140
 
+# "On" colours of the mixer toggles. A solid red fill is reserved for MUTE,
+# the only toggle that silences audio (see the QPushButton:checked rule in
+# MainWindow). Every other toggle shows "on" as an outline in its own colour:
+# SOLO uses the colour below, MONO and the routing buttons use the strip accent.
+TOGGLE_COLORS = {
+    # TODO(human): pick the SOLO colour (amber is a placeholder).
+    "solo": "#f5b83d",
+}
+
+
+def outline_toggle_style(color):
+    """Checked style for a toggle that is on but does not silence audio."""
+    return (
+        f"QPushButton:checked {{ background: #141d27; color: {color}; "
+        f"border: 2px solid {color}; font-weight: bold; }}"
+    )
+
+
 STRIP_COLORS = {
     "Mic": {"accent": "#35c8ff", "border": "#24566b", "header": "#102b38"},
     "Game": {"accent": "#ff626b", "border": "#69353c", "header": "#321c22"},
@@ -372,8 +391,9 @@ class VUMeter(QProgressBar):
 
     """Simple vertical VU meter."""
 
-    def __init__(self):
+    def __init__(self, label=""):
         super().__init__()
+        self._label = label
 
 
         self.setOrientation(Qt.Orientation.Vertical)
@@ -417,6 +437,7 @@ class VUMeter(QProgressBar):
         fraction = max(0.0, min(1.0, (self.value() - self.minimum()) / span))
         filled_height = inner.height() * fraction
         if filled_height <= 0:
+            self._draw_scale(painter, inner)
             painter.end()
             return
 
@@ -442,7 +463,29 @@ class VUMeter(QProgressBar):
         )
         painter.setPen(Qt.PenStyle.NoPen)
         painter.fillRect(fill, QBrush(gradient))
+        self._draw_scale(painter, inner)
         painter.end()
+
+    def _draw_scale(self, painter, inner):
+        """Draw faint dB ticks and the channel letter, visible at silence."""
+        span = max(1, self.maximum() - self.minimum())
+        painter.setPen(QPen(QColor(255, 255, 255, 46), 1))
+        for db in (-48, -36, -24, -12, -6):
+            y = inner.bottom() - inner.height() * (db - self.minimum()) / span
+            painter.drawLine(
+                QPointF(inner.left() + 3, y), QPointF(inner.right() - 3, y)
+            )
+        if self._label:
+            font = painter.font()
+            font.setPixelSize(10)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor("#8ba0b5"))
+            painter.drawText(
+                QRectF(inner.left(), inner.top() + 2, inner.width(), 14),
+                Qt.AlignmentFlag.AlignCenter,
+                self._label,
+            )
 
 
     def set_level(self, level):
@@ -815,6 +858,66 @@ class FineControlSlider(QSlider):
         event.accept()
 
 
+class MixerFader(FineControlSlider):
+    """Vertical gain fader with a dB scale beside its track."""
+
+    SCALE_DB = (12, 0, -12, -24, -36, -48, -60)
+    UNITS_PER_DB = 100
+    WIDTH = 100  # leaves room for the scale labels; the track stays centered
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        option = QStyleOptionSlider()
+        self.initStyleOption(option)
+        style = self.style()
+        groove = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderGroove,
+            self,
+        )
+        handle = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderHandle,
+            self,
+        )
+        travel = groove.height() - handle.height()
+        span = self.maximum() - self.minimum()
+        if travel <= 0 or span <= 0:
+            return
+
+        center = self.width() / 2
+        painter = QPainter(self)
+        font = painter.font()
+        font.setPixelSize(9)
+        painter.setFont(font)
+        for db in self.SCALE_DB:
+            value = db * self.UNITS_PER_DB
+            y = (
+                groove.top()
+                + handle.height() / 2
+                + travel * (self.maximum() - value) / span
+            )
+            unity = db == 0
+            length = 8 if unity else 4
+            painter.setPen(QPen(QColor("#e6edf3" if unity else "#4b5a6b"), 1))
+            painter.drawLine(
+                QPointF(center - 14 - length, y), QPointF(center - 14, y)
+            )
+            painter.drawLine(
+                QPointF(center + 14, y), QPointF(center + 14 + length, y)
+            )
+            painter.setPen(QColor("#e6edf3" if unity else "#7d8ea0"))
+            painter.drawText(
+                QRectF(center + 25, y - 7, 24, 14),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                f"{db:+d}" if db else "0",
+            )
+        painter.end()
+
+
 class MicFaderArea(QWidget):
     """Mic fader and meters.
 
@@ -968,14 +1071,15 @@ class StripWidget(QWidget):
 
         # Mic signal meters. They are placed relative to the fader (see
         # MicFaderArea) so they can never push the fader off center.
-        self.vu_meters = [VUMeter(), VUMeter()] if name == "Mic" else []
+        self.vu_meters = [VUMeter("L"), VUMeter("R")] if name == "Mic" else []
         self.vu_meter = self.vu_meters[0] if self.vu_meters else None
 
         # Fader
 
-        self.fader = FineControlSlider(
+        self.fader = MixerFader(
             Qt.Orientation.Vertical
         )
+        self.fader.setFixedWidth(MixerFader.WIDTH)
         self.fader.setRange(
             -6000,
 
@@ -1037,14 +1141,9 @@ class StripWidget(QWidget):
             Qt.AlignmentFlag.AlignCenter
 
         )
-        if self.vu_meter is not None:
-            self.gain_label.setStyleSheet(
-                "color: #aebdca; font-size: 12px;"
-            )
-        else:
-            self.gain_label.setStyleSheet(
-                "color: #aebdca; font-size: 12px;"
-            )
+        self.gain_label.setStyleSheet(
+            "color: #e6edf3; font-size: 14px; font-weight: bold;"
+        )
 
 
         self.update_gain_label()
@@ -1082,6 +1181,10 @@ class StripWidget(QWidget):
 
         )
         self.mono_button.setFixedHeight(MIXER_BUTTON_HEIGHT)
+        self.solo_button.setStyleSheet(
+            outline_toggle_style(TOGGLE_COLORS["solo"])
+        )
+        self.mono_button.setStyleSheet(outline_toggle_style(accent))
 
         self.mute_button.setCheckable(
             True
@@ -1147,10 +1250,7 @@ class StripWidget(QWidget):
         button = QPushButton(output)
         button.setCheckable(True)
         button.setFixedHeight(ROUTING_BUTTON_HEIGHT)
-        button.setStyleSheet(
-            f"QPushButton:checked {{ background: #102b25; color: {accent}; "
-            f"border: 2px solid {accent}; font-weight: bold; }}"
-        )
+        button.setStyleSheet(outline_toggle_style(accent))
         button.clicked.connect(
             lambda checked, name=output: self.on_route_clicked(name, checked)
         )
@@ -1495,7 +1595,15 @@ class ApplicationAudioWorker(QObject):
         if session_name and session_name.casefold() not in {key, f"{key}.exe"}:
             return session_name.removesuffix(".exe")
 
-        base = os.path.splitext(raw)[0].replace("_", " ").replace("-", " ")
+        base = os.path.splitext(raw)[0]
+        # Drop build suffixes such as "warframe.x64" or "game-win64-shipping".
+        base = re.sub(
+            r"([ ._-]+(x64|x86|win64|win32|64bit|32bit|shipping))+$",
+            "",
+            base,
+            flags=re.IGNORECASE,
+        )
+        base = re.sub(r"[._-]+", " ", base)
         base = " ".join(base.split())
         if not base:
             return "Unknown Application"
@@ -2210,8 +2318,8 @@ class ApplicationRow(QWidget):
         self.volume_percent.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self.volume_percent.setFixedWidth(34)
-        self.volume_percent.setStyleSheet("color: #d6e2ef; font-size: 10px;")
+        self.volume_percent.setFixedWidth(36)
+        self.volume_percent.setStyleSheet("color: #d6e2ef; font-size: 11px;")
 
         self.mute_button = QPushButton("🔊")
         self.mute_button.setCheckable(True)
@@ -2505,7 +2613,8 @@ class ApplicationControl(QWidget):
         self.hidden_button.clicked.connect(self.toggle_hidden_visibility)
         self.hidden_button.setStyleSheet(
             "QPushButton { background: #18232e; border: 1px solid #314558; "
-            "border-radius: 6px; font-size: 15px; padding: 0; }"
+            "border-radius: 6px; padding: 0 3px; color: #aebdca; "
+            "font-size: 11px; font-weight: bold; }"
             "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
         )
 
@@ -2551,7 +2660,8 @@ class ApplicationControl(QWidget):
             bus_eye.setToolTip(f"Show hidden applications on {bus}")
             bus_eye.setStyleSheet(
                 "QPushButton { background: #18232e; border: 1px solid #314558; "
-                "border-radius: 6px; padding: 0; }"
+                "border-radius: 6px; padding: 0 3px; color: #aebdca; "
+                "font-size: 11px; font-weight: bold; }"
                 "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
             )
             bus_eye.clicked.connect(
@@ -2567,6 +2677,9 @@ class ApplicationControl(QWidget):
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            # Let the column card show through instead of the default grey.
+            scroll.setStyleSheet("QScrollArea { background: transparent; }")
+            scroll.viewport().setAutoFillBackground(False)
 
             container = QWidget()
             container.setStyleSheet("background: transparent; border: none;")
@@ -2731,27 +2844,26 @@ class ApplicationControl(QWidget):
             )
         ]
 
-        counts = {
-            bus: sum(1 for info in visible if info["bus"] == bus)
-            for bus in self.BUS_NAMES
-        }
-
-        hidden_count = sum(
-            1
-            for info in self.sessions.values()
-            if self._is_hidden(info)
-        )
+        self._show_hidden_counts()
 
         total = len(visible)
-        suffix = f" • {hidden_count} hidden" if hidden_count else ""
+        noun = "application" if total == 1 else "applications"
+        self.status_label.setText(f"{total} {noun} routed through VoiceMeeter")
 
-        self.status_label.setText(
-            f"{total} applications routed through VoiceMeeter"
-            f" • Game {counts['Game']}"
-            f" • Chat {counts['Chat']}"
-            f" • Media {counts['Media']}"
-            f"{suffix}"
-        )
+    def _show_hidden_counts(self):
+        """Show on each eye button how many applications it would reveal."""
+        hidden = {bus: 0 for bus in self.BUS_NAMES}
+        for info in self.sessions.values():
+            if self._is_hidden(info):
+                hidden[info["bus"]] += 1
+
+        for bus, button in self.bus_hidden_buttons.items():
+            button.setText(str(hidden[bus]) if hidden[bus] else "")
+            button.setFixedWidth(46 if hidden[bus] else 30)
+
+        total = sum(hidden.values())
+        self.hidden_button.setText(str(total) if total else "")
+        self.hidden_button.setFixedWidth(48 if total else 32)
 
     def request_refresh(self):
         if not self._closing and self.worker_thread is not None:
@@ -2902,6 +3014,15 @@ class ApplicationControl(QWidget):
                 row,
             )
             self.rows[bus][session_key] = row
+
+        for bus in self.BUS_NAMES:
+            if not self.rows[bus]:
+                hint = QLabel("No applications\nDrag one here to move it")
+                hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                hint.setStyleSheet(
+                    "color: #6b7c8d; font-size: 11px; padding: 14px 4px;"
+                )
+                self.bus_layouts[bus].insertWidget(0, hint)
 
     def clear_layout(self, layout):
         while layout.count() > 1:
@@ -3246,26 +3367,15 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
 
 
-        voice_logo = QLabel("VOICE")
-        voice_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        voice_logo.setStyleSheet(
-            "color: white; background: #f43119; border: none; "
-            "font-size: 12px; font-weight: 900; padding: 2px 5px;"
-        )
-        voice_logo.setFixedSize(50, 23)
-        voice_logo.setToolTip("VoiceMeeter")
-
-        meeter_logo = QLabel("MEETER")
-        meeter_logo.setStyleSheet(
-            "color: #e6edf3; font-size: 14px; font-weight: 800;"
+        app_title = QLabel("VMStreamer")
+        app_title.setStyleSheet(
+            "color: #e6edf3; font-size: 17px; font-weight: 800;"
         )
 
-        potato = QLabel("Potato")
-        potato.setStyleSheet(
-            "color: #d5b477; font-size: 18px; font-style: italic; "
-            "font-weight: bold;"
+        app_subtitle = QLabel("for VoiceMeeter Potato")
+        app_subtitle.setStyleSheet(
+            "color: #8ba0b5; font-size: 11px; padding-top: 4px;"
         )
-
 
         self.status_label = QLabel(
 
@@ -3277,9 +3387,8 @@ class MainWindow(QMainWindow):
         )
 
 
-        header.addWidget(voice_logo)
-        header.addWidget(meeter_logo)
-        header.addWidget(potato)
+        header.addWidget(app_title)
+        header.addWidget(app_subtitle)
 
         header.addStretch()
 
@@ -3312,12 +3421,14 @@ class MainWindow(QMainWindow):
         # Mic processing section. Keep it collapsed by default so the main
         # mixer remains the visual focus, while advanced processing stays one click away.
         self.processing_toggle = QToolButton()
-        self.processing_toggle.setText("MIC PROCESSING")
+        self.processing_toggle.setText("MIC PROCESSING…")
+        self.processing_toggle.setToolTip(
+            "Open the compressor, gate and denoiser in a separate window"
+        )
         self.processing_toggle.setCheckable(True)
         self.processing_toggle.setChecked(False)
-        self.processing_toggle.setArrowType(Qt.ArrowType.RightArrow)
         self.processing_toggle.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+            Qt.ToolButtonStyle.ToolButtonTextOnly
         )
         self.processing_toggle.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -3562,17 +3673,14 @@ class MainWindow(QMainWindow):
             self.processing_dialog.show()
             self.processing_dialog.raise_()
             self.processing_dialog.activateWindow()
-            self.processing_toggle.setArrowType(Qt.ArrowType.DownArrow)
         else:
             if self.processing_dialog is not None:
                 self.processing_dialog.close()
-            self.processing_toggle.setArrowType(Qt.ArrowType.RightArrow)
 
     def _processing_dialog_closed(self, _result):
         self.processing_toggle.blockSignals(True)
         self.processing_toggle.setChecked(False)
         self.processing_toggle.blockSignals(False)
-        self.processing_toggle.setArrowType(Qt.ArrowType.RightArrow)
 
     def create_compressor(self):
         if self.compressor_control is not None:
