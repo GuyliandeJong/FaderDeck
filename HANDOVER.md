@@ -147,6 +147,12 @@ The fader's unit is 0.01 dB. One wheel notch moves 0.5 dB, Shift+wheel and the a
 
 `VMStreamer.exe --quit` (and `python main.py --quit`) asks the running instance to quit through a registered window message, handled like the tray's Quit.
 
+## Profile State
+
+On screen the two lists are called SETUP PROFILE (main window, everything) and VOICE PRESET (Mic Processing window, processing only). They are stored separately and may share a name; users mixed them up, hence the names and the state line.
+
+`MainWindow.active_profile` is the profile the mixer was last loaded from or saved to (QSettings `active_profile`, restored at start). `profile_is_changed()` compares the stored profile with `current_profile_state()` through `profile_states_match()`, which only looks at what the stored profile holds and compares numbers to two decimals. The check runs 0.9 s after a change event (`_profile_check_timer`), so it does not read the mixer during a drag or see VoiceMeeter's in-between values. When they differ the panel shows "<name>: changed" and UPDATE, which saves the current state into that profile. A bypassed block is compared by its kept values, so bypass is not a change.
+
 ## Amount Notice and Reference Ticks
 
 Moving Amount by hand shows a notice under it with UNDO (`_before_amount_change`, `undo_amount`): VoiceMeeter replaces the advanced values when Amount moves and that cannot be switched off. The state from before the first move is kept until UNDO, a change to an advanced value, or any restore.

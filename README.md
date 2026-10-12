@@ -23,7 +23,7 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Solo
 - Mono
 - Output routing buttons A1–A3 and B1–B3 on every channel, shown with the bus names you gave them in VoiceMeeter
-- Mixer profiles: save the whole setup under a name and load it again: gain, mute, solo, mono and routing of all channels, and the mic processing
+- Setup profiles: save the whole setup under a name and load it again: gain, mute, solo, mono and routing of all channels, and the mic processing. The panel shows when the mixer no longer matches the loaded profile, with UPDATE to save it back
 - Live level meters on every channel, with a dB scale on the faders
 - Reconnects by itself when VoiceMeeter is closed and started again
 - Global hotkeys to mute the microphone (Ctrl+Shift+M by default) and each of Game, Chat and Media
@@ -99,7 +99,7 @@ The Mic Processing window also provides:
 - A mic input level bar with the gate and compressor thresholds marked on it
 - **Bypass** per block, to compare with and without; all values are remembered and restored
 - **Reset**, which restores the values from when the window was opened
-- **Presets**: save the compressor, gate and denoiser values together under a name, and load them again
+- **Voice presets**: save the compressor, gate and denoiser values together under a name, and load them again. They hold the processing only; a setup profile holds everything
 - Logarithmic Attack, Hold and Release sliders, and a tooltip on every parameter
 
 Note: in VoiceMeeter, **Amount** is a preset dial. Moving it replaces the advanced values of that block.

@@ -617,6 +617,28 @@ def outline_toggle_style(color):
 # Key under which a mixer profile keeps the mic processing blocks, next to
 # its strips.
 PROFILE_PROCESSING = "processing"
+PROFILE_HOLDS = "Faders, buttons and mic processing."
+
+
+def profile_states_match(stored, current):
+    """True if the mixer (current) is as a stored profile says.
+
+    Only what the stored profile holds is compared, so an older profile
+    without mic processing is not "changed" by a processing change. Numbers
+    are compared to two decimals: VoiceMeeter hands them back as 32-bit
+    floats.
+    """
+
+    def same(a, b):
+        if isinstance(a, dict) and isinstance(b, dict):
+            return all(key in b and same(value, b[key]) for key, value in a.items())
+        if isinstance(a, bool) or isinstance(b, bool):
+            return bool(a) == bool(b)
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            return round(float(a), 2) == round(float(b), 2)
+        return a == b
+
+    return same(stored, current)
 
 # Routing buttons of every strip, and the VoiceMeeter bus behind each one.
 ROUTE_ROWS = (("A1", "A2", "A3"), ("B1", "B2", "B3"))
@@ -4667,7 +4689,7 @@ class MainWindow(QMainWindow):
         profile_layout = QVBoxLayout(self.profile_panel)
         profile_layout.setContentsMargins(6, 5, 6, 6)
         profile_layout.setSpacing(4)
-        profile_title = QLabel("MIXER PROFILE")
+        profile_title = QLabel("SETUP PROFILE")
         profile_title.setStyleSheet(
             "color: #8ba0b5; font-size: 11px; font-weight: bold;"
         )
@@ -4695,14 +4717,38 @@ class MainWindow(QMainWindow):
                 "QPushButton { padding: 1px 4px; font-size: 11px; }"
             )
             profile_buttons.addWidget(button)
-        self.profile_status = QLabel("")
-        # One short line: the panel has no room for more.
+        # One short line: the panel has no room for more. It says what a
+        # profile holds, what LOAD did, or that the mixer has moved away from
+        # the loaded profile, in which case UPDATE saves it back.
+        self.profile_status = QLabel(PROFILE_HOLDS)
         self.profile_status.setStyleSheet("color: #8ba0b5; font-size: 11px;")
-        self.profile_status.setVisible(False)
+        self.profile_update_button = QPushButton("UPDATE")
+        self.profile_update_button.setFixedHeight(20)
+        self.profile_update_button.setStyleSheet(
+            "QPushButton { padding: 0 8px; font-size: 11px; color: #f5b83d; "
+            "border-color: #6b5a24; }"
+        )
+        self.profile_update_button.clicked.connect(self.on_profile_update)
+        self.profile_update_button.setVisible(False)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(4)
+        status_row.addWidget(self.profile_status, 1)
+        status_row.addWidget(self.profile_update_button)
         profile_layout.addWidget(profile_title)
         profile_layout.addWidget(self.profile_list)
         profile_layout.addLayout(profile_buttons)
-        profile_layout.addWidget(self.profile_status)
+        profile_layout.addLayout(status_row)
+
+        # The profile the mixer was last loaded from or saved to, and its
+        # stored content, to tell when the mixer no longer matches it.
+        self.active_profile = ""
+        self._profile_reference = None
+        self._profile_message_until = 0.0
+        self._profile_check_timer = QTimer(self)
+        self._profile_check_timer.setSingleShot(True)
+        # Long enough for VoiceMeeter to settle after a batch of changes.
+        self._profile_check_timer.setInterval(900)
+        self._profile_check_timer.timeout.connect(self.refresh_profile_state)
         processing_wrapper_layout.addWidget(
             self.profile_panel,
             0,
@@ -4898,6 +4944,10 @@ class MainWindow(QMainWindow):
         self.profile_panel.setEnabled(self.connected)
         self.update_processing_summary()
         self.sync_tray()
+        if self.connected and not self.active_profile:
+            self.restore_active_profile()
+        else:
+            self.refresh_profile_state()
 
     def create_strips(self):
         if self.strips:
@@ -4938,8 +4988,8 @@ class MainWindow(QMainWindow):
                 self.processing_dialog.setWindowFlag(
                     Qt.WindowType.WindowContextHelpButtonHint, False
                 )
-                self.processing_dialog.setMinimumSize(560, 520)
-                self.processing_dialog.resize(620, 540)
+                self.processing_dialog.setMinimumSize(560, 540)
+                self.processing_dialog.resize(620, 560)
 
                 dialog_layout = QVBoxLayout(self.processing_dialog)
                 dialog_layout.setContentsMargins(8, 8, 8, 8)
@@ -4961,7 +5011,7 @@ class MainWindow(QMainWindow):
                 preset_row = QHBoxLayout()
                 preset_row.setContentsMargins(4, 0, 4, 2)
                 preset_row.setSpacing(6)
-                preset_title = QLabel("PRESET")
+                preset_title = QLabel("VOICE PRESET")
                 preset_title.setStyleSheet(
                     "color: #8ba0b5; font-size: 11px; font-weight: bold;"
                 )
@@ -4992,6 +5042,14 @@ class MainWindow(QMainWindow):
                 preset_row.addWidget(save_button)
                 preset_row.addWidget(self.preset_delete_button)
                 dialog_layout.addLayout(preset_row)
+                preset_note = QLabel(
+                    "Compressor, gate and denoiser only. Setup profiles on "
+                    "the main screen hold everything."
+                )
+                preset_note.setStyleSheet(
+                    "color: #8ba0b5; font-size: 11px; padding: 0 4px 2px 4px;"
+                )
+                dialog_layout.addWidget(preset_note)
                 self.refresh_preset_list()
 
                 self.processing_tabs.setVisible(True)
@@ -5021,7 +5079,7 @@ class MainWindow(QMainWindow):
                 self.processing_dialog.adjustSize()
                 self.processing_dialog.resize(
                     max(560, self.processing_dialog.width()),
-                    max(520, self.processing_dialog.height()),
+                    max(540, self.processing_dialog.height()),
                 )
                 self._place_processing_dialog()
 
@@ -5071,8 +5129,77 @@ class MainWindow(QMainWindow):
         profiles[name] = profile
         self.store_profiles(profiles)
         self.refresh_profile_list(select=name)
+        self.set_active_profile(name, profile)
         self.show_profile_status("Saved.")
         return True
+
+    def current_profile_state(self):
+        """The mixer as a profile would store it right now."""
+        state = {
+            strip_name: strip.profile_state()
+            for strip_name, strip in self.strips.items()
+        }
+        blocks = self.processing_blocks()
+        if all(blocks.values()):
+            try:
+                state[PROFILE_PROCESSING] = {
+                    label: control.preset_state()
+                    for label, control in blocks.items()
+                }
+            except Exception:
+                pass
+        return state
+
+    def set_active_profile(self, name, profile=None):
+        """Remember which profile the mixer was last loaded from or saved to."""
+        self.active_profile = name or ""
+        self._profile_reference = profile if name else None
+        self.window_settings.setValue("active_profile", self.active_profile)
+        self.refresh_profile_state()
+
+    def restore_active_profile(self):
+        """After a start: is the mixer still as the last used profile says?"""
+        name = str(self.window_settings.value("active_profile", "") or "")
+        profile = self.load_profiles().get(name)
+        if isinstance(profile, dict):
+            self.active_profile = name
+            self._profile_reference = profile
+            self.refresh_profile_list(select=name)
+        self.refresh_profile_state()
+
+    def profile_is_changed(self):
+        """True when the mixer no longer matches the active profile."""
+        if not self.active_profile or not self.connected:
+            return False
+        if not isinstance(self._profile_reference, dict):
+            return False
+        return not profile_states_match(
+            self._profile_reference, self.current_profile_state()
+        )
+
+    def refresh_profile_state(self):
+        """Show whether the mixer still matches the active profile."""
+        changed = self.profile_is_changed()
+        self.profile_update_button.setVisible(changed)
+        name = self.active_profile
+        if changed:
+            self.profile_update_button.setToolTip(
+                f"Save the mixer as it is now into \u201c{name}\u201d"
+            )
+            self.profile_status.setText(f"{name}: changed")
+            self.profile_status.setToolTip(
+                f"The mixer no longer matches \u201c{name}\u201d. LOAD brings "
+                "the profile back; UPDATE saves the current state into it."
+            )
+        elif time.monotonic() >= self._profile_message_until:
+            self.profile_status.setText(
+                f"{name} is loaded." if name else PROFILE_HOLDS
+            )
+            self.profile_status.setToolTip("")
+
+    def on_profile_update(self):
+        if self.active_profile:
+            self.save_profile(self.active_profile)
 
     def processing_values(self):
         """Current values of the three processing blocks, for comparing."""
@@ -5117,6 +5244,7 @@ class MainWindow(QMainWindow):
         if self.processing_values() != processing_before:
             changed.append("Mic processing")
         # A press on LOAD always gets an answer, also when nothing differed.
+        self.set_active_profile(name, profile)
         if changed:
             self.show_profile_status(
                 f"Loaded. Changed: {', '.join(changed)}."
@@ -5134,8 +5262,12 @@ class MainWindow(QMainWindow):
         )
 
     def show_profile_status(self, text):
+        """Show what LOAD or SAVE did; the standing state returns afterwards."""
+        self._profile_message_until = time.monotonic() + 4.0
         self.profile_status.setText(text)
-        self.profile_status.setVisible(bool(text))
+        self.profile_status.setToolTip("")
+        self.profile_update_button.setVisible(False)
+        QTimer.singleShot(4100, self, self.refresh_profile_state)
 
     def delete_profile(self, name):
         profiles = self.load_profiles()
@@ -5143,6 +5275,8 @@ class MainWindow(QMainWindow):
             return False
         self.store_profiles(profiles)
         self.refresh_profile_list()
+        if name == self.active_profile:
+            self.set_active_profile("")
         return True
 
     def refresh_profile_list(self, select=None):
@@ -5700,6 +5834,9 @@ class MainWindow(QMainWindow):
                 self.sync_processing_controls()
             self.update_processing_summary()
             self.sync_tray()
+            # Checked a moment later: during a drag or a load VoiceMeeter
+            # sends many events and reports in-between values.
+            self._profile_check_timer.start()
 
     def sync_processing_controls(self):
         for control in (

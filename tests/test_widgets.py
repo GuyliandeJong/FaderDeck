@@ -544,6 +544,107 @@ class ProfileTest(unittest.TestCase):
         window.save_profile("Old")                 # saving again adds it
         self.assertTrue(window.profile_has_processing("Old"))
 
+    def settle(self):
+        """What the short timers do: drop the LOAD/SAVE message, re-check."""
+        self.window._profile_message_until = 0.0
+        self.window.refresh_profile_state()
+
+    def test_shows_when_the_mixer_moves_away_from_the_profile(self):
+        window = self.window
+        self.assertEqual(window.profile_status.text(), main.PROFILE_HOLDS)
+        self.assertTrue(window.profile_update_button.isHidden())
+
+        window.save_profile("Main")
+        self.settle()
+        self.assertEqual(window.profile_status.text(), "Main is loaded.")
+        self.assertTrue(window.profile_update_button.isHidden())
+
+        window.strips["Game"].fader.setValue(-600)
+        self.settle()
+        self.assertEqual(window.profile_status.text(), "Main: changed")
+        self.assertFalse(window.profile_update_button.isHidden())
+
+        window.profile_load_button.click()
+        self.settle()
+        self.assertEqual(window.profile_status.text(), "Main is loaded.")
+        self.assertTrue(window.profile_update_button.isHidden())
+
+    def test_loading_a_voice_preset_marks_the_profile_as_changed(self):
+        """The reported confusion: a preset and a profile, both called Main."""
+        window = self.window
+        window.save_profile("Main")
+        window.compressor_control._apply("threshold", -30.0)
+        window.save_preset("Loud")
+        window.apply_profile("Main")
+        self.settle()
+        self.assertFalse(window.profile_is_changed())
+
+        window.apply_preset("Loud")
+        self.settle()
+        self.assertEqual(window.profile_status.text(), "Main: changed")
+
+    def test_update_saves_the_current_mixer_into_the_profile(self):
+        window = self.window
+        window.save_profile("Main")
+        window.strips["Game"].fader.setValue(-600)
+        window.gate_control._apply("hold", 250.0)
+        self.settle()
+        self.assertTrue(window.profile_is_changed())
+
+        window.profile_update_button.click()
+        self.settle()
+        self.assertFalse(window.profile_is_changed())
+        stored = window.load_profiles()["Main"]
+        self.assertEqual(stored["Game"]["gain"], -6.0)
+        self.assertEqual(stored["processing"]["gate"]["values"]["hold"], 250.0)
+
+    def test_bypass_is_not_a_change_to_the_profile(self):
+        window = self.window
+        window.save_profile("Main")
+        panel = window.compressor_control
+        panel.bypass_button.setChecked(True)
+        panel.on_bypass_clicked(True)
+        self.settle()
+        self.assertFalse(window.profile_is_changed())
+
+    def test_an_older_profile_is_not_changed_by_the_processing(self):
+        window = self.window
+        window.save_profile("Old")
+        profiles = window.load_profiles()
+        del profiles["Old"]["processing"]
+        window.store_profiles(profiles)
+        window.apply_profile("Old")
+        window.compressor_control._apply("threshold", -30.0)
+        self.settle()
+        self.assertFalse(window.profile_is_changed())
+        window.strips["Chat"].mute_button.click()
+        self.settle()
+        self.assertTrue(window.profile_is_changed())
+
+    def test_the_loaded_profile_is_remembered_after_a_restart(self):
+        self.window.save_profile("Main")
+        self.vm.strip[5].gain = -9.0            # changed while VMStreamer was off
+        again = self.sandbox.window()
+        self.addCleanup(self.sandbox.close, again)
+        self.assertEqual(again.active_profile, "Main")
+        self.assertEqual(again.profile_list.currentText(), "Main")
+        self.assertEqual(again.profile_status.text(), "Main: changed")
+
+    def test_deleting_the_loaded_profile_clears_the_state(self):
+        window = self.window
+        window.save_profile("Main")
+        window.delete_profile("Main")
+        self.settle()
+        self.assertEqual(window.active_profile, "")
+        self.assertEqual(window.profile_status.text(), main.PROFILE_HOLDS)
+
+    def test_numbers_are_compared_the_way_voicemeeter_returns_them(self):
+        match = main.profile_states_match
+        self.assertTrue(match({"gain": 3.1, "mute": False}, {"gain": 3.0999999046, "mute": 0}))
+        self.assertFalse(match({"gain": 3.1}, {"gain": 3.2}))
+        self.assertFalse(match({"routes": {"A1": True}}, {"routes": {}}))
+        self.assertTrue(match({"Mic": {"gain": 0.0}}, {"Mic": {"gain": 0.0, "extra": 1}, "processing": {}}))
+
     def test_profiles_are_stored_and_deleted(self):
         window = self.window
         window.save_profile("Streaming")
