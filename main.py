@@ -1,6 +1,7 @@
 import sys
 import math
 import ctypes
+import ctypes.wintypes
 import json
 import logging
 import os
@@ -11,8 +12,8 @@ import threading
 from logging.handlers import RotatingFileHandler
 
 
-from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QFileInfo, QThread, QSettings, Slot, QMetaObject, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
-from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
+from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
 
 from PySide6.QtSvg import QSvgRenderer
 
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialogButtonBox,
     QFormLayout,
+    QKeySequenceEdit,
+    QMessageBox,
     QFileIconProvider,
     QGridLayout,
     QHBoxLayout,
@@ -376,6 +379,57 @@ STRIPS = {
 
 # The Mic strip is the only strip with processing controls and a VU meter.
 MIC_STRIP = STRIPS["Mic"]
+
+# Global hotkeys: they work while VMStreamer is in the background, through
+# Win32 RegisterHotKey. A registered combination is taken away from every
+# other program for as long as VMStreamer runs.
+WM_HOTKEY = 0x0312
+MOD_NOREPEAT = 0x4000
+HOTKEY_MODIFIERS = {"alt": 0x0001, "ctrl": 0x0002, "shift": 0x0004, "meta": 0x0008}
+HOTKEY_MIC_MUTE = 1  # id passed to RegisterHotKey
+DEFAULT_MIC_MUTE_HOTKEY = "Ctrl+Shift+M"
+
+
+def parse_hotkey(text):
+    """Return (modifiers, virtual key) for text such as "Ctrl+Shift+M".
+
+    Returns None when it cannot be a global hotkey: it needs at least one
+    modifier, and the key must be a letter, a digit or F1-F24.
+    """
+    parts = [part.strip() for part in (text or "").split("+") if part.strip()]
+    if len(parts) < 2:
+        return None
+
+    modifiers = 0
+    for name in parts[:-1]:
+        flag = HOTKEY_MODIFIERS.get(name.casefold())
+        if flag is None:
+            return None
+        modifiers |= flag
+
+    key = parts[-1].upper()
+    if len(key) == 1 and key.isascii() and key.isalnum():
+        return modifiers, ord(key)
+    if re.fullmatch(r"F([1-9]|1[0-9]|2[0-4])", key):
+        return modifiers, 0x6F + int(key[1:])  # VK_F1 is 0x70
+    return None
+
+
+class HotkeyFilter(QAbstractNativeEventFilter):
+    """Pass WM_HOTKEY messages for this application to a callback."""
+
+    def __init__(self, callback):
+        super().__init__()
+        self.callback = callback
+
+    def nativeEventFilter(self, event_type, message):
+        if bytes(event_type) == b"windows_generic_MSG":
+            msg = ctypes.wintypes.MSG.from_address(int(message))
+            if msg.message == WM_HOTKEY:
+                self.callback(int(msg.wParam))
+                return True, 0
+        return False, 0
+
 
 # VoiceMeeter Potato has five hardware inputs (strips 0-4); the microphone
 # can be on any of them. Chosen in the settings window, used from the next
@@ -3643,7 +3697,7 @@ class StripLevelWorker(QObject):
 class SettingsDialog(QDialog):
     """Program settings. values() returns what the user chose."""
 
-    def __init__(self, parent, vm=None):
+    def __init__(self, parent, current, vm=None):
         super().__init__(parent)
         self.setWindowTitle("VMStreamer — Settings")
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
@@ -3677,12 +3731,29 @@ class SettingsDialog(QDialog):
             except Exception:
                 label = ""
             self.mic_input.addItem(f"{text} — {label}" if label else text, index)
-        self.mic_input.setCurrentIndex(MIC_STRIP)
+        self.mic_input.setCurrentIndex(current["mic_strip"])
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note(
             "The VoiceMeeter input your microphone is on. "
             "Used after VMStreamer is restarted."
         )
+
+        self.add_heading("HOTKEYS")
+        self.mic_mute_hotkey = QKeySequenceEdit(
+            QKeySequence(current["hotkey_mic_mute"])
+        )
+        self.mic_mute_hotkey.setMaximumSequenceLength(1)
+        self.mic_mute_hotkey.setClearButtonEnabled(True)
+        self.form.addRow("Mute microphone", self.mic_mute_hotkey)
+        self.add_note(
+            "Click the field and press the keys. Works while VMStreamer is in "
+            "the background. Other programs cannot use this combination "
+            "while VMStreamer runs. Clear the field to switch it off."
+        )
+        self.error_label = QLabel("")
+        self.error_label.setStyleSheet("color: #f85149;")
+        self.error_label.setWordWrap(True)
+        self.form.addRow("", self.error_label)
 
         layout.addStretch(1)
         buttons = QDialogButtonBox(
@@ -3704,9 +3775,25 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         self.form.addRow("", note)
 
+    def hotkey_text(self):
+        return self.mic_mute_hotkey.keySequence().toString(
+            QKeySequence.SequenceFormat.PortableText
+        )
+
+    def accept(self):
+        text = self.hotkey_text()
+        if text and parse_hotkey(text) is None:
+            self.error_label.setText(
+                f"{text} cannot be used as a global hotkey. Use Ctrl, Shift "
+                "or Alt together with a letter, a digit or F1-F24."
+            )
+            return
+        super().accept()
+
     def values(self):
         return {
             "mic_strip": int(self.mic_input.currentData()),
+            "hotkey_mic_mute": self.hotkey_text(),
         }
 
 
@@ -4122,6 +4209,10 @@ class MainWindow(QMainWindow):
         if not restored:
             self.main_splitter.reset_sizes()
 
+        self.hotkey_filter = HotkeyFilter(self.on_hotkey)
+        QApplication.instance().installNativeEventFilter(self.hotkey_filter)
+        self.register_hotkeys()
+
         # Connect to VoiceMeeter, then keep watching: it can be closed and
         # started again while VMStreamer stays open.
         self.connect_vm()
@@ -4503,15 +4594,88 @@ class MainWindow(QMainWindow):
             self.mic_level_bar.set_level(max(left, right))
 
 
+    def current_settings(self):
+        """The stored program settings, with their defaults."""
+        settings = self.window_settings
+        try:
+            mic_strip = int(settings.value("mic_strip", 0))
+        except (TypeError, ValueError):
+            mic_strip = 0
+        if not 0 <= mic_strip < HARDWARE_INPUTS:
+            mic_strip = 0
+        return {
+            "mic_strip": mic_strip,
+            "hotkey_mic_mute": str(
+                settings.value("hotkey_mic_mute", DEFAULT_MIC_MUTE_HOTKEY)
+                or ""
+            ),
+        }
+
     def open_settings(self):
-        dialog = SettingsDialog(self, self.vm if self.connected else None)
+        dialog = SettingsDialog(
+            self,
+            self.current_settings(),
+            self.vm if self.connected else None,
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.apply_settings(dialog.values())
 
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
-        self.window_settings.setValue("mic_strip", values["mic_strip"])
+        for key, value in values.items():
+            self.window_settings.setValue(key, value)
         self.window_settings.sync()
+
+        if not self.register_hotkeys():
+            QMessageBox.warning(
+                self,
+                "VMStreamer",
+                f"{values['hotkey_mic_mute']} could not be registered. "
+                "Another program is probably using it already. "
+                "Choose a different combination in Settings.",
+            )
+
+    def register_hotkeys(self):
+        """(Re)register the global hotkeys. False if Windows refused one."""
+        user32 = ctypes.windll.user32
+        hwnd = int(self.winId())
+        user32.UnregisterHotKey(hwnd, HOTKEY_MIC_MUTE)
+
+        text = self.current_settings()["hotkey_mic_mute"]
+        parsed = parse_hotkey(text)
+        if parsed is None:
+            if text:
+                log.warning(f"Ignoring invalid mic mute hotkey: {text}")
+            return True
+
+        modifiers, key = parsed
+        if user32.RegisterHotKey(
+            hwnd, HOTKEY_MIC_MUTE, modifiers | MOD_NOREPEAT, key
+        ):
+            return True
+        log.warning(f"Could not register the mic mute hotkey {text}")
+        return False
+
+    def unregister_hotkeys(self):
+        try:
+            ctypes.windll.user32.UnregisterHotKey(
+                int(self.winId()), HOTKEY_MIC_MUTE
+            )
+        except Exception:
+            pass
+
+    def on_hotkey(self, hotkey_id):
+        if hotkey_id == HOTKEY_MIC_MUTE:
+            self.toggle_mic_mute()
+
+    def toggle_mic_mute(self):
+        """Mute or unmute the microphone, also while the window is hidden."""
+        mic = self.strips.get("Mic")
+        if mic is None or not self.connected:
+            return
+        muted = not mic.mute_button.isChecked()
+        mic.mute_button.setChecked(muted)
+        mic.on_mute_clicked(muted)
 
     def on_vm_event(self, event):
 
@@ -4559,6 +4723,7 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "connection_timer"):
             self.connection_timer.stop()
+        self.unregister_hotkeys()
 
         if self.vm is not None and self.vm_observer is not None:
             try:
