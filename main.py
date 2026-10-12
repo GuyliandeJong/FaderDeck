@@ -979,8 +979,16 @@ class Wordmark(QWidget):
         ):
             advance = QFontMetricsF(font).horizontalAdvance(text)
             if index == last:
-                # The gradient runs across this word only, blue to purple.
-                gradient = QLinearGradient(x, 0, x + advance, 0)
+                # The gradient runs across this word only, and diagonally like
+                # the tile's: blue at the top left, purple at the bottom right.
+                metrics = QFontMetricsF(font)
+                middle = self.height() / 2
+                top = middle - metrics.capHeight() / 2
+                bottom = middle + metrics.capHeight() / 2
+                # A true 45 degree slope, as on the tile: the colour depends
+                # on x + y, and the run is long enough to cover the word.
+                run = (advance + (bottom - top)) / 2
+                gradient = QLinearGradient(x, top, x + run, top + run)
                 gradient.setColorAt(0.0, QColor(LOGO_GRADIENT[0]))
                 gradient.setColorAt(1.0, QColor(LOGO_GRADIENT[1]))
                 painter.setPen(QPen(QBrush(gradient), 1))
