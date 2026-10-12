@@ -1,18 +1,20 @@
-# VMStreamer
+# FaderDeck
+
+*Formerly VMStreamer. Renamed in v1.5.0 so it is not mistaken for VB-Audio's own VM-Streamer View; your settings carry over.*
 
 A modern, lightweight control panel for **VoiceMeeter Potato**, designed for streamers and content creators.
 
-VMStreamer provides a clean interface for managing your microphone, mixer channels, Windows application audio, and microphone processing without constantly switching back to the VoiceMeeter interface.
+FaderDeck provides a clean interface for managing your microphone, mixer channels, Windows application audio, and microphone processing without constantly switching back to the VoiceMeeter interface.
 
 ## Preview
 
-![VMStreamer interface](screenshots/vmstreamer.png)
+![FaderDeck interface](screenshots/faderdeck.png)
 
 ## Features
 
 ### Mixer Control
 
-Control your four VoiceMeeter channels directly from VMStreamer: Microphone, Game, Chat and Media.
+Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game, Chat and Media.
 
 - Fader with a dB scale, and live level meters on every channel
 - Mute, Solo and Mono
@@ -22,7 +24,7 @@ Control your four VoiceMeeter channels directly from VMStreamer: Microphone, Gam
 
 ### Compact View
 
-A button in the header shrinks the window to the four channels with fader, meters, level and Mute. It fits in 520×300, remembers its own size and place, and VMStreamer starts in the view it was closed in. Hotkeys and profiles keep working.
+A button in the header shrinks the window to the four channels with fader, meters, level and Mute. It fits in 520×300, remembers its own size and place, and FaderDeck starts in the view it was closed in. Hotkeys and profiles keep working.
 
 ![Compact view](screenshots/compact.png)
 
@@ -35,7 +37,7 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 
 ### Global Hotkeys
 
-Hotkeys work while VMStreamer is in the background or hidden in the tray. Set them under Settings, Hotkeys.
+Hotkeys work while FaderDeck is in the background or hidden in the tray. Set them under Settings, Hotkeys.
 
 - Mute for every channel (the microphone's is Ctrl+Shift+M out of the box)
 - Louder and quieter for every channel, 1 dB per press
@@ -43,23 +45,23 @@ Hotkeys work while VMStreamer is in the background or hidden in the tray. Set th
 
 ![Hotkey settings](screenshots/settings-hotkeys.png)
 
-A hotkey is taken from every other program while VMStreamer runs, so pick combinations you do not use elsewhere.
+A hotkey is taken from every other program while FaderDeck runs, so pick combinations you do not use elsewhere.
 
 ### System Tray
 
-- Closing the window keeps VMStreamer running in the tray; click the icon to show it again
+- Closing the window keeps FaderDeck running in the tray; click the icon to show it again
 - The tray menu has Show, Mute microphone and Quit
 - Hold Shift while closing the window to quit at once
 - Optional: start minimised to the tray
-- Starting VMStreamer a second time shows the running one instead of opening another
+- Starting FaderDeck a second time shows the running one instead of opening another
 
 ### Remote Control
 
-Other programs on the same PC, such as Stream Deck plugins and OBS scripts, can control VMStreamer. It is off by default. The requests are listed under [Remote Control](#remote-control-1) further down.
+Other programs on the same PC, such as Stream Deck plugins and OBS scripts, can control FaderDeck. It is off by default. The requests are listed under [Remote Control](#remote-control-1) further down.
 
 ### Application Audio
 
-VMStreamer automatically detects Windows audio sessions and displays applications routed through VoiceMeeter.
+FaderDeck automatically detects Windows audio sessions and displays applications routed through VoiceMeeter.
 
 Applications are grouped according to their VoiceMeeter output:
 
@@ -88,7 +90,7 @@ Hiding is per channel: an application can be hidden on Game and still be visible
 
 ### Microphone Processing
 
-VMStreamer provides direct control over VoiceMeeter's microphone processing.
+FaderDeck provides direct control over VoiceMeeter's microphone processing.
 
 ![Mic Processing window](screenshots/mic-processing.png)
 
@@ -132,7 +134,7 @@ Note: in VoiceMeeter, **Amount** is a preset dial. Moving it replaces the advanc
 
 ### Live Audio Meters
 
-VMStreamer includes real-time audio monitoring for:
+FaderDeck includes real-time audio monitoring for:
 
 - Microphone, Game, Chat and Media
 - Windows applications
@@ -159,8 +161,8 @@ Application audio monitoring uses a dedicated sampling loop to keep the interfac
 Clone the repository:
 
 ```powershell
-git clone https://github.com/GuylianDeJong/VMStreamer.git
-cd VMStreamer
+git clone https://github.com/GuylianDeJong/FaderDeck.git
+cd FaderDeck
 ```
 
 Create a virtual environment:
@@ -181,7 +183,7 @@ Install the required dependencies:
 pip install -r requirements.txt
 ```
 
-Run VMStreamer:
+Run FaderDeck:
 
 ```powershell
 python main.py
@@ -189,10 +191,10 @@ python main.py
 
 ## Remote Control
 
-VMStreamer can be controlled by other programs on the same computer over HTTP. Switch it on under Settings, Remote control, and copy the token shown there.
+FaderDeck can be controlled by other programs on the same computer over HTTP. Switch it on under Settings, Remote control, and copy the token shown there.
 
 - It listens on `127.0.0.1` only, so nothing on the network can connect.
-- Every request needs the token, in the header `X-VMStreamer-Token`.
+- Every request needs the token, in the header `X-FaderDeck-Token`.
 - Requests from web pages are refused.
 
 | Request | Does |
@@ -207,7 +209,7 @@ VMStreamer can be controlled by other programs on the same computer over HTTP. S
 Channels are `mic`, `game`, `chat` and `media`. Example:
 
 ```powershell
-curl.exe -X POST -H "X-VMStreamer-Token: YOUR_TOKEN" http://127.0.0.1:8765/api/mute/mic
+curl.exe -X POST -H "X-FaderDeck-Token: YOUR_TOKEN" http://127.0.0.1:8765/api/mute/mic
 ```
 
 ## Running the Tests
@@ -220,38 +222,38 @@ The tests use only the Python standard library and run without VoiceMeeter: the 
 
 ## Building the Windows EXE
 
-VMStreamer can be packaged into a standalone Windows executable using PyInstaller.
+FaderDeck can be packaged into a standalone Windows executable using PyInstaller.
 
 Run the build script from the project folder. It installs PyInstaller into the virtual environment when needed:
 
 ```powershell
-.\build_vmstreamer.ps1
+.\build_faderdeck.ps1
 ```
 
 The resulting executable will be located at:
 
 ```text
-dist\VMStreamer.exe
+dist\FaderDeck.exe
 ```
 
 ## Troubleshooting
 
-VMStreamer writes errors to a log file, which is the place to look when something does not work in the packaged build:
+FaderDeck writes errors to a log file, which is the place to look when something does not work in the packaged build:
 
 ```text
-%LOCALAPPDATA%\VMStreamer\vmstreamer.log
+%LOCALAPPDATA%\FaderDeck\faderdeck.log
 ```
 
 ## Project Structure
 
 ```text
-VMStreamer/
+FaderDeck/
 ├── main.py                   application source
-├── vmstreamer_launcher.py    entry point of the packaged EXE
-├── build_vmstreamer.ps1      builds dist\VMStreamer.exe
+├── faderdeck_launcher.py    entry point of the packaged EXE
+├── build_faderdeck.ps1      builds dist\FaderDeck.exe
 ├── requirements.txt
 ├── tests/                    unit tests (no VoiceMeeter needed)
-├── vmstreamer.ico
+├── faderdeck.ico
 ├── screenshots/              pictures used in this README
 ├── HANDOVER.md
 ├── PROJECT_STATE.md
@@ -262,9 +264,9 @@ Build files, the Python virtual environment, and other generated files are inten
 
 ## VoiceMeeter Configuration
 
-VMStreamer currently works with **VoiceMeeter Potato** and uses the following channels:
+FaderDeck currently works with **VoiceMeeter Potato** and uses the following channels:
 
-| VMStreamer | VoiceMeeter | Windows Device |
+| FaderDeck | VoiceMeeter | Windows Device |
 | --- | --- | --- |
 | Mic | Hardware Input 1 | Focusrite / microphone |
 | Game | Virtual Input 1 (VAIO) | VoiceMeeter VAIO |
@@ -273,11 +275,11 @@ VMStreamer currently works with **VoiceMeeter Potato** and uses the following ch
 
 The microphone's hardware input (1 to 5) can be chosen in Settings and is used after a restart. The Game, Chat and Media mapping is fixed in `main.py` (`STRIPS`).
 
-Windows applications routed through these VoiceMeeter devices are automatically detected and displayed in the corresponding VMStreamer section.
+Windows applications routed through these VoiceMeeter devices are automatically detected and displayed in the corresponding FaderDeck section.
 
 ## Application Design
 
-VMStreamer is built with:
+FaderDeck is built with:
 
 - Python
 - PySide6 / Qt
@@ -289,7 +291,7 @@ The application uses separate worker threads for Windows application audio monit
 
 ## Status
 
-VMStreamer is currently under active development.
+FaderDeck is currently under active development.
 
 The core mixer, microphone processing, application routing, live audio meters, and Windows application volume controls are functional.
 
@@ -307,17 +309,17 @@ Not planned for now: light mode and custom themes, automatic updates.
 
 ## Support
 
-If you find VMStreamer useful and would like to support its development:
+If you find FaderDeck useful and would like to support its development:
 
 [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/guyliandejong)
 
 
 ## License
 
-VMStreamer is licensed under the VMStreamer Non-Commercial License.
+FaderDeck is licensed under the FaderDeck Non-Commercial License.
 
-You are free to use, modify, fork, and redistribute VMStreamer for personal and non-commercial purposes.
+You are free to use, modify, fork, and redistribute FaderDeck for personal and non-commercial purposes.
 
-Commercial use, sale, or redistribution of VMStreamer or modified versions for commercial purposes requires prior written permission from the author.
+Commercial use, sale, or redistribution of FaderDeck or modified versions for commercial purposes requires prior written permission from the author.
 
-VMStreamer is an independent third-party project and is not affiliated with or endorsed by VB-Audio Software.
+FaderDeck is an independent third-party project and is not affiliated with or endorsed by VB-Audio Software.

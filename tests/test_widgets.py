@@ -749,7 +749,7 @@ class ProfileTest(unittest.TestCase):
 
     def test_the_loaded_profile_is_remembered_after_a_restart(self):
         self.window.save_profile("Main")
-        self.vm.strip[5].gain = -9.0            # changed while VMStreamer was off
+        self.vm.strip[5].gain = -9.0            # changed while FaderDeck was off
         again = self.sandbox.window()
         self.addCleanup(self.sandbox.close, again)
         self.assertEqual(again.active_profile, "Main")
@@ -961,6 +961,69 @@ class PresetTest(unittest.TestCase):
         self.assertFalse(window.apply_preset("Stream"))
 
 
+class RenameTest(unittest.TestCase):
+    """The program was VMStreamer up to v1.4.0. Nothing the user saved may be
+    lost by the new name."""
+
+    def setUp(self):
+        self.sandbox = Sandbox()
+        self.sandbox.__enter__()
+        self.addCleanup(self.sandbox.__exit__)
+
+    def open(self):
+        window = self.sandbox.window()
+        self.addCleanup(self.sandbox.close, window)
+        return window
+
+    def test_settings_saved_under_the_old_name_are_taken_over(self):
+        FakeSettings.old_store.update({
+            "hotkey_mic_mute": "Ctrl+Alt+M",
+            "close_to_tray": "false",
+            "mic_strip": 2,
+            "mixer_profiles": json.dumps({"Main": {"Game": {"gain": -6.0, "mute": False, "solo": False, "mono": False}}}),
+            "processing_presets": json.dumps({"Voice": {}}),
+            "hidden_applications_v2": json.dumps(["game|steam.exe"]),
+            "active_profile": "Main",
+        })
+        before = dict(FakeSettings.old_store)
+        window = self.open()
+
+        current = window.current_settings()
+        self.assertEqual(current["hotkey_mic_mute"], "Ctrl+Alt+M")
+        self.assertFalse(current["close_to_tray"])
+        self.assertEqual(window.strips["Mic"].strip_index, 2)
+        self.assertEqual(list(window.load_profiles()), ["Main"])
+        self.assertEqual(list(window.load_presets()), ["Voice"])
+        self.assertEqual(window.active_profile, "Main")
+        self.assertEqual(FakeSettings.store["migrated_from"], "VMStreamer")
+        self.assertEqual(FakeSettings.old_store, before, "the old settings stay as they were")
+
+    def test_the_copy_happens_once_only(self):
+        FakeSettings.old_store["hotkey_mic_mute"] = "Ctrl+Alt+M"
+        first = self.open()
+        first.window_settings.setValue("hotkey_mic_mute", "Ctrl+Alt+N")
+        FakeSettings.old_store["hotkey_mic_mute"] = "Ctrl+Alt+OLD"   # old program still in use
+
+        again = self.open()
+        self.assertEqual(again.current_settings()["hotkey_mic_mute"], "Ctrl+Alt+N")
+
+    def test_a_fresh_installation_starts_with_the_defaults(self):
+        window = self.open()
+        self.assertEqual(window.current_settings()["hotkey_mic_mute"], "Ctrl+Shift+M")
+        self.assertEqual(FakeSettings.store["migrated_from"], "")
+
+    def test_both_program_names_are_left_out_of_the_application_list(self):
+        self.assertIn("faderdeck.exe", main.OWN_EXECUTABLES)
+        self.assertIn("vmstreamer.exe", main.OWN_EXECUTABLES)
+
+    def test_names_shown_to_the_user(self):
+        window = self.open()
+        self.assertEqual(window.windowTitle(), "FaderDeck")
+        self.assertEqual(main.SETTINGS_NAME, "FaderDeck")
+        self.assertTrue(main.log_file_path().endswith("faderdeck.log"))
+        self.assertIn("FaderDeck", main.SINGLE_INSTANCE_NAME)
+
+
 class CloseToTrayTest(unittest.TestCase):
     def setUp(self):
         self.sandbox = Sandbox()
@@ -1028,7 +1091,7 @@ class CloseToTrayTest(unittest.TestCase):
         self.assertTrue(window.isVisible())
 
     def test_quit_request_from_a_script_really_quits(self):
-        """`VMStreamer.exe --quit` reaches the running program as a message."""
+        """`FaderDeck.exe --quit` reaches the running program as a message."""
         window = self.window
         window.close()                      # hidden in the tray
         self.assertTrue(window.connected)

@@ -1,4 +1,4 @@
-"""Stand-ins that let the tests build VMStreamer's widgets without VoiceMeeter,
+"""Stand-ins that let the tests build FaderDeck's widgets without VoiceMeeter,
 Windows audio sessions or the registry.
 
 Import this module before `main`: it selects Qt's offscreen platform and
@@ -14,7 +14,7 @@ import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Keep the application log out of the real %LOCALAPPDATA%.
-os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="vmstreamer-tests-")
+os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="faderdeck-tests-")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtWidgets import QApplication
@@ -24,7 +24,7 @@ import main
 app = QApplication.instance() or QApplication([])
 # The application logs expected failures (a refused hotkey, a lost mixer);
 # keep them out of the test output.
-logging.getLogger("vmstreamer").addHandler(logging.NullHandler())
+logging.getLogger("faderdeck").addHandler(logging.NullHandler())
 
 
 def pump(seconds=0.05):
@@ -36,21 +36,31 @@ def pump(seconds=0.05):
 
 
 class FakeSettings:
-    """In-memory QSettings. All instances share one store, like the real one."""
+    """In-memory QSettings. Instances with the same name share one store,
+    like the real one. `store` is the program's own; `old_store` is what an
+    installation from before the rename left behind."""
 
     store = {}
+    old_store = {}
 
-    def __init__(self, *args):
-        pass
+    def __init__(self, organization=None, application=None):
+        self._old = organization == main.OLD_SETTINGS_NAME
+
+    @property
+    def _data(self):
+        return FakeSettings.old_store if self._old else FakeSettings.store
 
     def value(self, key, default=None):
-        return self.store.get(key, default)
+        return self._data.get(key, default)
 
     def setValue(self, key, value):
-        self.store[key] = value
+        self._data[key] = value
 
     def remove(self, key):
-        self.store.pop(key, None)
+        self._data.pop(key, None)
+
+    def allKeys(self):
+        return list(self._data)
 
     def sync(self):
         pass
@@ -138,7 +148,7 @@ class FakeObserver:
 
 
 class FakeVM:
-    """The parts of voicemeeterlib's API object that VMStreamer uses."""
+    """The parts of voicemeeterlib's API object that FaderDeck uses."""
 
     def __init__(self):
         self.strip = [FakeStrip(index) for index in range(8)]
@@ -187,6 +197,7 @@ class Sandbox:
 
     def __enter__(self):
         FakeSettings.store = {}
+        FakeSettings.old_store = {}
         self._patch("QSettings", FakeSettings)
         self._patch("PYCAW_AVAILABLE", False)
         self._patch("voicemeeter_is_running", lambda: self.running)

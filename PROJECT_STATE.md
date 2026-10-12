@@ -1,9 +1,9 @@
-# VMStreamer — Project State
+# FaderDeck — Project State
 
 State date: 2026-10-12
 Current release: `v1.0.2`
 Branch: `main`
-Repository: https://github.com/GuylianDeJong/VMStreamer
+Repository: https://github.com/GuylianDeJong/FaderDeck
 
 ## Primary Source
 
@@ -58,7 +58,7 @@ VoiceMeeter uses event-based bidirectional synchronization. `vm.init_thread()` i
 
 Level sampling for all four strips uses one dedicated worker (`StripLevelWorker`), which emits only when a level changed. Every strip has L/R meters.
 
-VMStreamer reconnects by itself when VoiceMeeter is closed and started again (`check_connection`, `release_vm`).
+FaderDeck reconnects by itself when VoiceMeeter is closed and started again (`check_connection`, `release_vm`).
 
 A settings window (`SettingsDialog`) sets the microphone's hardware input (used after a restart), the global mic mute hotkey (`Ctrl+Shift+M` by default) and the tray behaviour (close to tray on by default, start minimised off).
 
@@ -106,7 +106,7 @@ Mic Processing opens in a popup. Compressor, Gate and Denoiser share `Processing
 
 A draggable splitter separates the mixer from the lower panels (`splitter_v1`).
 
-Errors are logged to `%LOCALAPPDATA%\VMStreamer\vmstreamer.log`.
+Errors are logged to `%LOCALAPPDATA%\FaderDeck\faderdeck.log`.
 
 Window position/size persists.
 
@@ -116,15 +116,15 @@ Icons are monochrome.
 
 Icon:
 
-`vmstreamer.ico`
+`faderdeck.ico`
 
 Build script:
 
-`build_vmstreamer.ps1`
+`build_faderdeck.ps1`
 
 Launcher:
 
-`vmstreamer_launcher.py`
+`faderdeck_launcher.py`
 
 Required PyInstaller icon options:
 
@@ -135,7 +135,7 @@ Required PyInstaller icon options:
 
 Output:
 
-`dist\VMStreamer.exe`
+`dist\FaderDeck.exe`
 
 `dist\` is ignored by Git.
 
@@ -145,7 +145,7 @@ Output:
 
 Assets:
 
-- `VMStreamer.exe`
+- `FaderDeck.exe`
 - Source code zip
 - Source code tar.gz
 
@@ -179,7 +179,7 @@ Do not regress:
 
 ## Build Locking
 
-The build script asks a running VMStreamer to quit (`VMStreamer.exe --quit`) before building. Never stop it by force: a killed process stays listed as a client in VoiceMeeter until VoiceMeeter is restarted.
+The build script asks a running FaderDeck to quit (`FaderDeck.exe --quit`) before building. Never stop it by force: a killed process stays listed as a client in VoiceMeeter until VoiceMeeter is restarted.
 
 ## Future UI
 
@@ -214,9 +214,9 @@ Known local support/debug files:
 diagnose_audio.py
 main_meter_diagnostic.py
 test_vm.py
-install_vmstreamer_startup.ps1
-vmstreamer_launcher.py
-build_vmstreamer.ps1
+install_faderdeck_startup.ps1
+faderdeck_launcher.py
+build_faderdeck.ps1
 ```
 
 Do not blindly commit every untracked file.

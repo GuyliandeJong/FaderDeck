@@ -1,4 +1,4 @@
-"""Entry point for a packaged VMStreamer executable."""
+"""Entry point for a packaged FaderDeck executable."""
 
 import csv
 import io
@@ -42,18 +42,18 @@ def main():
     arguments = sys.argv[1:]
     # The options are for this entry point only. Do not pass them to Qt.
     sys.argv = [sys.argv[0]]
-    from main import main as run_vmstreamer
+    from main import main as run_faderdeck
 
     if "--quit" in arguments:
-        # Ask the running VMStreamer to quit, then leave.
-        run_vmstreamer(["--quit"])
+        # Ask the running FaderDeck to quit, then leave.
+        run_faderdeck(["--quit"])
         return
 
     if "--wait-for-voicemeeter" in arguments:
         while not voicemeeter_is_running():
             time.sleep(1)
 
-    run_vmstreamer()
+    run_faderdeck()
 
 
 if __name__ == "__main__":

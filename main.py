@@ -80,7 +80,7 @@ except ImportError:
 
 # Optional: moving an application between virtual channels (drag and drop)
 # uses Windows' per-app output device setting through this small package.
-# VMStreamer runs without it; dropping an application then shows a hint.
+# FaderDeck runs without it; dropping an application then shows a hint.
 try:
     import winappaudiorouter as war
     APP_ROUTING_AVAILABLE = True
@@ -314,12 +314,12 @@ def _qt_message_handler(mode, context, message):
     log.warning(f"Qt: {message}")
 
 
-log = logging.getLogger("vmstreamer")
+log = logging.getLogger("faderdeck")
 
 
 def log_file_path():
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    return os.path.join(base, "VMStreamer", "vmstreamer.log")
+    return os.path.join(base, "FaderDeck", "faderdeck.log")
 
 
 def setup_logging():
@@ -422,6 +422,36 @@ STRIPS = {
 # The Mic strip is the only strip with processing controls and a VU meter.
 MIC_STRIP = STRIPS["Mic"]
 
+# The program was called VMStreamer up to v1.4.0. Its settings (hotkeys,
+# profiles, presets, hidden applications, window places) are stored per
+# name, so they are copied to the new name once. The old ones are left
+# alone, so an older version still finds its own.
+SETTINGS_NAME = "FaderDeck"
+OLD_SETTINGS_NAME = "VMStreamer"
+# Executables that are this program: not listed as an application.
+OWN_EXECUTABLES = ("faderdeck.exe", "vmstreamer.exe")
+
+
+def app_settings():
+    return QSettings(SETTINGS_NAME, SETTINGS_NAME)
+
+
+def migrate_settings():
+    """Copy the settings saved under the old name, the first time only."""
+    new = app_settings()
+    if new.allKeys():
+        return False
+    old = QSettings(OLD_SETTINGS_NAME, OLD_SETTINGS_NAME)
+    keys = old.allKeys()
+    for key in keys:
+        new.setValue(key, old.value(key))
+    new.setValue("migrated_from", OLD_SETTINGS_NAME if keys else "")
+    new.sync()
+    if keys:
+        log.info(f"Copied {len(keys)} settings from {OLD_SETTINGS_NAME}")
+    return bool(keys)
+
+
 def setting_bool(settings, key, default):
     """Read a yes/no setting; QSettings may hand it back as text."""
     value = settings.value(key, default)
@@ -430,9 +460,9 @@ def setting_bool(settings, key, default):
     return bool(value)
 
 
-# Global hotkeys: they work while VMStreamer is in the background, through
+# Global hotkeys: they work while FaderDeck is in the background, through
 # Win32 RegisterHotKey. A registered combination is taken away from every
-# other program for as long as VMStreamer runs.
+# other program for as long as FaderDeck runs.
 WM_HOTKEY = 0x0312
 MOD_NOREPEAT = 0x4000
 HOTKEY_MODIFIERS = {"alt": 0x0001, "ctrl": 0x0002, "shift": 0x0004, "meta": 0x0008}
@@ -514,30 +544,30 @@ def parse_hotkey(text):
     return None
 
 
-# Only one VMStreamer runs at a time: a second copy could not register the
+# Only one FaderDeck runs at a time: a second copy could not register the
 # hotkey and would fight the first over the mixer. Starting it again asks the
 # running one to show its window, which may be hidden in the tray.
 # The packaged program and a run from source use different names, so the
-# installed VMStreamer does not block development.
+# installed FaderDeck does not block development.
 SINGLE_INSTANCE_NAME = (
-    "VMStreamer.SingleInstance"
+    "FaderDeck.SingleInstance"
     if getattr(sys, "frozen", False)
-    else "VMStreamer.SingleInstance.Source"
+    else "FaderDeck.SingleInstance.Source"
 )
 ERROR_ALREADY_EXISTS = 183
 HWND_BROADCAST = 0xFFFF
 
 
 def show_window_message(name=SINGLE_INSTANCE_NAME):
-    """Id of the Windows message that asks a running VMStreamer to show up."""
+    """Id of the Windows message that asks a running FaderDeck to show up."""
     return ctypes.windll.user32.RegisterWindowMessageW(f"{name}.Show")
 
 
 def acquire_single_instance(name=SINGLE_INSTANCE_NAME):
-    """Claim the right to be the running VMStreamer.
+    """Claim the right to be the running FaderDeck.
 
     Returns a handle to keep for as long as the program runs, or None when
-    another VMStreamer already holds it.
+    another FaderDeck already holds it.
     """
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = ctypes.wintypes.HANDLE
@@ -563,12 +593,12 @@ def ask_running_instance_to_show(name=SINGLE_INSTANCE_NAME):
 
 
 def quit_message(name=SINGLE_INSTANCE_NAME):
-    """Id of the Windows message that asks a running VMStreamer to quit."""
+    """Id of the Windows message that asks a running FaderDeck to quit."""
     return ctypes.windll.user32.RegisterWindowMessageW(f"{name}.Quit")
 
 
 def ask_running_instance_to_quit(name=SINGLE_INSTANCE_NAME):
-    """Used by `VMStreamer.exe --quit`, for scripts such as the build.
+    """Used by `FaderDeck.exe --quit`, for scripts such as the build.
 
     The running program quits the way its tray menu's Quit does, so it logs
     out of VoiceMeeter. Stopping the process by force cannot do that and
@@ -580,10 +610,11 @@ def ask_running_instance_to_quit(name=SINGLE_INSTANCE_NAME):
 
 
 # Local API: lets other programs on this PC (a Stream Deck plugin, an OBS
-# script, curl) control VMStreamer over HTTP. Off unless switched on in the
+# script, curl) control FaderDeck over HTTP. Off unless switched on in the
 # settings window.
 API_DEFAULT_PORT = 8765
-API_TOKEN_HEADER = "X-VMStreamer-Token"
+API_TOKEN_HEADER = "X-FaderDeck-Token"
+LEGACY_API_TOKEN_HEADER = "X-VMStreamer-Token"  # accepted from v1.4.0 scripts
 
 
 class ApiCall:
@@ -643,7 +674,7 @@ class LocalApi(QObject):
         api = self
 
         class Handler(BaseHTTPRequestHandler):
-            server_version = "VMStreamer"
+            server_version = "FaderDeck"
 
             def log_message(self, *args):
                 pass
@@ -660,7 +691,7 @@ class LocalApi(QObject):
         self.thread = threading.Thread(
             target=self.server.serve_forever,
             kwargs={"poll_interval": 0.1},  # stop() then returns quickly
-            name="VMStreamer-LocalApi",
+            name="FaderDeck-LocalApi",
             daemon=True,
         )
         self.thread.start()
@@ -702,7 +733,11 @@ class LocalApi(QObject):
         if host not in ("127.0.0.1", "localhost"):
             return 403, {"error": "Only 127.0.0.1 and localhost are accepted."}
 
-        supplied = handler.headers.get(API_TOKEN_HEADER) or params.pop("token", "")
+        supplied = (
+            handler.headers.get(API_TOKEN_HEADER)
+            or handler.headers.get(LEGACY_API_TOKEN_HEADER)
+            or params.pop("token", "")
+        )
         if not self.token or not hmac.compare_digest(
             supplied.encode("utf-8"), self.token.encode("utf-8")
         ):
@@ -717,7 +752,7 @@ class LocalApi(QObject):
         try:
             return call.future.result(timeout=3.0)
         except Exception:
-            return 503, {"error": "VMStreamer did not answer in time."}
+            return 503, {"error": "FaderDeck did not answer in time."}
 
 
 class HotkeyFilter(QAbstractNativeEventFilter):
@@ -776,7 +811,7 @@ def set_mic_strip(index):
 ALL_CHANNELS = "*"
 
 # Drag and drop of an application between channel columns.
-DRAG_MIME = "application/x-vmstreamer-application"
+DRAG_MIME = "application/x-faderdeck-application"
 
 # Mic strip: meters sit to the left of the (centered) fader.
 MIC_METER_GAP = 47      # pixels between the meters and the fader
@@ -1310,7 +1345,7 @@ class ProcessingPanel(QWidget):
         self.target = getattr(vm.strip[MIC_STRIP], self.ATTRIBUTE)
         self.setVisible(False)
         self.controls = {}
-        self.settings = QSettings("VMStreamer", "VMStreamer")
+        self.settings = app_settings()
         self._snapshot = {}
         # State to restore when bypass is switched off, or None.
         self._bypassed = None
@@ -2686,7 +2721,7 @@ class LiveVolumeSlider(FineControlSlider):
 class ApplicationAudioWorker(QObject):
     """Own all pycaw/COM work on a dedicated worker thread.
 
-    Windows can expose multiple audio sessions for one application. VMStreamer
+    Windows can expose multiple audio sessions for one application. FaderDeck
     groups those sessions by application and VoiceMeeter bus so the UI shows
     one row per application while volume, mute, and live metering still apply
     to every underlying session.
@@ -2800,7 +2835,7 @@ class ApplicationAudioWorker(QObject):
         self._peak_stop.clear()
         self._peak_thread = threading.Thread(
             target=self._peak_loop,
-            name="VMStreamer-AppPeakSampler",
+            name="FaderDeck-AppPeakSampler",
             daemon=True,
         )
         self._peak_thread.start()
@@ -3140,7 +3175,7 @@ class ApplicationAudioWorker(QObject):
                             continue
 
                         app_name = name.lower()
-                        if app_name == "vmstreamer.exe":
+                        if app_name in OWN_EXECUTABLES:
                             continue
                         if getattr(session, "State", 1) == 2:
                             continue
@@ -3752,7 +3787,7 @@ class ApplicationControl(QWidget):
         self._drag_active = False
         self._notice_text = ""
         self._notice_until = 0.0
-        self.settings = QSettings("VMStreamer", "VMStreamer")
+        self.settings = app_settings()
         self._hidden_needs_save = False
         self.hidden_applications = self._load_hidden_applications()
         if (
@@ -4350,7 +4385,7 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent, current, vm=None):
         super().__init__(parent)
-        self.setWindowTitle("VMStreamer — Settings")
+        self.setWindowTitle("FaderDeck — Settings")
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
         self.setMinimumSize(500, 520)
         self.setStyleSheet(
@@ -4383,7 +4418,7 @@ class SettingsDialog(QDialog):
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note(
             "The VoiceMeeter input your microphone is on. "
-            "Used after VMStreamer is restarted."
+            "Used after FaderDeck is restarted."
         )
 
         self.add_heading("WINDOW")
@@ -4404,9 +4439,9 @@ class SettingsDialog(QDialog):
         # ---- Hotkeys ----
         self.form = self.add_tab("Hotkeys", scrolling=True)
         self.add_note(
-            "Click a field and press the keys. Hotkeys work while VMStreamer "
+            "Click a field and press the keys. Hotkeys work while FaderDeck "
             "is in the background. Other programs cannot use these "
-            "combinations while VMStreamer runs. Clear a field to switch "
+            "combinations while FaderDeck runs. Clear a field to switch "
             "it off."
         )
         self.hotkey_edits = {}
@@ -4424,7 +4459,7 @@ class SettingsDialog(QDialog):
         # ---- Remote control ----
         self.form = self.add_tab("Remote control")
         self.add_note(
-            "Lets other programs on this computer control VMStreamer: a "
+            "Lets other programs on this computer control FaderDeck: a "
             "Stream Deck plugin, an OBS script, a shortcut. Nothing outside "
             "this computer can connect, and every request needs the token "
             "below."
@@ -4461,7 +4496,7 @@ class SettingsDialog(QDialog):
 
         self.add_heading("HOW TO USE IT")
         example = QLabel(
-            "Send the token in the header X-VMStreamer-Token.\n\n"
+            "Send the token in the header X-FaderDeck-Token.\n\n"
             "GET   /api/state\n"
             "GET   /api/profiles\n"
             "POST  /api/mute/mic?state=toggle      (on, off, toggle)\n"
@@ -4663,7 +4698,8 @@ class MainWindow(QMainWindow):
         # disconnected; see check_connection().
         self._seen_running = 0
         self.strips = {}
-        self.window_settings = QSettings("VMStreamer", "VMStreamer")
+        migrate_settings()
+        self.window_settings = app_settings()
         # Before any strip or processing control exists.
         set_mic_strip(self.window_settings.value("mic_strip", 0))
 
@@ -4692,7 +4728,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(
 
-            "VMStreamer"
+            "FaderDeck"
 
         )
 
@@ -4826,7 +4862,7 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
 
 
-        app_title = QLabel("VMStreamer")
+        app_title = QLabel("FaderDeck")
         app_title.setStyleSheet(
             "color: #e6edf3; font-size: 17px; font-weight: 800;"
         )
@@ -4915,7 +4951,7 @@ class MainWindow(QMainWindow):
         banner_layout = QHBoxLayout(self.offline_banner)
         banner_layout.setContentsMargins(10, 5, 6, 5)
         banner_text = QLabel(
-            "VoiceMeeter Potato is not running. VMStreamer connects "
+            "VoiceMeeter Potato is not running. FaderDeck connects "
             "automatically when it starts."
         )
         banner_text.setStyleSheet("color: #f0b6b1; font-weight: bold;")
@@ -5146,7 +5182,7 @@ class MainWindow(QMainWindow):
         self.register_hotkeys()
 
         # Connect to VoiceMeeter, then keep watching: it can be closed and
-        # started again while VMStreamer stays open.
+        # started again while FaderDeck stays open.
         self.connect_vm()
         self.connection_timer = QTimer(self)
         self.connection_timer.setInterval(2000)
@@ -5333,7 +5369,7 @@ class MainWindow(QMainWindow):
             first_open = self.processing_dialog is None
             if first_open:
                 self.processing_dialog = QDialog(self)
-                self.processing_dialog.setWindowTitle("VMStreamer — Mic Processing")
+                self.processing_dialog.setWindowTitle("FaderDeck — Mic Processing")
                 self.processing_dialog.setWindowIcon(self.windowIcon())
                 self.processing_dialog.setModal(False)
                 self.processing_dialog.setWindowFlag(
@@ -5650,13 +5686,13 @@ class MainWindow(QMainWindow):
         if not self.apply_profile(name):
             QMessageBox.warning(
                 self,
-                "VMStreamer",
+                "FaderDeck",
                 f"The profile \u201c{name}\u201d could not be applied completely.",
             )
         elif not self.profile_has_processing(name):
             QMessageBox.information(
                 self,
-                "VMStreamer",
+                "FaderDeck",
                 f"\u201c{name}\u201d was saved before profiles included the mic "
                 "processing, so the compressor, gate and denoiser were left "
                 "as they are.\n\nTo add them, set the mic processing the way "
@@ -5675,7 +5711,7 @@ class MainWindow(QMainWindow):
             return
         if name in self.load_profiles():
             answer = QMessageBox.question(
-                self, "VMStreamer", f"Replace the profile \u201c{name}\u201d?"
+                self, "FaderDeck", f"Replace the profile \u201c{name}\u201d?"
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -5686,7 +5722,7 @@ class MainWindow(QMainWindow):
         if not name:
             return
         answer = QMessageBox.question(
-            self, "VMStreamer", f"Delete the profile \u201c{name}\u201d?"
+            self, "FaderDeck", f"Delete the profile \u201c{name}\u201d?"
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.delete_profile(name)
@@ -5797,7 +5833,7 @@ class MainWindow(QMainWindow):
         if name and not self.apply_preset(name):
             QMessageBox.warning(
                 self.processing_dialog,
-                "VMStreamer",
+                "FaderDeck",
                 f"The preset \u201c{name}\u201d could not be applied completely.",
             )
 
@@ -5814,7 +5850,7 @@ class MainWindow(QMainWindow):
         if name in self.load_presets():
             answer = QMessageBox.question(
                 self.processing_dialog,
-                "VMStreamer",
+                "FaderDeck",
                 f"Replace the preset \u201c{name}\u201d?",
             )
             if answer != QMessageBox.StandardButton.Yes:
@@ -5827,7 +5863,7 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self.processing_dialog,
-            "VMStreamer",
+            "FaderDeck",
             f"Delete the preset \u201c{name}\u201d?",
         )
         if answer == QMessageBox.StandardButton.Yes:
@@ -6040,11 +6076,11 @@ class MainWindow(QMainWindow):
 
         icon = QApplication.instance().windowIcon()
         if icon.isNull():
-            icon = QIcon(resource_path("vmstreamer.ico"))
+            icon = QIcon(resource_path("faderdeck.ico"))
         self.tray = QSystemTrayIcon(icon, self)
 
         menu = QMenu(self)
-        menu.addAction("Show VMStreamer").triggered.connect(
+        menu.addAction("Show FaderDeck").triggered.connect(
             self.show_from_tray
         )
         self.tray_mute_action = menu.addAction("Mute microphone")
@@ -6055,7 +6091,7 @@ class MainWindow(QMainWindow):
 
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self.on_tray_activated)
-        self.tray.setToolTip("VMStreamer")
+        self.tray.setToolTip("FaderDeck")
         self.tray.show()
 
     def on_tray_activated(self, reason):
@@ -6082,7 +6118,7 @@ class MainWindow(QMainWindow):
         self.tray_mute_action.setChecked(muted)
         self.tray_mute_action.setEnabled(self.connected)
         self.tray.setToolTip(
-            "VMStreamer — microphone muted" if muted else "VMStreamer"
+            "FaderDeck — microphone muted" if muted else "FaderDeck"
         )
 
     def close_to_tray_enabled(self):
@@ -6150,13 +6186,13 @@ class MainWindow(QMainWindow):
 
         problem = self.restart_api()
         if problem:
-            QMessageBox.warning(self, "VMStreamer", problem)
+            QMessageBox.warning(self, "FaderDeck", problem)
 
         refused = self.register_hotkeys()
         if refused:
             QMessageBox.warning(
                 self,
-                "VMStreamer",
+                "FaderDeck",
                 f"{', '.join(refused)} could not be registered. "
                 "Another program is probably using it already. "
                 "Choose a different combination in Settings.",
@@ -6354,7 +6390,7 @@ class MainWindow(QMainWindow):
         # With the window hidden there is nothing to see otherwise.
         if self.tray is not None and not self.isVisible():
             self.tray.showMessage(
-                "VMStreamer", f"Setup profile: {name}", self.tray.icon(), 2000
+                "FaderDeck", f"Setup profile: {name}", self.tray.icon(), 2000
             )
 
     def toggle_strip_mute(self, name):
@@ -6423,7 +6459,7 @@ class MainWindow(QMainWindow):
             if not setting_bool(self.window_settings, "tray_hint_shown", False):
                 self.window_settings.setValue("tray_hint_shown", True)
                 self.tray.showMessage(
-                    "VMStreamer is still running",
+                    "FaderDeck is still running",
                     "It stays in the system tray. Right-click the icon to "
                     "quit, or hold Shift while closing the window.",
                     self.tray.icon(),
@@ -6505,25 +6541,25 @@ def install_exit_handlers(window):
 def main(arguments=()):
     setup_logging()
     if "--quit" in arguments:
-        log.info("Asking the running VMStreamer to quit")
+        log.info("Asking the running FaderDeck to quit")
         ask_running_instance_to_quit()
         return
     # Kept until the program ends; Windows releases it then.
     single_instance = acquire_single_instance()
     if single_instance is None:
-        log.info("VMStreamer is already running; showing that window")
+        log.info("FaderDeck is already running; showing that window")
         ask_running_instance_to_show()
         return
-    log.info("VMStreamer starting")
+    log.info("FaderDeck starting")
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(
         sys.argv
 
     )
 
-    # Use the bundled VMStreamer icon for the application and all windows.
+    # Use the bundled FaderDeck icon for the application and all windows.
     # This works both from the source tree and from a PyInstaller build.
-    icon_path = resource_path("vmstreamer.ico")
+    icon_path = resource_path("faderdeck.ico")
     app_icon = QIcon(icon_path)
 
     if not app_icon.isNull():

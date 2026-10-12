@@ -1,10 +1,10 @@
-# VMStreamer — Project Handover
+# FaderDeck — Project Handover
 
 ## Project
 
-VMStreamer is a Windows desktop controller for VoiceMeeter Potato. It provides a compact custom UI for Mic, Game, Chat and Media instead of cloning the entire VoiceMeeter interface.
+FaderDeck is a Windows desktop controller for VoiceMeeter Potato. It provides a compact custom UI for Mic, Game, Chat and Media instead of cloning the entire VoiceMeeter interface.
 
-Repository: https://github.com/GuylianDeJong/VMStreamer
+Repository: https://github.com/GuylianDeJong/FaderDeck
 Current branch: `main`
 Current release: `v1.0.2` (published/latest)
 
@@ -122,16 +122,16 @@ The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate an
 `SettingsDialog` (button in the header) edits the program settings, stored in QSettings and read through `MainWindow.current_settings()`:
 
 - `mic_strip`: hardware input 0-4 of the microphone. Applied by `set_mic_strip()` before the window is built, because the strip, its processing controls and the level worker read `STRIPS` / `MIC_STRIP` when they are created. It therefore takes effect at the next start.
-- `hotkey_mic_mute`: global hotkey, `Ctrl+Shift+M` by default, empty to switch off. Registered with Win32 `RegisterHotKey` on the main window and received through `HotkeyFilter`, a native event filter. `parse_hotkey()` accepts a modifier plus a letter, digit or F1-F24. A registered combination is taken from all other programs while VMStreamer runs.
+- `hotkey_mic_mute`: global hotkey, `Ctrl+Shift+M` by default, empty to switch off. Registered with Win32 `RegisterHotKey` on the main window and received through `HotkeyFilter`, a native event filter. `parse_hotkey()` accepts a modifier plus a letter, digit or F1-F24. A registered combination is taken from all other programs while FaderDeck runs.
 - `close_to_tray` (default on) and `start_minimized` (default off).
 
-The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit, Windows' session end (`commitDataRequest`) and closing with Shift held (`shift_is_held`) do. All three are a normal quit that logs out of VoiceMeeter. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it VMStreamer would hold up a Windows shutdown.
+The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit, Windows' session end (`commitDataRequest`) and closing with Shift held (`shift_is_held`) do. All three are a normal quit that logs out of VoiceMeeter. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it FaderDeck would hold up a Windows shutdown.
 
 ## Presets and Single Instance
 
 A Mic processing preset stores the state of all three blocks together (`save_preset`, `apply_preset`, `delete_preset` on `MainWindow`; QSettings key `processing_presets`, JSON). Blocks hand out and take in a state through `preset_state()` and `apply_preset()`, which reuse the bypass/reset path: Amount first, then the advanced values. A preset saved while a block is bypassed stores the real values, not Amount 0. Stored values are clamped to the slider ranges when applied.
 
-Only one VMStreamer runs at a time. `main()` claims a named mutex (`acquire_single_instance`); a second start broadcasts a registered window message and exits, and the running instance shows its window (handled in `HotkeyFilter`, for the main window's copy of the message only). The packaged program and a run from source use different names on purpose.
+Only one FaderDeck runs at a time. `main()` claims a named mutex (`acquire_single_instance`); a second start broadcasts a registered window message and exits, and the running instance shows its window (handled in `HotkeyFilter`, for the main window's copy of the message only). The packaged program and a run from source use different names on purpose.
 
 ## Mixer Profiles, Routing and Hotkeys
 
@@ -145,7 +145,7 @@ The fader's unit is 0.01 dB. One wheel notch moves 0.5 dB, Shift+wheel and the a
 
 `update_processing_summary()` shows each block's Amount under the MIC PROCESSING button and marks a bypassed or switched-off block on its tab. It reads three values per change event; the full panels are still only synchronized while their window is open.
 
-`VMStreamer.exe --quit` (and `python main.py --quit`) asks the running instance to quit through a registered window message, handled like the tray's Quit.
+`FaderDeck.exe --quit` (and `python main.py --quit`) asks the running instance to quit through a registered window message, handled like the tray's Quit.
 
 ## Profile State
 
@@ -172,6 +172,17 @@ The local API (`LocalApi`, `ApiServer`, `MainWindow.handle_api_call`) is off by 
 - A request with an `Origin` header, or a `Host` other than `127.0.0.1` or `localhost`, is refused, so a web page cannot reach the mixer.
 - Reads are GET and changes are POST; a GET never changes anything.
 - Requests arrive on server threads and are handed to the GUI thread through `call_requested`; the server thread waits for the answer with a timeout. Nothing in `LocalApi` touches a widget or VoiceMeeter.
+
+## Name
+
+The program was called VMStreamer up to v1.4.0 and FaderDeck from v1.5.0. VB-Audio ships its own "VM-Streamer View", and the old name was too close to it. What still carries the old name, on purpose:
+
+- `OLD_SETTINGS_NAME`: `migrate_settings()` copies the QSettings saved under "VMStreamer" to "FaderDeck" the first time the new name has none. The old settings are not deleted.
+- `OWN_EXECUTABLES`: both `faderdeck.exe` and `vmstreamer.exe` are left out of the application lists.
+- `LEGACY_API_TOKEN_HEADER`: the local API still accepts `X-VMStreamer-Token`.
+- The project folder on disk and the earlier releases and tags.
+
+The single-instance name changed with the rename, so an old VMStreamer and FaderDeck can run side by side and will then fight over the hotkeys. Quit the old one first.
 
 ## Tests
 
@@ -292,13 +303,13 @@ Window position and size are persisted. A draggable splitter separates the mixer
 
 ## Logging
 
-Errors go through the `vmstreamer` logger, not `print()`: the packaged build is windowed and has no console. `setup_logging()` writes a rotating log to `%LOCALAPPDATA%\VMStreamer\vmstreamer.log` and installs hooks so uncaught exceptions are logged too.
+Errors go through the `faderdeck` logger, not `print()`: the packaged build is windowed and has no console. `setup_logging()` writes a rotating log to `%LOCALAPPDATA%\FaderDeck\faderdeck.log` and installs hooks so uncaught exceptions are logged too.
 
 ## Icon / Packaging
 
 Icon:
 
-`vmstreamer.ico`
+`faderdeck.ico`
 
 `main.py` uses a resource helper for source and PyInstaller execution:
 
@@ -315,11 +326,11 @@ The icon is assigned to the QApplication and MainWindow.
 
 Build script:
 
-`build_vmstreamer.ps1`
+`build_faderdeck.ps1`
 
 Launcher:
 
-`vmstreamer_launcher.py`
+`faderdeck_launcher.py`
 
 PyInstaller must retain both:
 
@@ -334,15 +345,15 @@ Do not add `--collect-all PySide6`: it bundles every Qt module and makes the EXE
 
 Output:
 
-`dist\VMStreamer.exe`
+`dist\FaderDeck.exe`
 
 `dist\` is intentionally ignored by Git.
 
 ## Build Notes
 
-`build_vmstreamer.ps1` asks a running VMStreamer to quit before it builds (`dist\VMStreamer.exe --quit`), because a running copy locks the EXE and PyInstaller then fails with `PermissionError: [WinError 5]`. If it is still running after ten seconds, quit it from its tray icon and build again.
+`build_faderdeck.ps1` asks a running FaderDeck to quit before it builds (`dist\FaderDeck.exe --quit`), because a running copy locks the EXE and PyInstaller then fails with `PermissionError: [WinError 5]`. If it is still running after ten seconds, quit it from its tray icon and build again.
 
-Do not stop VMStreamer by force (`Stop-Process -Force`, `taskkill /F`, Task Manager). A killed process cannot log out, and VoiceMeeter keeps listing it as a client (an "R" mark at the top of its window) until VoiceMeeter is restarted. `--quit` only works for versions that have it (v1.3.0 and later); older ones must be quit from the tray.
+Do not stop FaderDeck by force (`Stop-Process -Force`, `taskkill /F`, Task Manager). A killed process cannot log out, and VoiceMeeter keeps listing it as a client (an "R" mark at the top of its window) until VoiceMeeter is restarted. `--quit` only works for versions that have it (v1.3.0 and later); older ones must be quit from the tray.
 
 Run the build script plainly. Redirecting its output makes PowerShell 5.1 treat PyInstaller's progress messages as an error.
 
@@ -352,7 +363,7 @@ v1.0.2 is the latest tag.
 
 Release assets:
 
-- `VMStreamer.exe`
+- `FaderDeck.exe`
 - Source code zip
 - Source code tar.gz
 
@@ -366,9 +377,9 @@ Local development has included:
 diagnose_audio.py
 main_meter_diagnostic.py
 test_vm.py
-install_vmstreamer_startup.ps1
-vmstreamer_launcher.py
-build_vmstreamer.ps1
+install_faderdeck_startup.ps1
+faderdeck_launcher.py
+build_faderdeck.ps1
 ```
 
 Do not blindly `git add .`; only commit files that belong in the repository.

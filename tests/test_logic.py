@@ -126,7 +126,7 @@ class LevelsTest(unittest.TestCase):
 
 
 class SingleInstanceTest(unittest.TestCase):
-    NAME = "VMStreamer.Tests.SingleInstance"
+    NAME = "FaderDeck.Tests.SingleInstance"
 
     def test_second_claim_is_refused_until_the_first_is_released(self):
         first = main.acquire_single_instance(self.NAME)
@@ -145,7 +145,7 @@ class SingleInstanceTest(unittest.TestCase):
     def test_source_and_packaged_runs_use_different_names(self):
         self.assertTrue(main.SINGLE_INSTANCE_NAME.endswith(".Source"))
         self.assertNotEqual(
-            main.show_window_message("VMStreamer.SingleInstance"),
+            main.show_window_message("FaderDeck.SingleInstance"),
             main.show_window_message(main.SINGLE_INSTANCE_NAME),
         )
 
