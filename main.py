@@ -680,18 +680,21 @@ class MicLevelBar(QWidget):
         font.setPixelSize(10)
         font.setBold(True)
         painter.setFont(font)
-        for index, (label, color, getter) in enumerate(self._markers):
+        markers = []
+        for label, color, getter in self._markers:
             try:
-                db = float(getter())
+                markers.append((float(getter()), label, color))
             except Exception:
                 continue
+        markers.sort(key=lambda marker: marker[0])
+        for index, (db, label, color) in enumerate(markers):
             x = self._x(inner, db)
             painter.setPen(QPen(color, 2))
             painter.drawLine(QPointF(x, bar.top() - 3), QPointF(x, bar.bottom() + 3))
-            # The first marker's text goes left of its line and the next one's
-            # right, so two nearby thresholds stay readable.
+            # Text of the lowest threshold goes left of its line and the
+            # others right, so two nearby thresholds stay readable.
             text = f"{label} {db:.0f} dB"
-            if index % 2 == 0:
+            if index == 0 and len(markers) > 1:
                 rect = QRectF(x - 124, bar.bottom() + 4, 120, 14)
                 align = Qt.AlignmentFlag.AlignRight
             else:
@@ -792,8 +795,8 @@ class ProcessingPanel(QWidget):
         self.controls = {}
         self.settings = QSettings("VMStreamer", "VMStreamer")
         self._snapshot = {}
-        # Amount to restore when bypass is switched off, or None.
-        self._bypassed_amount = None
+        # State to restore when bypass is switched off, or None.
+        self._bypassed = None
 
         self.panel_layout = QVBoxLayout(self)
         self.panel_layout.setContentsMargins(6, 6, 6, 6)
@@ -808,7 +811,7 @@ class ProcessingPanel(QWidget):
             + outline_toggle_style(TOGGLE_COLORS["solo"])
         )
         self.bypass_button.setToolTip(
-            f"Switch the {self.LABEL} off and remember its Amount, "
+            f"Switch the {self.LABEL} off and remember all its values, "
             "so you can compare with and without"
         )
         self.bypass_button.clicked.connect(self.on_bypass_clicked)
@@ -1002,19 +1005,42 @@ class ProcessingPanel(QWidget):
                 f"Failed to set {self.LABEL} {key}: {type(e).__name__}: {e}"
             )
 
-    # Bypass: Amount 0 switches a block off. The previous Amount is kept (also
-    # across restarts) so switching bypass off brings the block back as it was.
+    # Bypass: Amount 0 switches a block off. VoiceMeeter rewrites the advanced
+    # values whenever Amount changes (Amount is a preset dial), so bypass keeps
+    # the whole state, also across restarts, and puts all of it back.
 
     def _bypass_setting(self):
-        return f"bypass_amount_{self.LABEL}"
+        return f"bypass_state_{self.LABEL}"
+
+    def _read_state(self):
+        """Every value of this block as VoiceMeeter has it now."""
+        return {
+            "values": {
+                key: float(getattr(self.target, key))
+                for key in self.controls
+            },
+            "extras": self.read_extras(),
+        }
+
+    def _restore_state(self, state):
+        """Send a state from _read_state() back to VoiceMeeter."""
+        values = state["values"]
+        # Amount first: setting it replaces the advanced values, which are
+        # then overwritten with the ones that belong to this state.
+        self._apply("knob", values["knob"])
+        for key, actual in values.items():
+            if key != "knob":
+                self._apply(key, actual)
+        self.apply_extras(state.get("extras", {}))
 
     def _restore_bypass(self):
         stored = self.settings.value(self._bypass_setting(), None)
         if stored is None:
             return
         try:
-            if float(stored) > 0 and float(self.target.knob) == 0:
-                self._bypassed_amount = float(stored)
+            state = json.loads(stored)
+            if state["values"]["knob"] > 0 and float(self.target.knob) == 0:
+                self._bypassed = state
                 self.bypass_button.setChecked(True)
                 return
         except Exception:
@@ -1022,31 +1048,33 @@ class ProcessingPanel(QWidget):
         self.settings.remove(self._bypass_setting())
 
     def _clear_bypass(self):
-        self._bypassed_amount = None
+        self._bypassed = None
         self.bypass_button.setChecked(False)
         self.settings.remove(self._bypass_setting())
 
     def _amount_changed(self, key, actual):
         """Turning Amount up by hand ends a bypass."""
-        if key == "knob" and actual > 0 and self._bypassed_amount is not None:
+        if key == "knob" and actual > 0 and self._bypassed is not None:
             self._clear_bypass()
 
     def on_bypass_clicked(self, checked):
         try:
             if checked:
-                amount = float(self.target.knob)
-                if amount <= 0:
+                state = self._read_state()
+                if state["values"]["knob"] <= 0:
                     # Already off and nothing to remember.
                     self.bypass_button.setChecked(False)
                     return
-                self._bypassed_amount = amount
-                self.settings.setValue(self._bypass_setting(), amount)
+                self._bypassed = state
+                self.settings.setValue(
+                    self._bypass_setting(), json.dumps(state)
+                )
                 self._apply("knob", 0.0)
             else:
-                amount = self._bypassed_amount
+                state = self._bypassed
                 self._clear_bypass()
-                if amount:
-                    self._apply("knob", amount)
+                if state:
+                    self._restore_state(state)
         except Exception as e:
             log.error(
                 f"Failed to bypass {self.LABEL}: {type(e).__name__}: {e}"
@@ -1058,31 +1086,23 @@ class ProcessingPanel(QWidget):
     def take_snapshot(self):
         """Remember the current values as the target of RESET."""
         try:
-            values = {
-                key: float(getattr(self.target, key))
-                for key in self.controls
-            }
-            extras = self.read_extras()
+            # While bypassed, the state to return to is the one bypass kept.
+            self._snapshot = self._bypassed or self._read_state()
         except Exception as e:
             log.error(
                 f"Failed to read {self.LABEL}: {type(e).__name__}: {e}"
             )
             return
-        if self._bypassed_amount is not None:
-            values["knob"] = self._bypassed_amount
-        self._snapshot = {"values": values, "extras": extras}
-        for key, actual in values.items():
+        for key, actual in self._snapshot["values"].items():
             self.controls[key]["slider"].set_mark(self._to_slider(key, actual))
 
     def reset(self):
         if not self._snapshot:
             return
         try:
-            if self._bypassed_amount is not None:
+            if self._bypassed is not None:
                 self._clear_bypass()
-            for key, actual in self._snapshot["values"].items():
-                self._apply(key, actual)
-            self.apply_extras(self._snapshot["extras"])
+            self._restore_state(self._snapshot)
         except Exception as e:
             log.error(
                 f"Failed to reset {self.LABEL}: {type(e).__name__}: {e}"
@@ -1096,7 +1116,7 @@ class ProcessingPanel(QWidget):
                 key: getattr(self.target, key)
                 for key in self.controls
             }
-            if self._bypassed_amount is not None and values["knob"] > 0:
+            if self._bypassed is not None and values["knob"] > 0:
                 # Switched back on from VoiceMeeter itself.
                 self._clear_bypass()
             for key, actual in values.items():
@@ -1132,7 +1152,7 @@ class CompressorControl(ProcessingPanel):
     )
     SCRIPT_KEYS = ("attack", "release")
     HELP = {
-        "knob": "How much compression is applied, 0 to 10. 0 switches the compressor off.",
+        "knob": "How much compression is applied, 0 to 10. 0 switches the compressor off. Moving it replaces the advanced values below with VoiceMeeter's preset for that amount.",
         "gainin": "Level change before the compressor.",
         "ratio": "How strongly sound above the threshold is turned down. 4:1 lets 1 dB through for every 4 dB over.",
         "threshold": "Level above which the compressor starts working. Compare with the Mic input bar above.",
