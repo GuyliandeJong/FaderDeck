@@ -12,28 +12,50 @@ VMStreamer provides a clean interface for managing your microphone, mixer channe
 
 ### Mixer Control
 
-Control your main VoiceMeeter channels directly from VMStreamer:
+Control your four VoiceMeeter channels directly from VMStreamer: Microphone, Game, Chat and Media.
 
-- Microphone
-- Game
-- Chat
-- Media
-- Volume / gain control
-- Mute
-- Solo
-- Mono
-- Output routing buttons A1–A3 and B1–B3 on every channel, shown with the bus names you gave them in VoiceMeeter
-- Setup profiles: save the whole setup under a name and load it again: gain, mute, solo, mono and routing of all channels, and the mic processing. The panel shows when the mixer no longer matches the loaded profile, with UPDATE to save it back
-- Live level meters on every channel, with a dB scale on the faders
+- Fader with a dB scale, and live level meters on every channel
+- Mute, Solo and Mono
+- Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter
 - Reconnects by itself when VoiceMeeter is closed and started again
-- Global hotkeys: mute and volume for every channel, and next or previous setup profile. Only the microphone's mute (Ctrl+Shift+M) is set out of the box
-- Compact view: the four channels with fader, meters and mute in a small window
-- Remote control for other programs on the same PC (Stream Deck plugins, OBS scripts), off by default; see below
-- System tray icon: keeps running when the window is closed, with mute and quit in its menu. Hold Shift while closing the window to quit at once
-- Settings window for the microphone input, the hotkey and the tray behaviour
+- A draggable divider between the mixer and the lower panels
+
+### Compact View
+
+A button in the header shrinks the window to the four channels with fader, meters, level and Mute. It fits in 520×300, remembers its own size and place, and VMStreamer starts in the view it was closed in. Hotkeys and profiles keep working.
+
+![Compact view](screenshots/compact.png)
+
+### Setup Profiles
+
+Save your whole setup under a name and load it again with one click: gain, mute, solo, mono and routing of all channels, and the microphone processing.
+
+- The panel shows when the mixer no longer matches the loaded profile, with **Update** to save the current state back into it
+- The loaded profile is remembered between launches
+
+### Global Hotkeys
+
+Hotkeys work while VMStreamer is in the background or hidden in the tray. Set them under Settings, Hotkeys.
+
+- Mute for every channel (the microphone's is Ctrl+Shift+M out of the box)
+- Louder and quieter for every channel, 1 dB per press
+- Next and previous setup profile
+
+![Hotkey settings](screenshots/settings-hotkeys.png)
+
+A hotkey is taken from every other program while VMStreamer runs, so pick combinations you do not use elsewhere.
+
+### System Tray
+
+- Closing the window keeps VMStreamer running in the tray; click the icon to show it again
+- The tray menu has Show, Mute microphone and Quit
+- Hold Shift while closing the window to quit at once
+- Optional: start minimised to the tray
 - Starting VMStreamer a second time shows the running one instead of opening another
-- `VMStreamer.exe --quit` asks the running VMStreamer to quit, for use in scripts
-- Draggable divider between the mixer and the lower panels
+
+### Remote Control
+
+Other programs on the same PC, such as Stream Deck plugins and OBS scripts, can control VMStreamer. It is off by default. The requests are listed under [Remote Control](#remote-control-1) further down.
 
 ### Application Audio
 
@@ -67,6 +89,8 @@ Hiding is per channel: an application can be hidden on Game and still be visible
 ### Microphone Processing
 
 VMStreamer provides direct control over VoiceMeeter's microphone processing.
+
+![Mic Processing window](screenshots/mic-processing.png)
 
 #### Compressor
 
@@ -228,6 +252,7 @@ VMStreamer/
 ├── requirements.txt
 ├── tests/                    unit tests (no VoiceMeeter needed)
 ├── vmstreamer.ico
+├── screenshots/              pictures used in this README
 ├── HANDOVER.md
 ├── PROJECT_STATE.md
 └── README.md
