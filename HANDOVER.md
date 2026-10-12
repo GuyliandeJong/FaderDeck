@@ -127,6 +127,14 @@ The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate an
 
 The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit and Windows' session end (`commitDataRequest`) do. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it VMStreamer would hold up a Windows shutdown.
 
+## Tests
+
+`tests/` holds unit tests on the standard library's `unittest`; run them with `python -m unittest discover -s tests` before committing a change to `main.py`. `tests/fakes.py` provides a fake mixer (`FakeVM`), an in-memory `QSettings` and a `Sandbox` that swaps them into `main`, so a real `MainWindow` can be built on Qt's offscreen platform without VoiceMeeter.
+
+The fake mixer copies one behaviour of the real one on purpose: changing Amount replaces the advanced values. The bypass bug was invisible to a fake that did not do this.
+
+Not covered, and still to be checked by hand: real audio, meters moving, drag and drop, the actual key press of the hotkey, the real tray icon, and VoiceMeeter really being closed.
+
 ## Connection
 
 `check_connection()` runs every two seconds and looks for VoiceMeeter's main window with one Win32 call (`voicemeeter_is_running()`), which is cheap enough for the GUI thread. When VoiceMeeter goes away, `release_vm()` stops the level worker and event threads and logs out; when it returns, the same API object logs in again and the existing widgets are reused. Reconnecting only happens while VoiceMeeter is running, because `login()` would otherwise start it.

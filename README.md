@@ -157,6 +157,14 @@ Run VMStreamer:
 python main.py
 ```
 
+## Running the Tests
+
+The tests use only the Python standard library and run without VoiceMeeter: the mixer, the registry and Windows audio are replaced by stand-ins.
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
 ## Building the Windows EXE
 
 VMStreamer can be packaged into a standalone Windows executable using PyInstaller.
@@ -189,6 +197,7 @@ VMStreamer/
 ├── vmstreamer_launcher.py    entry point of the packaged EXE
 ├── build_vmstreamer.ps1      builds dist\VMStreamer.exe
 ├── requirements.txt
+├── tests/                    unit tests (no VoiceMeeter needed)
 ├── vmstreamer.ico
 ├── HANDOVER.md
 ├── PROJECT_STATE.md
