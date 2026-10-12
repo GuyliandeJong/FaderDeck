@@ -73,6 +73,55 @@ class ProcessingPanelTest(unittest.TestCase):
         self.panel.controls["knob"]["slider"].setValue(40)
         self.assertFalse(self.panel.bypass_button.isChecked())
 
+    def test_moving_amount_can_be_undone(self):
+        """Amount replaces the advanced values in VoiceMeeter. The panel says
+        so and UNDO brings everything back."""
+        panel, comp = self.panel, self.vm.strip[0].comp
+        self.assertTrue(panel.amount_notice.isHidden())
+
+        panel.controls["knob"]["slider"].setValue(32)
+        self.assertEqual(comp.threshold, -40.0, "VoiceMeeter's preset took over")
+        self.assertFalse(panel.amount_notice.isHidden())
+
+        panel.controls["knob"]["slider"].setValue(45)      # keeps the first state
+        panel.undo_amount()
+        self.assertEqual(compressor_state(self.vm), COMPRESSOR)
+        self.assertTrue(panel.amount_notice.isHidden())
+        self.assertEqual(panel.controls["knob"]["edit"].text(), "3.1")
+
+    def test_typing_an_amount_can_be_undone_too(self):
+        panel = self.panel
+        panel.controls["knob"]["edit"].setText("6")
+        panel.on_value_edit_finished("knob")
+        self.assertFalse(panel.amount_notice.isHidden())
+        panel.undo_amount()
+        self.assertEqual(compressor_state(self.vm), COMPRESSOR)
+
+    def test_carrying_on_after_amount_drops_the_undo(self):
+        panel = self.panel
+        panel.controls["knob"]["slider"].setValue(32)
+        panel.controls["ratio"]["slider"].setValue(50)      # accepts the new base
+        self.assertTrue(panel.amount_notice.isHidden())
+        panel.undo_amount()                                 # nothing to undo
+        self.assertEqual(self.vm.strip[0].comp.ratio, 5.0)
+
+    def test_reset_and_bypass_leave_nothing_to_undo(self):
+        panel = self.panel
+        panel.controls["knob"]["slider"].setValue(32)
+        panel.reset()
+        self.assertTrue(panel.amount_notice.isHidden())
+        self.assertEqual(compressor_state(self.vm), COMPRESSOR)
+
+        panel.controls["knob"]["slider"].setValue(32)
+        self.bypass(panel, True)
+        self.assertTrue(panel.amount_notice.isHidden())
+
+    def test_a_single_slider_block_needs_no_notice(self):
+        denoiser = main.DenoiserControl(self.vm)
+        self.assertIsNone(denoiser.amount_notice)
+        denoiser.controls["knob"]["slider"].setValue(50)
+        self.assertEqual(self.vm.strip[0].denoiser.knob, 5.0)
+
     def test_timing_goes_through_sendtext(self):
         """Do-not-regress: the float setter can crash for these parameters."""
         self.vm.sent.clear()
@@ -435,6 +484,24 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(self.mixer(), before)
         self.assertEqual(window.strips["Game"].gain_label.text(), "-12.00 dB")
         self.assertFalse(window.strips["Mic"].mute_button.isChecked())
+
+    def test_load_always_says_what_it_did(self):
+        window = self.window
+        window.save_profile("Main")
+        self.assertIn("Saved", window.profile_status.text())
+
+        window.profile_load_button.click()
+        self.assertIn("already matches", window.profile_status.text())
+
+        window.strips["Game"].fader.setValue(-600)
+        window.strips["Media"].mute_button.click()
+        window.profile_load_button.click()
+        self.assertEqual(
+            window.profile_status.text(),
+            "Loaded “Main”: changed Game, Media.",
+        )
+        self.assertEqual(self.vm.strip[5].gain, 0.0)
+        self.assertFalse(self.vm.strip[7].mute)
 
     def test_profiles_are_stored_and_deleted(self):
         window = self.window

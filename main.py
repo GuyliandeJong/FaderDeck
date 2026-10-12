@@ -1078,6 +1078,10 @@ class ProcessingPanel(QWidget):
         self._snapshot = {}
         # State to restore when bypass is switched off, or None.
         self._bypassed = None
+        # State from before Amount was moved, for UNDO; None when there is
+        # nothing to undo. See _before_amount_change().
+        self._amount_undo = None
+        self.amount_notice = None
         self._sync_hold_until = 0.0
 
         self.panel_layout = QVBoxLayout(self)
@@ -1118,6 +1122,8 @@ class ProcessingPanel(QWidget):
             self.add_slider(grid, row, *parameter)
             row += 1
             if parameter[1] == "knob" and len(self.PARAMETERS) > 1:
+                grid.addWidget(self._build_amount_notice(), row, 0)
+                row += 1
                 # Amount is VoiceMeeter's one-knob control; the rest fine-tune.
                 heading = QLabel("ADVANCED")
                 heading.setStyleSheet(
@@ -1132,6 +1138,75 @@ class ProcessingPanel(QWidget):
         self.panel_layout.addStretch(1)
         self._restore_bypass()
         self.sync_from_voicemeeter()
+
+    # Amount is a preset dial in VoiceMeeter: moving it replaces the advanced
+    # values with VoiceMeeter's own for that amount. That cannot be switched
+    # off, so the panel says what happened and offers the way back.
+
+    def _build_amount_notice(self):
+        self.amount_notice = QWidget()
+        self.amount_notice.setObjectName("amountNotice")
+        self.amount_notice.setStyleSheet(
+            "QWidget#amountNotice { background: #2a2413; "
+            "border: 1px solid #6b5a24; border-radius: 5px; }"
+        )
+        layout = QHBoxLayout(self.amount_notice)
+        layout.setContentsMargins(8, 3, 4, 3)
+        text = QLabel(
+            "Amount replaced the advanced values with VoiceMeeter's preset."
+        )
+        text.setStyleSheet("color: #e8d9a6; font-size: 11px;")
+        text.setToolTip(
+            "In VoiceMeeter, Amount is a preset dial: every position has its "
+            "own ratio, threshold, attack and release. Your own advanced "
+            "values are replaced when it moves."
+        )
+        undo = QPushButton("UNDO")
+        undo.setFixedHeight(22)
+        undo.setStyleSheet("QPushButton { padding: 1px 10px; font-size: 11px; }")
+        undo.setToolTip("Bring back Amount and the advanced values from before")
+        undo.clicked.connect(self.undo_amount)
+        layout.addWidget(text, 1)
+        layout.addWidget(undo)
+        self.amount_notice.setVisible(False)
+        return self.amount_notice
+
+    def _before_amount_change(self, key):
+        """Remember the values the first time Amount is moved by hand."""
+        if key != "knob" or self.amount_notice is None:
+            return
+        if self._amount_undo is None and self._bypassed is None:
+            try:
+                self._amount_undo = self._read_state()
+            except Exception:
+                self._amount_undo = None
+
+    def _after_change(self, key):
+        if self.amount_notice is None:
+            return
+        if key == "knob":
+            self.amount_notice.setVisible(self._amount_undo is not None)
+        else:
+            # Changing an advanced value means carrying on from here.
+            self._forget_amount_undo()
+
+    def _forget_amount_undo(self):
+        self._amount_undo = None
+        if self.amount_notice is not None:
+            self.amount_notice.setVisible(False)
+
+    def undo_amount(self):
+        state = self._amount_undo
+        self._forget_amount_undo()
+        if not state:
+            return
+        try:
+            self._restore_state(state)
+        except Exception as e:
+            log.error(
+                f"Failed to undo {self.LABEL} Amount: {type(e).__name__}: {e}"
+            )
+            self.sync_from_voicemeeter()
 
     def build_extras(self):
         """Add controls that are not sliders. Nothing by default."""
@@ -1259,10 +1334,12 @@ class ProcessingPanel(QWidget):
                     f"Value must be between {control['minimum']:g} "
                     f"and {control['maximum']:g}."
                 )
+            self._before_amount_change(key)
             self._set_slider(key, actual)
             edit.setText(self.format_actual(key, actual))
             self.set_parameter(key, actual)
             self._amount_changed(key, actual)
+            self._after_change(key)
         except Exception as e:
             log.error(
                 f"Invalid {self.LABEL} {key} value: {type(e).__name__}: {e}"
@@ -1280,8 +1357,10 @@ class ProcessingPanel(QWidget):
         actual = self._from_slider(key, value)
         self.controls[key]["edit"].setText(self.format_actual(key, actual))
         try:
+            self._before_amount_change(key)
             self.set_parameter(key, actual)
             self._amount_changed(key, actual)
+            self._after_change(key)
         except Exception as e:
             log.error(
                 f"Failed to set {self.LABEL} {key}: {type(e).__name__}: {e}"
@@ -1307,6 +1386,7 @@ class ProcessingPanel(QWidget):
     def _restore_state(self, state):
         """Send a state from _read_state() back to VoiceMeeter."""
         values = state["values"]
+        self._forget_amount_undo()
         # VoiceMeeter reports in-between values while a batch of changes is
         # being applied (Release has been seen at 0). Show the values being
         # sent and read back once things have settled.
@@ -1363,6 +1443,7 @@ class ProcessingPanel(QWidget):
                     self.bypass_button.setChecked(False)
                     return
                 self._bypassed = state
+                self._forget_amount_undo()
                 self.settings.setValue(
                     self._bypass_setting(), json.dumps(state)
                 )
@@ -1530,6 +1611,7 @@ class CompressorControl(ProcessingPanel):
 
     def on_makeup_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
+        self._forget_amount_undo()
         try:
             self.target.makeup = enabled
         except Exception as e:
@@ -4587,9 +4669,14 @@ class MainWindow(QMainWindow):
                 "QPushButton { padding: 1px 4px; font-size: 11px; }"
             )
             profile_buttons.addWidget(button)
+        self.profile_status = QLabel("")
+        self.profile_status.setWordWrap(True)
+        self.profile_status.setStyleSheet("color: #8ba0b5; font-size: 11px;")
+        self.profile_status.setVisible(False)
         profile_layout.addWidget(profile_title)
         profile_layout.addWidget(self.profile_list)
         profile_layout.addLayout(profile_buttons)
+        profile_layout.addWidget(self.profile_status)
         processing_wrapper_layout.addWidget(
             self.profile_panel,
             0,
@@ -4947,6 +5034,7 @@ class MainWindow(QMainWindow):
         }
         self.store_profiles(profiles)
         self.refresh_profile_list(select=name)
+        self.show_profile_status(f"Saved the current mixer as \u201c{name}\u201d.")
         return True
 
     def apply_profile(self, name):
@@ -4954,13 +5042,35 @@ class MainWindow(QMainWindow):
         profile = self.load_profiles().get(name)
         if not isinstance(profile, dict) or not self.connected:
             return False
+        before = {
+            strip_name: strip.profile_state()
+            for strip_name, strip in self.strips.items()
+        }
         applied = True
         for strip_name, strip in self.strips.items():
             state = profile.get(strip_name)
             if not isinstance(state, dict) or not strip.apply_profile(state):
                 applied = False
+        changed = [
+            strip_name
+            for strip_name, strip in self.strips.items()
+            if strip.profile_state() != before[strip_name]
+        ]
+        # A press on LOAD always gets an answer, also when nothing differed.
+        if changed:
+            self.show_profile_status(
+                f"Loaded \u201c{name}\u201d: changed {', '.join(changed)}."
+            )
+        else:
+            self.show_profile_status(
+                f"\u201c{name}\u201d already matches the mixer; nothing to change."
+            )
         self.sync_tray()
         return applied
+
+    def show_profile_status(self, text):
+        self.profile_status.setText(text)
+        self.profile_status.setVisible(bool(text))
 
     def delete_profile(self, name):
         profiles = self.load_profiles()
