@@ -186,7 +186,7 @@ The single-instance name changed with the rename, so an old VMStreamer and Fader
 
 ## Logo
 
-The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints with the same gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.
+The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.
 
 ## Tests
 

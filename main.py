@@ -942,11 +942,11 @@ STRIP_COLORS = {
 
 
 class Wordmark(QWidget):
-    """The program's name in the header, drawn with the logo's gradient.
+    """The program's name in the header.
 
-    "Fader" is heavy and "Deck" is light, so the name reads as a mark and
-    not as a line of text. A stylesheet cannot colour text with a gradient,
-    hence the painting.
+    "Fader" is heavy and white; "Deck" is light and carries the logo's
+    gradient, so the name reads as a mark and not as a line of text. A
+    stylesheet cannot colour text with a gradient, hence the painting.
     """
 
     WORDS = (("Fader", QFont.Weight.ExtraBold), ("Deck", QFont.Weight.Normal))
@@ -972,20 +972,27 @@ class Wordmark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        gradient = QLinearGradient(0, 0, self.width(), 0)
-        gradient.setColorAt(0.0, QColor(LOGO_GRADIENT[0]))
-        gradient.setColorAt(1.0, QColor(LOGO_GRADIENT[1]))
-        painter.setPen(QPen(QBrush(gradient), 1))
         x = 0.0
-        for (text, _weight), font in zip(self.WORDS, self._fonts):
-            metrics = QFontMetricsF(font)
+        last = len(self.WORDS) - 1
+        for index, ((text, _weight), font) in enumerate(
+            zip(self.WORDS, self._fonts)
+        ):
+            advance = QFontMetricsF(font).horizontalAdvance(text)
+            if index == last:
+                # The gradient runs across this word only, blue to purple.
+                gradient = QLinearGradient(x, 0, x + advance, 0)
+                gradient.setColorAt(0.0, QColor(LOGO_GRADIENT[0]))
+                gradient.setColorAt(1.0, QColor(LOGO_GRADIENT[1]))
+                painter.setPen(QPen(QBrush(gradient), 1))
+            else:
+                painter.setPen(QColor("#e6edf3"))
             painter.setFont(font)
             painter.drawText(
-                QRectF(x, 0, metrics.horizontalAdvance(text) + 1, self.height()),
+                QRectF(x, 0, advance + 1, self.height()),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 text,
             )
-            x += metrics.horizontalAdvance(text)
+            x += advance
         painter.end()
 
 
