@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
     QDialog,
     QMenu,
+    QSystemTrayIcon,
     QPushButton,
 
     QProgressBar,
@@ -379,6 +380,14 @@ STRIPS = {
 
 # The Mic strip is the only strip with processing controls and a VU meter.
 MIC_STRIP = STRIPS["Mic"]
+
+def setting_bool(settings, key, default):
+    """Read a yes/no setting; QSettings may hand it back as text."""
+    value = settings.value(key, default)
+    if isinstance(value, str):
+        return value.strip().casefold() in ("true", "1", "yes")
+    return bool(value)
+
 
 # Global hotkeys: they work while VMStreamer is in the background, through
 # Win32 RegisterHotKey. A registered combination is taken away from every
@@ -3753,7 +3762,22 @@ class SettingsDialog(QDialog):
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #f85149;")
         self.error_label.setWordWrap(True)
+        self.error_label.setVisible(False)
         self.form.addRow("", self.error_label)
+
+        self.add_heading("WINDOW")
+        self.close_to_tray = QCheckBox(
+            "Keep running in the system tray when the window is closed"
+        )
+        self.close_to_tray.setChecked(current["close_to_tray"])
+        self.form.addRow(self.close_to_tray)
+        self.start_minimized = QCheckBox("Start minimised to the tray")
+        self.start_minimized.setChecked(current["start_minimized"])
+        self.form.addRow(self.start_minimized)
+        self.add_note(
+            "Click the tray icon to show the window again. "
+            "Right-click it to mute the microphone or quit."
+        )
 
         layout.addStretch(1)
         buttons = QDialogButtonBox(
@@ -3783,6 +3807,7 @@ class SettingsDialog(QDialog):
     def accept(self):
         text = self.hotkey_text()
         if text and parse_hotkey(text) is None:
+            self.error_label.setVisible(True)
             self.error_label.setText(
                 f"{text} cannot be used as a global hotkey. Use Ctrl, Shift "
                 "or Alt together with a letter, a digit or F1-F24."
@@ -3794,6 +3819,8 @@ class SettingsDialog(QDialog):
         return {
             "mic_strip": int(self.mic_input.currentData()),
             "hotkey_mic_mute": self.hotkey_text(),
+            "close_to_tray": self.close_to_tray.isChecked(),
+            "start_minimized": self.start_minimized.isChecked(),
         }
 
 
@@ -4209,6 +4236,17 @@ class MainWindow(QMainWindow):
         if not restored:
             self.main_splitter.reset_sizes()
 
+        # True once the program is really quitting, as opposed to the window
+        # being closed to the tray.
+        self._quitting = False
+        self.tray = None
+        self.create_tray()
+        # Windows is shutting down or the user is signing out: do not answer
+        # that by hiding in the tray, which would hold the shutdown up.
+        QApplication.instance().commitDataRequest.connect(
+            self.prepare_to_quit
+        )
+
         self.hotkey_filter = HotkeyFilter(self.on_hotkey)
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         self.register_hotkeys()
@@ -4337,6 +4375,7 @@ class MainWindow(QMainWindow):
         # Controls that would write to VoiceMeeter are greyed out meanwhile.
         self.mixer_container.setEnabled(self.connected)
         self.processing_toggle.setEnabled(self.connected)
+        self.sync_tray()
 
     def create_strips(self):
         if self.strips:
@@ -4594,6 +4633,76 @@ class MainWindow(QMainWindow):
             self.mic_level_bar.set_level(max(left, right))
 
 
+    def create_tray(self):
+        """Add the tray icon with its menu, when the desktop has a tray."""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+
+        icon = QApplication.instance().windowIcon()
+        if icon.isNull():
+            icon = QIcon(resource_path("vmstreamer.ico"))
+        self.tray = QSystemTrayIcon(icon, self)
+
+        menu = QMenu(self)
+        menu.addAction("Show VMStreamer").triggered.connect(
+            self.show_from_tray
+        )
+        self.tray_mute_action = menu.addAction("Mute microphone")
+        self.tray_mute_action.setCheckable(True)
+        self.tray_mute_action.triggered.connect(self.toggle_mic_mute)
+        menu.addSeparator()
+        menu.addAction("Quit").triggered.connect(self.quit_application)
+
+        self.tray.setContextMenu(menu)
+        self.tray.activated.connect(self.on_tray_activated)
+        self.tray.setToolTip("VMStreamer")
+        self.tray.show()
+
+    def on_tray_activated(self, reason):
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            if self.isVisible() and not self.isMinimized():
+                self.hide()
+            else:
+                self.show_from_tray()
+
+    def show_from_tray(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def sync_tray(self):
+        """Show the Mic mute state on the tray icon and in its menu."""
+        if self.tray is None:
+            return
+        mic = self.strips.get("Mic")
+        muted = bool(mic is not None and mic.mute_button.isChecked())
+        self.tray_mute_action.setChecked(muted)
+        self.tray_mute_action.setEnabled(self.connected)
+        self.tray.setToolTip(
+            "VMStreamer — microphone muted" if muted else "VMStreamer"
+        )
+
+    def close_to_tray_enabled(self):
+        return self.tray is not None and setting_bool(
+            self.window_settings, "close_to_tray", True
+        )
+
+    def start_minimized_enabled(self):
+        return self.tray is not None and setting_bool(
+            self.window_settings, "start_minimized", False
+        )
+
+    def prepare_to_quit(self, *_args):
+        self._quitting = True
+
+    def quit_application(self):
+        """Really quit, from the tray menu."""
+        self._quitting = True
+        self.close()
+
     def current_settings(self):
         """The stored program settings, with their defaults."""
         settings = self.window_settings
@@ -4609,6 +4718,8 @@ class MainWindow(QMainWindow):
                 settings.value("hotkey_mic_mute", DEFAULT_MIC_MUTE_HOTKEY)
                 or ""
             ),
+            "close_to_tray": setting_bool(settings, "close_to_tray", True),
+            "start_minimized": setting_bool(settings, "start_minimized", False),
         }
 
     def open_settings(self):
@@ -4676,6 +4787,7 @@ class MainWindow(QMainWindow):
         muted = not mic.mute_button.isChecked()
         mic.mute_button.setChecked(muted)
         mic.on_mute_clicked(muted)
+        self.sync_tray()
 
     def on_vm_event(self, event):
 
@@ -4694,6 +4806,7 @@ class MainWindow(QMainWindow):
                 and self.processing_dialog.isVisible()
             ):
                 self.sync_processing_controls()
+            self.sync_tray()
 
     def sync_processing_controls(self):
         for control in (
@@ -4712,7 +4825,23 @@ class MainWindow(QMainWindow):
 
         The event thread must no longer be making C API
         calls when the VoiceMeeter connection is closed.
+
+        With "keep running in the tray" on, closing the window only hides
+        it; Quit in the tray menu ends the program.
         """
+        if self.close_to_tray_enabled() and not self._quitting:
+            event.ignore()
+            self.hide()
+            if not setting_bool(self.window_settings, "tray_hint_shown", False):
+                self.window_settings.setValue("tray_hint_shown", True)
+                self.tray.showMessage(
+                    "VMStreamer is still running",
+                    "It stays in the system tray. Right-click the icon to "
+                    "quit, or change this in Settings.",
+                    self.tray.icon(),
+                    5000,
+                )
+            return
 
 
         if self.application_control is not None:
@@ -4738,7 +4867,12 @@ class MainWindow(QMainWindow):
         self._save_processing_geometry()
         self.window_settings.sync()
 
+        if self.tray is not None:
+            self.tray.hide()
         event.accept()
+        # The tray keeps the program alive without a window, so closing the
+        # last window no longer ends it by itself.
+        QApplication.instance().quit()
 
 
 def resource_path(filename):
@@ -4773,11 +4907,15 @@ def main():
     app.setFont(base_font)
 
 
+    # With a tray icon the program lives on while its window is hidden.
+    app.setQuitOnLastWindowClosed(False)
+
     window = MainWindow()
 
     if not app_icon.isNull():
         window.setWindowIcon(app_icon)
-    window.show()
+    if not window.start_minimized_enabled():
+        window.show()
 
     sys.exit(
         app.exec()
