@@ -23,7 +23,7 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Solo
 - Mono
 - Output routing buttons A1–A3 and B1–B3 on every channel, shown with the bus names you gave them in VoiceMeeter
-- Mixer profiles: save gain, mute, solo, mono and routing of all channels under a name, and load them again
+- Mixer profiles: save the whole setup under a name and load it again: gain, mute, solo, mono and routing of all channels, and the mic processing
 - Live level meters on every channel, with a dB scale on the faders
 - Reconnects by itself when VoiceMeeter is closed and started again
 - Global hotkeys to mute the microphone (Ctrl+Shift+M by default) and each of Game, Chat and Media

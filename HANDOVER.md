@@ -135,7 +135,7 @@ Only one VMStreamer runs at a time. `main()` claims a named mutex (`acquire_sing
 
 ## Mixer Profiles, Routing and Hotkeys
 
-A mixer profile stores gain, mute, solo, mono and the routing buttons of all four strips (`save_profile`, `apply_profile`, `delete_profile`; QSettings key `mixer_profiles`, JSON). `StripWidget.apply_profile()` sends each value through the same handler as a click, so only what differs reaches VoiceMeeter. Profiles and mic processing presets are separate on purpose.
+A mixer profile stores gain, mute, solo, mono and the routing buttons of all four strips (`save_profile`, `apply_profile`, `delete_profile`; QSettings key `mixer_profiles`, JSON). `StripWidget.apply_profile()` sends each value through the same handler as a click, so only what differs reaches VoiceMeeter. A profile also holds the three mic processing blocks under the key `processing` (`PROFILE_PROCESSING`), because users expect a profile to be the whole setup; profiles saved by v1.3.0 lack it and leave the processing alone. The presets in the Mic Processing window hold the processing only.
 
 Every strip has the routing rows A1–A3 and B1–B3 (`ROUTE_ROWS`). A button shows the bus name from VoiceMeeter when the bus has one (`route_name`).
 
@@ -146,6 +146,12 @@ The fader's unit is 0.01 dB. One wheel notch moves 0.5 dB, Shift+wheel and the a
 `update_processing_summary()` shows each block's Amount under the MIC PROCESSING button and marks a bypassed or switched-off block on its tab. It reads three values per change event; the full panels are still only synchronized while their window is open.
 
 `VMStreamer.exe --quit` (and `python main.py --quit`) asks the running instance to quit through a registered window message, handled like the tray's Quit.
+
+## Amount Notice and Reference Ticks
+
+Moving Amount by hand shows a notice under it with UNDO (`_before_amount_change`, `undo_amount`): VoiceMeeter replaces the advanced values when Amount moves and that cannot be switched off. The state from before the first move is kept until UNDO, a change to an advanced value, or any restore.
+
+The tick under each slider marks what RESET returns to (`set_reference`). That is the state the window opened with, until a preset or profile is loaded or saved; from then on that one is the reference. Users read the ticks as "where the values belong", so they must follow a load.
 
 ## Tests
 

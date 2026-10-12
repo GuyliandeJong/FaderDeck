@@ -492,7 +492,7 @@ class ProfileTest(unittest.TestCase):
 
         window.profile_load_button.click()
         self.assertEqual(
-            window.profile_status.text(), "Faders and buttons already match."
+            window.profile_status.text(), "Already matches; nothing to change."
         )
 
         window.strips["Game"].fader.setValue(-600)
@@ -505,13 +505,55 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(self.vm.strip[5].gain, 0.0)
         self.assertFalse(self.vm.strip[7].mute)
 
+    def test_a_profile_brings_back_the_mic_processing_too(self):
+        """Reported: after changing the compressor, LOAD on the main screen
+        said everything matched. A profile is the whole setup."""
+        window, mic = self.window, self.vm.strip[0]
+        window.save_profile("Main")
+
+        window.compressor_control.controls["knob"]["slider"].setValue(37)
+        window.gate_control.controls["knob"]["slider"].setValue(29)
+        self.assertEqual(mic.comp.threshold, -40.0)
+        self.assertEqual(mic.gate.hold, 500.0)
+
+        window.profile_load_button.click()
+        self.assertEqual(compressor_state(self.vm), COMPRESSOR)
+        self.assertEqual((mic.gate.knob, mic.gate.threshold, mic.gate.hold), (2.0, -38.0, 120.0))
+        self.assertEqual(window.profile_status.text(), "Loaded. Changed: Mic processing.")
+        self.assertEqual(
+            window.processing_summary.text(),
+            "Compressor: 3.1\nGate: 2.0\nDenoiser: 2.0",
+        )
+        self.assertTrue(window.compressor_control.amount_notice.isHidden())
+
+    def test_a_profile_saved_without_processing_leaves_it_alone(self):
+        window, mic = self.window, self.vm.strip[0]
+        window.save_profile("Old")
+        profiles = window.load_profiles()
+        del profiles["Old"]["processing"]          # as saved by v1.3.0
+        window.store_profiles(profiles)
+        self.assertFalse(window.profile_has_processing("Old"))
+
+        window.compressor_control.controls["knob"]["slider"].setValue(37)
+        window.strips["Game"].fader.setValue(-600)
+        self.assertTrue(window.apply_profile("Old"))
+        self.assertEqual(self.vm.strip[5].gain, 0.0)
+        self.assertEqual(mic.comp.knob, 3.7, "processing untouched")
+        self.assertEqual(window.profile_status.text(), "Loaded. Changed: Game.")
+
+        window.save_profile("Old")                 # saving again adds it
+        self.assertTrue(window.profile_has_processing("Old"))
+
     def test_profiles_are_stored_and_deleted(self):
         window = self.window
         window.save_profile("Streaming")
         window.save_profile(" Gaming ")
         stored = json.loads(FakeSettings.store["mixer_profiles"])
         self.assertEqual(sorted(stored), ["Gaming", "Streaming"])
-        self.assertEqual(sorted(stored["Gaming"]), ["Chat", "Game", "Media", "Mic"])
+        self.assertEqual(
+            sorted(stored["Gaming"]),
+            ["Chat", "Game", "Media", "Mic", "processing"],
+        )
         self.assertTrue(window.delete_profile("Gaming"))
         self.assertFalse(window.delete_profile("Gaming"))
         self.assertFalse(window.save_profile("  "))
@@ -602,6 +644,30 @@ class PresetTest(unittest.TestCase):
         comp.release = 80.0                 # a later change is shown again
         panel.sync_from_voicemeeter()
         self.assertEqual(panel.controls["release"]["edit"].text(), "80.0 ms")
+
+    def test_ticks_point_at_the_loaded_preset(self):
+        """Reported: after LOAD the sliders did not sit on their ticks, which
+        read as "not loaded". The ticks mark what RESET returns to, and that
+        is the preset once one has been loaded."""
+        window = self.window
+        panel = window.gate_control
+        window.save_preset("Main")
+        panel.controls["knob"]["slider"].setValue(29)   # VoiceMeeter's preset values
+        panel.take_snapshot()                           # window opened like this
+        self.assertNotEqual(
+            panel.controls["hold"]["slider"]._mark,
+            panel._to_slider("hold", 120.0),
+        )
+
+        window.apply_preset("Main")
+        for key in ("knob", "threshold", "hold", "release"):
+            with self.subTest(key=key):
+                slider = panel.controls[key]["slider"]
+                self.assertEqual(slider._mark, slider.value())
+
+        panel._apply("hold", 700.0)
+        panel.reset()
+        self.assertEqual(self.mic.gate.hold, 120.0, "RESET returns to the preset")
 
     def test_presets_are_stored_as_json_and_can_be_deleted(self):
         window = self.window

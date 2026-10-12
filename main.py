@@ -614,6 +614,10 @@ def outline_toggle_style(color):
     )
 
 
+# Key under which a mixer profile keeps the mic processing blocks, next to
+# its strips.
+PROFILE_PROCESSING = "processing"
+
 # Routing buttons of every strip, and the VoiceMeeter bus behind each one.
 ROUTE_ROWS = (("A1", "A2", "A3"), ("B1", "B2", "B3"))
 ROUTE_BUS = {"A1": 0, "A2": 1, "A3": 2, "B1": 5, "B2": 6, "B3": 7}
@@ -1161,6 +1165,7 @@ class ProcessingPanel(QWidget):
             "own ratio, threshold, attack and release. Your own advanced "
             "values are replaced when it moves."
         )
+        self.amount_notice.setFixedHeight(30)
         undo = QPushButton("UNDO")
         undo.setFixedHeight(22)
         undo.setStyleSheet("QPushButton { padding: 1px 10px; font-size: 11px; }")
@@ -1489,9 +1494,12 @@ class ProcessingPanel(QWidget):
                 return False
             if self._bypassed is not None:
                 self._clear_bypass()
-            self._restore_state(
-                {"values": values, "extras": dict(state.get("extras") or {})}
-            )
+            applied = {
+                "values": values,
+                "extras": dict(state.get("extras") or {}),
+            }
+            self._restore_state(applied)
+            self.set_reference(applied)
             return True
         except Exception as e:
             log.error(
@@ -1506,14 +1514,29 @@ class ProcessingPanel(QWidget):
         """Remember the current values as the target of RESET."""
         try:
             # While bypassed, the state to return to is the one bypass kept.
-            self._snapshot = self._bypassed or self._read_state()
+            self.set_reference(self._bypassed or self._read_state())
         except Exception as e:
             log.error(
                 f"Failed to read {self.LABEL}: {type(e).__name__}: {e}"
             )
-            return
-        for key, actual in self._snapshot["values"].items():
-            self.controls[key]["slider"].set_mark(self._to_slider(key, actual))
+
+    def set_reference(self, state):
+        """Make a state the one RESET returns to and the ticks point at.
+
+        That is the state the window opened with, until a preset or profile
+        is loaded or saved: from then on that one is the reference.
+        """
+        values = dict((self._snapshot or {}).get("values", {}))
+        values.update(state["values"])
+        self._snapshot = {
+            "values": values,
+            "extras": dict(state.get("extras") or {}),
+        }
+        for key, actual in values.items():
+            if key in self.controls:
+                self.controls[key]["slider"].set_mark(
+                    self._to_slider(key, actual)
+                )
 
     def reset(self):
         if not self._snapshot:
@@ -4649,9 +4672,9 @@ class MainWindow(QMainWindow):
             "color: #8ba0b5; font-size: 11px; font-weight: bold;"
         )
         profile_title.setToolTip(
-            "Saved gain, mute, solo, mono and routing of all four channels. "
-            "Mic processing is not part of it; that has its own presets in "
-            "the Mic Processing window."
+            "The whole setup under one name: gain, mute, solo, mono and "
+            "routing of all four channels, and the mic processing. The "
+            "presets in the Mic Processing window change the processing only."
         )
         self.profile_list = QComboBox()
         profile_buttons = QHBoxLayout()
@@ -4915,8 +4938,8 @@ class MainWindow(QMainWindow):
                 self.processing_dialog.setWindowFlag(
                     Qt.WindowType.WindowContextHelpButtonHint, False
                 )
-                self.processing_dialog.setMinimumSize(560, 430)
-                self.processing_dialog.resize(620, 500)
+                self.processing_dialog.setMinimumSize(560, 520)
+                self.processing_dialog.resize(620, 540)
 
                 dialog_layout = QVBoxLayout(self.processing_dialog)
                 dialog_layout.setContentsMargins(8, 8, 8, 8)
@@ -4998,7 +5021,7 @@ class MainWindow(QMainWindow):
                 self.processing_dialog.adjustSize()
                 self.processing_dialog.resize(
                     max(560, self.processing_dialog.width()),
-                    max(430, self.processing_dialog.height()),
+                    max(520, self.processing_dialog.height()),
                 )
                 self._place_processing_dialog()
 
@@ -5009,8 +5032,9 @@ class MainWindow(QMainWindow):
             if self.processing_dialog is not None:
                 self.processing_dialog.close()
 
-    # Mixer profiles: the state of all four strips under a name, stored as
-    # JSON under "mixer_profiles". Mic processing has its own presets.
+    # Mixer profiles: the state of all four strips and the mic processing
+    # under a name, stored as JSON under "mixer_profiles". The presets in the
+    # Mic Processing window hold the processing alone.
 
     def load_profiles(self):
         raw = self.window_settings.value("mixer_profiles", "")
@@ -5031,14 +5055,34 @@ class MainWindow(QMainWindow):
         if not name or not self.strips:
             return False
         profiles = self.load_profiles()
-        profiles[name] = {
+        profile = {
             strip_name: strip.profile_state()
             for strip_name, strip in self.strips.items()
         }
+        # A profile is the whole setup, so the mic processing belongs to it.
+        blocks = self.processing_blocks()
+        if all(blocks.values()):
+            profile[PROFILE_PROCESSING] = {
+                label: control.preset_state()
+                for label, control in blocks.items()
+            }
+            for label, control in blocks.items():
+                control.set_reference(profile[PROFILE_PROCESSING][label])
+        profiles[name] = profile
         self.store_profiles(profiles)
         self.refresh_profile_list(select=name)
         self.show_profile_status("Saved.")
         return True
+
+    def processing_values(self):
+        """Current values of the three processing blocks, for comparing."""
+        values = {}
+        for label, control in self.processing_blocks().items():
+            try:
+                values[label] = control._read_state() if control else None
+            except Exception:
+                values[label] = None
+        return values
 
     def apply_profile(self, name):
         """Send a stored profile to VoiceMeeter. False if any strip failed."""
@@ -5049,25 +5093,45 @@ class MainWindow(QMainWindow):
             strip_name: strip.profile_state()
             for strip_name, strip in self.strips.items()
         }
+        processing_before = self.processing_values()
         applied = True
         for strip_name, strip in self.strips.items():
             state = profile.get(strip_name)
             if not isinstance(state, dict) or not strip.apply_profile(state):
                 applied = False
+
+        # Profiles saved before v1.3.1 have no mic processing in them.
+        processing = profile.get(PROFILE_PROCESSING)
+        if isinstance(processing, dict):
+            for label, control in self.processing_blocks().items():
+                if control is None or not control.apply_preset(
+                    processing.get(label)
+                ):
+                    applied = False
+
         changed = [
             strip_name
             for strip_name, strip in self.strips.items()
             if strip.profile_state() != before[strip_name]
         ]
+        if self.processing_values() != processing_before:
+            changed.append("Mic processing")
         # A press on LOAD always gets an answer, also when nothing differed.
         if changed:
             self.show_profile_status(
                 f"Loaded. Changed: {', '.join(changed)}."
             )
         else:
-            self.show_profile_status("Faders and buttons already match.")
+            self.show_profile_status("Already matches; nothing to change.")
+        self.update_processing_summary()
         self.sync_tray()
         return applied
+
+    def profile_has_processing(self, name):
+        profile = self.load_profiles().get(name)
+        return isinstance(profile, dict) and isinstance(
+            profile.get(PROFILE_PROCESSING), dict
+        )
 
     def show_profile_status(self, text):
         self.profile_status.setText(text)
@@ -5096,11 +5160,22 @@ class MainWindow(QMainWindow):
 
     def on_profile_load(self):
         name = self.profile_list.currentText()
-        if name and not self.apply_profile(name):
+        if not name:
+            return
+        if not self.apply_profile(name):
             QMessageBox.warning(
                 self,
                 "VMStreamer",
                 f"The profile \u201c{name}\u201d could not be applied completely.",
+            )
+        elif not self.profile_has_processing(name):
+            QMessageBox.information(
+                self,
+                "VMStreamer",
+                f"\u201c{name}\u201d was saved before profiles included the mic "
+                "processing, so the compressor, gate and denoiser were left "
+                "as they are.\n\nTo add them, set the mic processing the way "
+                "you want it and save the profile again under the same name.",
             )
 
     def on_profile_save(self):
@@ -5194,6 +5269,8 @@ class MainWindow(QMainWindow):
         }
         self.store_presets(presets)
         self.refresh_preset_list(select=name)
+        for label, control in self.processing_blocks().items():
+            control.set_reference(presets[name][label])
         return True
 
     def apply_preset(self, name):
