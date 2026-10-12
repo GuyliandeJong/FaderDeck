@@ -3733,13 +3733,7 @@ class SettingsDialog(QDialog):
         self.add_heading("MIXER")
         self.mic_input = QComboBox()
         for index in range(HARDWARE_INPUTS):
-            text = f"Hardware Input {index + 1}"
-            try:
-                # The name given to the strip in VoiceMeeter, when there is one.
-                label = str(vm.strip[index].label).strip() if vm else ""
-            except Exception:
-                label = ""
-            self.mic_input.addItem(f"{text} — {label}" if label else text, index)
+            self.mic_input.addItem(self.input_name(vm, index), index)
         self.mic_input.setCurrentIndex(current["mic_strip"])
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note(
@@ -3787,6 +3781,25 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    @staticmethod
+    def input_name(vm, index):
+        """Describe a hardware input by what is connected to it.
+
+        "Hardware Input 2" alone says nothing; the audio device selected for
+        it in VoiceMeeter, and the name given to the strip there, do.
+        """
+        text = f"Input {index + 1}"
+        if vm is None:
+            return text
+        try:
+            strip = vm.strip[index]
+            label = str(strip.label or "").strip()
+            device = str(strip.device.name or "").strip()
+        except Exception:
+            return text
+        details = " · ".join(part for part in (label, device) if part)
+        return f"{text} — {details or 'no device'}"
 
     def add_heading(self, text):
         heading = QLabel(text)
