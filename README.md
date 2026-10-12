@@ -27,7 +27,7 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Live level meters on every channel, with a dB scale on the faders
 - Reconnects by itself when VoiceMeeter is closed and started again
 - Global hotkeys to mute the microphone (Ctrl+Shift+M by default) and each of Game, Chat and Media
-- System tray icon: keeps running when the window is closed, with mute and quit in its menu
+- System tray icon: keeps running when the window is closed, with mute and quit in its menu. Hold Shift while closing the window to quit at once
 - Settings window for the microphone input, the hotkey and the tray behaviour
 - Starting VMStreamer a second time shows the running one instead of opening another
 - `VMStreamer.exe --quit` asks the running VMStreamer to quit, for use in scripts

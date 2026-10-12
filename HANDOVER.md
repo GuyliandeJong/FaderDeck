@@ -125,7 +125,7 @@ The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate an
 - `hotkey_mic_mute`: global hotkey, `Ctrl+Shift+M` by default, empty to switch off. Registered with Win32 `RegisterHotKey` on the main window and received through `HotkeyFilter`, a native event filter. `parse_hotkey()` accepts a modifier plus a letter, digit or F1-F24. A registered combination is taken from all other programs while VMStreamer runs.
 - `close_to_tray` (default on) and `start_minimized` (default off).
 
-The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit and Windows' session end (`commitDataRequest`) do. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it VMStreamer would hold up a Windows shutdown.
+The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit, Windows' session end (`commitDataRequest`) and closing with Shift held (`shift_is_held`) do. All three are a normal quit that logs out of VoiceMeeter. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it VMStreamer would hold up a Windows shutdown.
 
 ## Presets and Single Instance
 

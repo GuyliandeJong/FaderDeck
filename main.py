@@ -4122,7 +4122,8 @@ class SettingsDialog(QDialog):
         self.form.addRow(self.start_minimized)
         self.add_note(
             "Click the tray icon to show the window again. "
-            "Right-click it to mute the microphone or quit."
+            "Right-click it to mute the microphone or quit. "
+            "Holding Shift while closing the window quits at once."
         )
 
         layout.addStretch(1)
@@ -5491,6 +5492,14 @@ class MainWindow(QMainWindow):
             self.window_settings, "start_minimized", False
         )
 
+    @staticmethod
+    def shift_is_held():
+        """True while a Shift key is down, asked from the keyboard itself."""
+        return bool(
+            QApplication.queryKeyboardModifiers()
+            & Qt.KeyboardModifier.ShiftModifier
+        )
+
     def prepare_to_quit(self, *_args):
         self._quitting = True
 
@@ -5634,8 +5643,11 @@ class MainWindow(QMainWindow):
         calls when the VoiceMeeter connection is closed.
 
         With "keep running in the tray" on, closing the window only hides
-        it; Quit in the tray menu ends the program.
+        it; Quit in the tray menu ends the program, and so does closing the
+        window with Shift held.
         """
+        if self.shift_is_held():
+            self._quitting = True
         if self.close_to_tray_enabled() and not self._quitting:
             event.ignore()
             self.hide()
@@ -5644,7 +5656,7 @@ class MainWindow(QMainWindow):
                 self.tray.showMessage(
                     "VMStreamer is still running",
                     "It stays in the system tray. Right-click the icon to "
-                    "quit, or change this in Settings.",
+                    "quit, or hold Shift while closing the window.",
                     self.tray.icon(),
                     5000,
                 )

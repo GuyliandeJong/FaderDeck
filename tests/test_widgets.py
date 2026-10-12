@@ -699,6 +699,21 @@ class CloseToTrayTest(unittest.TestCase):
         self.assertIsNone(window.vm)
         self.assertFalse(self.sandbox.vm.logged_in)
 
+    def test_closing_with_shift_held_quits_instead_of_hiding(self):
+        window = self.window
+        window.shift_is_held = lambda: True
+        window.close()
+        pump()
+        self.assertFalse(window.connected)
+        self.assertFalse(self.sandbox.vm.logged_in, "a proper quit logs out")
+
+    def test_closing_without_shift_still_hides(self):
+        window = self.window
+        window.shift_is_held = lambda: False
+        window.close()
+        self.assertFalse(window.isVisible())
+        self.assertTrue(window.connected)
+
     def test_setting_off_means_close_quits(self):
         FakeSettings.store["close_to_tray"] = False
         self.window.close()
