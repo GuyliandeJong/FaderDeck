@@ -267,6 +267,105 @@ class MainWindowTest(unittest.TestCase):
         window.on_hotkey(999)
         self.assertFalse(mic.mute)
 
+    def test_every_channel_has_its_own_mute_hotkey(self):
+        window, vm = self.window, self.sandbox.vm
+        for name, (hotkey_id, _key, _default) in main.MUTE_HOTKEYS.items():
+            with self.subTest(name=name):
+                strip = vm.strip[main.STRIPS[name]]
+                window.on_hotkey(hotkey_id)
+                self.assertTrue(strip.mute)
+                window.on_hotkey(hotkey_id)
+                self.assertFalse(strip.mute)
+
+    def test_settings_window_refuses_unusable_and_double_hotkeys(self):
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        self.assertEqual(dialog.hotkey_problem(), "")
+        sequence = main.QKeySequence
+        game = dialog.hotkey_edits["hotkey_game_mute"]
+        game.setKeySequence(sequence("Ctrl+Shift+M"))
+        self.assertIn("more than one", dialog.hotkey_problem())
+        game.setKeySequence(sequence("G"))
+        self.assertIn("cannot be used", dialog.hotkey_problem())
+        game.setKeySequence(sequence("Ctrl+Alt+G"))
+        self.assertEqual(dialog.hotkey_problem(), "")
+        self.assertEqual(dialog.values()["hotkey_game_mute"], "Ctrl+Alt+G")
+
+    def test_every_strip_has_both_routing_rows(self):
+        vm = self.sandbox.vm
+        for name, strip in self.window.strips.items():
+            with self.subTest(name=name):
+                self.assertEqual(
+                    list(strip.route_buttons),
+                    ["A1", "A2", "A3", "B1", "B2", "B3"],
+                )
+        self.window.strips["Game"].route_buttons["B1"].click()
+        self.assertTrue(vm.strip[5].B1)
+
+    def test_routing_buttons_use_the_bus_names_from_voicemeeter(self):
+        vm = self.sandbox.vm
+        self.assertEqual(main.route_name(vm, "A2"), ("A2", "A2 (hardware output 2)"))
+        vm.bus[5].label = "Stream"
+        self.assertEqual(
+            main.route_name(vm, "B1"),
+            ("Stream", "B1 \u2014 Stream (virtual output)"),
+        )
+        vm.bus[0].label = "Headphones Left"
+        self.assertEqual(main.route_name(vm, "A1")[0], "Headpho\u2026")
+
+    def test_mute_button_is_the_wide_one(self):
+        self.window.resize(1000, 900)
+        self.window.show()
+        pump()
+        strip = self.window.strips["Game"]
+        self.assertGreater(
+            strip.mute_button.width(), strip.solo_button.width() * 1.3
+        )
+
+    def test_fader_steps(self):
+        fader = self.window.strips["Game"].fader
+        self.assertEqual(
+            (fader.wheel_step, fader.singleStep(), fader.pageStep()),
+            (50, 10, 100),
+        )
+        self.assertTrue(self.window.strips["Mic"].fader.show_labels)
+        self.assertFalse(fader.show_labels)
+
+    def test_summary_and_tabs_show_the_processing_state(self):
+        window = self.window
+        window.update_processing_summary()
+        self.assertEqual(
+            window.processing_summary.text(),
+            "Compressor: 3.1\nGate: 2.0\nDenoiser: 2.0",
+        )
+        self.assertEqual(window.processing_tabs.tabText(0), "COMPRESSOR")
+
+        panel = window.compressor_control
+        panel.bypass_button.setChecked(True)
+        panel.on_bypass_clicked(True)
+        window.denoiser_control._apply("knob", 0.0)
+        window.update_processing_summary()
+        self.assertEqual(
+            window.processing_summary.text(),
+            "Compressor: bypassed\nGate: 2.0\nDenoiser: off",
+        )
+        self.assertEqual(window.processing_tabs.tabText(0), "COMPRESSOR \u00b7 BYPASSED")
+        self.assertEqual(window.processing_tabs.tabText(2), "DENOISER \u00b7 OFF")
+
+        panel.bypass_button.setChecked(False)
+        panel.on_bypass_clicked(False)
+        window.update_processing_summary()
+        self.assertEqual(window.processing_tabs.tabText(0), "COMPRESSOR")
+
+    def test_start_button_on_the_offline_banner_connects(self):
+        window, vm = self.window, self.sandbox.vm
+        self.sandbox.running = False
+        window.check_connection()
+        self.assertFalse(window.connected)
+        self.assertFalse(window.profile_panel.isEnabled())
+        window.connect_vm()                 # what START VOICEMEETER does
+        self.assertTrue(window.connected and vm.logged_in)
+        self.assertTrue(window.offline_banner.isHidden())
+
     def test_hotkey_does_nothing_while_disconnected(self):
         self.sandbox.running = False
         self.window.check_connection()
@@ -278,6 +377,9 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.current_settings(), {
             "mic_strip": 0,
             "hotkey_mic_mute": "Ctrl+Shift+M",
+            "hotkey_game_mute": "",
+            "hotkey_chat_mute": "",
+            "hotkey_media_mute": "",
             "close_to_tray": True,
             "start_minimized": False,
         })
@@ -291,6 +393,85 @@ class MainWindowTest(unittest.TestCase):
         self.addCleanup(self.sandbox.close, again)
         self.assertEqual(again.strips["Mic"].strip_index, 3)
         self.assertIs(again.compressor_control.target, self.sandbox.vm.strip[3].comp)
+
+
+class ProfileTest(unittest.TestCase):
+    """A mixer profile holds gain, mute, solo, mono and routing of all strips."""
+
+    def setUp(self):
+        self.sandbox = Sandbox()
+        self.sandbox.__enter__()
+        self.addCleanup(self.sandbox.__exit__)
+        self.window = self.sandbox.window()
+        self.addCleanup(self.sandbox.close, self.window)
+        self.vm = self.sandbox.vm
+
+    def mixer(self):
+        state = {}
+        for name, index in main.STRIPS.items():
+            s = self.vm.strip[index]
+            state[name] = (
+                s.gain, s.mute, s.solo, s.mono,
+                s.A1, s.A2, s.A3, s.B1, s.B2, s.B3,
+            )
+        return state
+
+    def test_save_change_and_load_restores_the_mixer(self):
+        window = self.window
+        window.strips["Game"].fader.setValue(-1200)
+        window.strips["Chat"].route_buttons["B1"].click()
+        before = self.mixer()
+        self.assertEqual(before["Game"][0], -12.0)
+        self.assertTrue(window.save_profile("Streaming"))
+
+        window.strips["Game"].fader.setValue(300)
+        window.strips["Mic"].mute_button.click()
+        window.strips["Chat"].route_buttons["B1"].click()
+        window.strips["Media"].route_buttons["A1"].click()
+        window.strips["Media"].mono_button.click()
+        self.assertNotEqual(self.mixer(), before)
+
+        self.assertTrue(window.apply_profile("Streaming"))
+        self.assertEqual(self.mixer(), before)
+        self.assertEqual(window.strips["Game"].gain_label.text(), "-12.00 dB")
+        self.assertFalse(window.strips["Mic"].mute_button.isChecked())
+
+    def test_profiles_are_stored_and_deleted(self):
+        window = self.window
+        window.save_profile("Streaming")
+        window.save_profile(" Gaming ")
+        stored = json.loads(FakeSettings.store["mixer_profiles"])
+        self.assertEqual(sorted(stored), ["Gaming", "Streaming"])
+        self.assertEqual(sorted(stored["Gaming"]), ["Chat", "Game", "Media", "Mic"])
+        self.assertTrue(window.delete_profile("Gaming"))
+        self.assertFalse(window.delete_profile("Gaming"))
+        self.assertFalse(window.save_profile("  "))
+
+    def test_damaged_and_unknown_profiles_do_no_harm(self):
+        window = self.window
+        before = self.mixer()
+        self.assertFalse(window.apply_profile("Nope"))
+        FakeSettings.store["mixer_profiles"] = "not json"
+        self.assertEqual(window.load_profiles(), {})
+        FakeSettings.store["mixer_profiles"] = json.dumps({
+            "Wild": {
+                "Mic": "nonsense",
+                "Game": {"gain": "loud"},
+                "Chat": {"gain": 999, "mute": 0, "solo": 0, "mono": 0},
+            }
+        })
+        self.assertFalse(window.apply_profile("Wild"))
+        after = self.mixer()
+        self.assertEqual(after["Mic"], before["Mic"])
+        self.assertEqual(after["Game"], before["Game"])
+        self.assertEqual(after["Chat"][0], 12.0, "kept inside the fader range")
+
+    def test_not_applied_while_disconnected(self):
+        window = self.window
+        window.save_profile("Streaming")
+        self.sandbox.running = False
+        window.check_connection()
+        self.assertFalse(window.apply_profile("Streaming"))
 
 
 class PresetTest(unittest.TestCase):
@@ -468,6 +649,16 @@ class CloseToTrayTest(unittest.TestCase):
         # What the native event filter does when the request arrives.
         window.hotkey_filter.show_callback()
         self.assertTrue(window.isVisible())
+
+    def test_quit_request_from_a_script_really_quits(self):
+        """`VMStreamer.exe --quit` reaches the running program as a message."""
+        window = self.window
+        window.close()                      # hidden in the tray
+        self.assertTrue(window.connected)
+        window.hotkey_filter.quit_callback()
+        pump()
+        self.assertFalse(window.connected)
+        self.assertFalse(self.sandbox.vm.logged_in)
 
     def test_tray_shows_the_mute_state(self):
         window = self.window

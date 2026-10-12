@@ -186,6 +186,28 @@ def reference_eye_icon(size=20):
 
 
 MONO_ICONS = {
+    "speaker": """
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+             viewBox="0 0 24 24">
+          <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"
+                fill="none" stroke="#d7e1eb" stroke-width="1.8"
+                stroke-linejoin="round"/>
+          <path d="M15.5 9a4.2 4.2 0 0 1 0 6 M18 6.5a7.8 7.8 0 0 1 0 11"
+                fill="none" stroke="#d7e1eb" stroke-width="1.8"
+                stroke-linecap="round"/>
+        </svg>
+    """,
+    "speaker_off": """
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+             viewBox="0 0 24 24">
+          <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"
+                fill="none" stroke="#f0b6b1" stroke-width="1.8"
+                stroke-linejoin="round"/>
+          <path d="M15.5 9.5l5 5 M20.5 9.5l-5 5"
+                fill="none" stroke="#f0b6b1" stroke-width="1.8"
+                stroke-linecap="round"/>
+        </svg>
+    """,
     "settings": """
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
              viewBox="0 0 24 24">
@@ -400,6 +422,13 @@ MOD_NOREPEAT = 0x4000
 HOTKEY_MODIFIERS = {"alt": 0x0001, "ctrl": 0x0002, "shift": 0x0004, "meta": 0x0008}
 HOTKEY_MIC_MUTE = 1  # id passed to RegisterHotKey
 DEFAULT_MIC_MUTE_HOTKEY = "Ctrl+Shift+M"
+# Mute hotkey of each strip: (RegisterHotKey id, settings key, default).
+MUTE_HOTKEYS = {
+    "Mic": (HOTKEY_MIC_MUTE, "hotkey_mic_mute", DEFAULT_MIC_MUTE_HOTKEY),
+    "Game": (2, "hotkey_game_mute", ""),
+    "Chat": (3, "hotkey_chat_mute", ""),
+    "Media": (4, "hotkey_media_mute", ""),
+}
 
 
 def parse_hotkey(text):
@@ -475,15 +504,34 @@ def ask_running_instance_to_show(name=SINGLE_INSTANCE_NAME):
     )
 
 
+def quit_message(name=SINGLE_INSTANCE_NAME):
+    """Id of the Windows message that asks a running VMStreamer to quit."""
+    return ctypes.windll.user32.RegisterWindowMessageW(f"{name}.Quit")
+
+
+def ask_running_instance_to_quit(name=SINGLE_INSTANCE_NAME):
+    """Used by `VMStreamer.exe --quit`, for scripts such as the build.
+
+    The running program quits the way its tray menu's Quit does, so it logs
+    out of VoiceMeeter. Stopping the process by force cannot do that and
+    leaves a stale client behind in VoiceMeeter.
+    """
+    ctypes.windll.user32.PostMessageW(
+        HWND_BROADCAST, quit_message(name), 0, 0
+    )
+
+
 class HotkeyFilter(QAbstractNativeEventFilter):
     """Pass this application's own Windows messages to callbacks: global
     hotkeys, and the request of a second start to show the window."""
 
-    def __init__(self, callback, show_callback=None):
+    def __init__(self, callback, show_callback=None, quit_callback=None):
         super().__init__()
         self.callback = callback
         self.show_callback = show_callback
+        self.quit_callback = quit_callback
         self.show_message = show_window_message()
+        self.quit_message = quit_message()
         # The request is broadcast, so every window of this program gets a
         # copy (the tray icon has one too). Act on the main window's only.
         self.window_handle = None
@@ -497,6 +545,10 @@ class HotkeyFilter(QAbstractNativeEventFilter):
             if msg.message == self.show_message and self.show_callback:
                 if self.window_handle in (None, msg.hWnd):
                     self.show_callback()
+                return True, 0
+            if msg.message == self.quit_message and self.quit_callback:
+                if self.window_handle in (None, msg.hWnd):
+                    self.quit_callback()
                 return True, 0
         return False, 0
 
@@ -534,14 +586,14 @@ MIC_METER_SPACING = 6   # pixels between the two meters
 # Mixer layout dimensions — adjust these when fine-tuning the UI.
 # The mixer and the lower panels share the window height through a
 # draggable splitter, so these are minimums and starting sizes, not fixed sizes.
-MIXER_CARD_MIN_HEIGHT = 340
+MIXER_CARD_MIN_HEIGHT = 330
 DEFAULT_MIXER_PANE_HEIGHT = 655
 CHANNEL_HEADER_HEIGHT = 58
 CHANNEL_FADER_MIN_HEIGHT = 100
 FADER_TO_GAIN_GAP = 5
 MIXER_BUTTON_HEIGHT = 28
 ROUTING_LABEL_HEIGHT = 14
-ROUTING_BUTTON_HEIGHT = 28
+ROUTING_BUTTON_HEIGHT = 24
 APPLICATION_PANEL_HEIGHT = 300
 APPLICATION_PANEL_MIN_HEIGHT = 140
 
@@ -560,6 +612,28 @@ def outline_toggle_style(color):
         f"QPushButton:checked {{ background: #141d27; color: {color}; "
         f"border: 2px solid {color}; font-weight: bold; }}"
     )
+
+
+# Routing buttons of every strip, and the VoiceMeeter bus behind each one.
+ROUTE_ROWS = (("A1", "A2", "A3"), ("B1", "B2", "B3"))
+ROUTE_BUS = {"A1": 0, "A2": 1, "A3": 2, "B1": 5, "B2": 6, "B3": 7}
+
+
+def route_name(vm, output):
+    """(button text, tooltip) for a routing button.
+
+    "A1" means little unless you know VoiceMeeter; when its bus has been
+    given a name there ("Headphones", "Stream"), that name is shown.
+    """
+    kind = "hardware output" if output.startswith("A") else "virtual output"
+    try:
+        label = str(vm.bus[ROUTE_BUS[output]].label or "").strip()
+    except Exception:
+        label = ""
+    if label:
+        text = label if len(label) <= 8 else label[:7] + "…"
+        return text, f"{output} — {label} ({kind})"
+    return output, f"{output} ({kind} {output[1]})"
 
 
 STRIP_COLORS = {
@@ -1510,6 +1584,9 @@ class FineControlSlider(QSlider):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self._wheel_remainder = 0
+        # Step of one wheel notch; None means singleStep(). With Shift held
+        # the wheel always moves by singleStep(), for fine adjustment.
+        self.wheel_step = None
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -1517,11 +1594,16 @@ class FineControlSlider(QSlider):
             event.ignore()
             return
 
+        fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        step = self.singleStep()
+        if self.wheel_step is not None and not fine:
+            step = self.wheel_step
+
         self._wheel_remainder += delta
         notches = int(self._wheel_remainder / 120)
         if notches:
             self._wheel_remainder -= notches * 120
-            self.setValue(self.value() + notches * self.singleStep())
+            self.setValue(self.value() + notches * step)
         event.accept()
 
 
@@ -1531,6 +1613,7 @@ class MixerFader(FineControlSlider):
     SCALE_DB = (12, 0, -12, -24, -36, -48, -60)
     UNITS_PER_DB = 100
     WIDTH = 100  # leaves room for the scale labels; the track stays centered
+    show_labels = True
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -1576,6 +1659,8 @@ class MixerFader(FineControlSlider):
             painter.drawLine(
                 QPointF(center + 14, y), QPointF(center + 14 + length, y)
             )
+            if not self.show_labels:
+                continue
             painter.setPen(QColor("#e6edf3" if unity else "#7d8ea0"))
             painter.drawText(
                 QRectF(center + 25, y - 7, 24, 14),
@@ -1752,14 +1837,18 @@ class StripWidget(QWidget):
             1200,
 
         )
-        # VoiceMeeter accepts fractional dB values. Keep the fader's fine
-        # keyboard/wheel increment at 0.01 dB, with Page Up/Down at 0.10 dB.
-        self.fader.setSingleStep(1)
-        self.fader.setPageStep(10)
+        # Fader units are 0.01 dB. One wheel notch is 0.5 dB, which is about
+        # the smallest change that is heard; Shift+wheel and the arrow keys
+        # move 0.1 dB, Page Up/Down 1 dB.
+        self.fader.setSingleStep(10)
+        self.fader.setPageStep(100)
+        self.fader.wheel_step = 50
         self.fader.setToolTip(
-            "Fine adjustment: use the arrow keys or mouse wheel (0.01 dB). "
-            "Page Up/Down changes 0.10 dB."
+            "Mouse wheel: 0.5 dB, with Shift 0.1 dB. "
+            "Arrow keys: 0.1 dB. Page Up/Down: 1 dB."
         )
+        # One labelled scale is enough; the other faders show ticks only.
+        self.fader.show_labels = name == "Mic"
 
         self.fader.setMinimumHeight(CHANNEL_FADER_MIN_HEIGHT)
         self.fader.setStyleSheet(
@@ -1864,15 +1953,10 @@ class StripWidget(QWidget):
             self.on_mono_clicked
         )
 
-        button_layout.addWidget(
-            self.mute_button
-        )
-        button_layout.addWidget(
-            self.solo_button
-        )
-        button_layout.addWidget(
-            self.mono_button
-        )
+        # MUTE is used constantly, SOLO and MONO rarely: give it the room.
+        button_layout.addWidget(self.mute_button, 2)
+        button_layout.addWidget(self.solo_button, 1)
+        button_layout.addWidget(self.mono_button, 1)
 
         layout.addLayout(
             button_layout
@@ -1892,11 +1976,11 @@ class StripWidget(QWidget):
         routing_layout.setHorizontalSpacing(5)
         routing_layout.setVerticalSpacing(2)
         self.route_buttons = {}
-        if self.name == "Mic":
-            self._add_route_button(routing_layout, "B1", 0, 0, accent)
-        else:
-            for column, output in enumerate(("A1", "A2", "A3")):
-                self._add_route_button(routing_layout, output, 0, column, accent)
+        for row, outputs in enumerate(ROUTE_ROWS):
+            for column, output in enumerate(outputs):
+                self._add_route_button(
+                    routing_layout, output, row, column, accent
+                )
         layout.addLayout(routing_layout)
 
 
@@ -1905,15 +1989,65 @@ class StripWidget(QWidget):
         self.sync_from_voicemeeter()
 
     def _add_route_button(self, layout, output, row, column, accent):
-        button = QPushButton(output)
+        text, tooltip = route_name(self.vm, output)
+        button = QPushButton(text)
+        button.setToolTip(tooltip)
         button.setCheckable(True)
         button.setFixedHeight(ROUTING_BUTTON_HEIGHT)
-        button.setStyleSheet(outline_toggle_style(accent))
+        button.setStyleSheet(
+            "QPushButton { padding: 1px 4px; }" + outline_toggle_style(accent)
+        )
         button.clicked.connect(
             lambda checked, name=output: self.on_route_clicked(name, checked)
         )
         layout.addWidget(button, row, column)
         self.route_buttons[output] = button
+
+    def profile_state(self):
+        """What a mixer profile stores for this strip."""
+        return {
+            "gain": self.fader.value() / 100,
+            "mute": self.mute_button.isChecked(),
+            "solo": self.solo_button.isChecked(),
+            "mono": self.mono_button.isChecked(),
+            "routes": {
+                output: button.isChecked()
+                for output, button in self.route_buttons.items()
+            },
+        }
+
+    def apply_profile(self, state):
+        """Apply a stored profile_state(). Returns False if it is not usable.
+
+        Each value goes through the same handler as a click or a fader move,
+        so only what differs is sent to VoiceMeeter.
+        """
+        try:
+            gain = float(state["gain"])
+            if not math.isfinite(gain):
+                return False
+            self.fader.setValue(int(round(gain * 100)))  # clamped by the fader
+            for key, button, handler in (
+                ("mute", self.mute_button, self.on_mute_clicked),
+                ("solo", self.solo_button, self.on_solo_clicked),
+                ("mono", self.mono_button, self.on_mono_clicked),
+            ):
+                wanted = bool(state[key])
+                if button.isChecked() != wanted:
+                    button.setChecked(wanted)
+                    handler(wanted)
+            for output, wanted in dict(state.get("routes") or {}).items():
+                button = self.route_buttons.get(output)
+                if button is not None and button.isChecked() != bool(wanted):
+                    button.setChecked(bool(wanted))
+                    self.on_route_clicked(output, bool(wanted))
+            return True
+        except Exception as e:
+            log.error(
+                f"Failed to apply {self.name} profile: {type(e).__name__}: {e}"
+            )
+            self.sync_from_voicemeeter()
+            return False
 
     def on_route_clicked(self, output, checked):
         try:
@@ -2072,6 +2206,8 @@ class LiveVolumeSlider(FineControlSlider):
     rather than requiring the user to grab the small thumb first.
     """
 
+    thumb_color = "#58a6ff"
+
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self._audio_level = 0.0
@@ -2164,8 +2300,10 @@ class LiveVolumeSlider(FineControlSlider):
             handle_width,
             handle_height,
         )
-        thumb_color = "#79c0ff" if self.isSliderDown() else "#58a6ff"
-        painter.setBrush(QColor(thumb_color))
+        thumb_color = QColor(self.thumb_color)
+        if self.isSliderDown():
+            thumb_color = thumb_color.lighter(125)
+        painter.setBrush(thumb_color)
         painter.drawRoundedRect(thumb, 4, 4)
         painter.end()
 
@@ -2954,6 +3092,7 @@ class ApplicationRow(QWidget):
             self.icon_label.setPixmap(pixmap)
 
         self.volume_slider = LiveVolumeSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.thumb_color = STRIP_COLORS[bus]["accent"]
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setMinimumWidth(0)
         self.volume_slider.setFixedHeight(19)
@@ -2975,7 +3114,8 @@ class ApplicationRow(QWidget):
         self.volume_percent.setFixedWidth(36)
         self.volume_percent.setStyleSheet("color: #d6e2ef; font-size: 11px;")
 
-        self.mute_button = QPushButton("🔊")
+        self.mute_button = QPushButton()
+        self.mute_button.setIconSize(QSize(16, 16))
         self.mute_button.setCheckable(True)
         self.mute_button.setFixedSize(28, 24)
         self.mute_button.setStyleSheet(
@@ -3071,6 +3211,11 @@ class ApplicationRow(QWidget):
         elif chosen is all_action:
             self.hide_requested.emit(self.hide_key, ALL_CHANNELS, hide)
 
+    def _show_mute_icon(self, muted):
+        self.mute_button.setIcon(
+            mono_icon("speaker_off" if muted else "speaker", 16)
+        )
+
     def on_volume_changed(self, value):
         self.volume_percent.setText(f"{value}%")
         self.volume_slider.setToolTip(
@@ -3084,7 +3229,7 @@ class ApplicationRow(QWidget):
             )
 
     def on_mute_clicked(self, checked):
-        self.mute_button.setText("🔇" if checked else "🔊")
+        self._show_mute_icon(checked)
         if not self._syncing:
             self.controller.set_app_mute(
                 self.session_key,
@@ -3101,7 +3246,7 @@ class ApplicationRow(QWidget):
             self.volume_slider.setValue(value)
             self.volume_percent.setText(f"{value}%")
             self.mute_button.setChecked(state["muted"])
-            self.mute_button.setText("🔇" if state["muted"] else "🔊")
+            self._show_mute_icon(state["muted"])
         finally:
             self._syncing = False
 
@@ -3294,12 +3439,13 @@ class ApplicationControl(QWidget):
             box_layout.setContentsMargins(3, 3, 3, 3)
             box_layout.setSpacing(1)
 
-            endpoint_label = {
-                "Game": "APPLICATIONS (VAIO)",
-                "Chat": "APPLICATIONS (VAIO AUX)",
-                "Media": "APPLICATIONS (VAIO3)",
+            endpoint = {
+                "Game": "VoiceMeeter VAIO",
+                "Chat": "VoiceMeeter VAIO AUX",
+                "Media": "VoiceMeeter VAIO3",
             }[bus]
-            title = QLabel(endpoint_label)
+            title = QLabel(f"{bus.upper()} APPS")
+            title.setToolTip(f"Applications playing on {endpoint}")
             title.setStyleSheet(
                 f"color: {colors['accent']}; background: {colors['header']}; "
                 f"border: 1px solid {colors['border']}; border-radius: 5px; "
@@ -3863,16 +4009,19 @@ class SettingsDialog(QDialog):
         )
 
         self.add_heading("HOTKEYS")
-        self.mic_mute_hotkey = QKeySequenceEdit(
-            QKeySequence(current["hotkey_mic_mute"])
-        )
-        self.mic_mute_hotkey.setMaximumSequenceLength(1)
-        self.mic_mute_hotkey.setClearButtonEnabled(True)
-        self.form.addRow("Mute microphone", self.mic_mute_hotkey)
+        self.hotkey_edits = {}
+        for name, (_id, key, _default) in MUTE_HOTKEYS.items():
+            edit = QKeySequenceEdit(QKeySequence(current[key]))
+            edit.setMaximumSequenceLength(1)
+            edit.setClearButtonEnabled(True)
+            label = "Mute microphone" if name == "Mic" else f"Mute {name}"
+            self.form.addRow(label, edit)
+            self.hotkey_edits[key] = edit
         self.add_note(
-            "Click the field and press the keys. Works while VMStreamer is in "
-            "the background. Other programs cannot use this combination "
-            "while VMStreamer runs. Clear the field to switch it off."
+            "Click a field and press the keys. Hotkeys work while VMStreamer "
+            "is in the background. Other programs cannot use these "
+            "combinations while VMStreamer runs. Clear a field to switch "
+            "it off."
         )
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #f85149;")
@@ -3933,29 +4082,44 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         self.form.addRow("", note)
 
-    def hotkey_text(self):
-        return self.mic_mute_hotkey.keySequence().toString(
-            QKeySequence.SequenceFormat.PortableText
-        )
+    def hotkey_texts(self):
+        return {
+            key: edit.keySequence().toString(
+                QKeySequence.SequenceFormat.PortableText
+            )
+            for key, edit in self.hotkey_edits.items()
+        }
+
+    def hotkey_problem(self):
+        """Why the chosen hotkeys cannot be used, or an empty string."""
+        chosen = [text for text in self.hotkey_texts().values() if text]
+        for text in chosen:
+            if parse_hotkey(text) is None:
+                return (
+                    f"{text} cannot be used as a global hotkey. Use Ctrl, "
+                    "Shift or Alt together with a letter, a digit or F1-F24."
+                )
+        for text in chosen:
+            if chosen.count(text) > 1:
+                return f"{text} is used for more than one hotkey."
+        return ""
 
     def accept(self):
-        text = self.hotkey_text()
-        if text and parse_hotkey(text) is None:
+        problem = self.hotkey_problem()
+        if problem:
             self.error_label.setVisible(True)
-            self.error_label.setText(
-                f"{text} cannot be used as a global hotkey. Use Ctrl, Shift "
-                "or Alt together with a letter, a digit or F1-F24."
-            )
+            self.error_label.setText(problem)
             return
         super().accept()
 
     def values(self):
-        return {
+        values = {
             "mic_strip": int(self.mic_input.currentData()),
-            "hotkey_mic_mute": self.hotkey_text(),
             "close_to_tray": self.close_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
         }
+        values.update(self.hotkey_texts())
+        return values
 
 
 class GripSplitterHandle(QSplitterHandle):
@@ -4075,7 +4239,7 @@ class MainWindow(QMainWindow):
         # Compact default size fits the open desktop area beside monitoring
         # tools while keeping the window resizable. Restore the last saved
         # geometry when available.
-        self.setMinimumSize(900, 760)
+        self.setMinimumSize(820, 680)
         saved_geometry = self.window_settings.value("geometry_v2")
         if saved_geometry is not None:
             try:
@@ -4270,15 +4434,26 @@ class MainWindow(QMainWindow):
         self.mixer_layout.setContentsMargins(0, 0, 0, 0)
         self.mixer_layout.setSpacing(4)
         self.main_splitter.addWidget(self.mixer_container)
-        self.offline_banner = QLabel(
+        self.offline_banner = QWidget()
+        self.offline_banner.setObjectName("offlineBanner")
+        self.offline_banner.setStyleSheet(
+            "QWidget#offlineBanner { background: #2b1516; "
+            "border: 1px solid #69353c; border-radius: 6px; }"
+        )
+        banner_layout = QHBoxLayout(self.offline_banner)
+        banner_layout.setContentsMargins(10, 5, 6, 5)
+        banner_text = QLabel(
             "VoiceMeeter Potato is not running. VMStreamer connects "
             "automatically when it starts."
         )
-        self.offline_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.offline_banner.setStyleSheet(
-            "color: #f0b6b1; background: #2b1516; border: 1px solid #69353c; "
-            "border-radius: 6px; padding: 8px; font-weight: bold;"
-        )
+        banner_text.setStyleSheet("color: #f0b6b1; font-weight: bold;")
+        start_button = QPushButton("START VOICEMEETER")
+        start_button.setToolTip("Start VoiceMeeter Potato and connect to it")
+        start_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        # Logging in starts VoiceMeeter when it is not running.
+        start_button.clicked.connect(self.connect_vm)
+        banner_layout.addWidget(banner_text, 1)
+        banner_layout.addWidget(start_button)
         self.offline_banner.setVisible(False)
         main_layout.addWidget(self.offline_banner)
         main_layout.addWidget(self.main_splitter, 1)
@@ -4362,12 +4537,65 @@ class MainWindow(QMainWindow):
         processing_wrapper = QWidget()
         processing_wrapper_layout = QVBoxLayout(processing_wrapper)
         processing_wrapper_layout.setContentsMargins(0, 35, 0, 0)
-        processing_wrapper_layout.setSpacing(0)
+        processing_wrapper_layout.setSpacing(6)
         processing_wrapper_layout.addWidget(
             self.processing_panel,
             0,
             Qt.AlignmentFlag.AlignTop,
         )
+
+        # What the mic processing is doing, without opening its window.
+        self.processing_summary = QLabel("")
+        self.processing_summary.setStyleSheet(
+            "color: #aebdca; font-size: 11px; padding: 2px 4px;"
+        )
+        self.processing_panel_layout.addWidget(self.processing_summary)
+
+        # Mixer profiles: gain, mute, solo, mono and routing of all strips.
+        self.profile_panel = QWidget()
+        self.profile_panel.setObjectName("profilePanel")
+        self.profile_panel.setStyleSheet(
+            "QWidget#profilePanel { background: #101820; "
+            "border: 1px solid #24566b; border-radius: 8px; }"
+        )
+        profile_layout = QVBoxLayout(self.profile_panel)
+        profile_layout.setContentsMargins(6, 5, 6, 6)
+        profile_layout.setSpacing(4)
+        profile_title = QLabel("MIXER PROFILE")
+        profile_title.setStyleSheet(
+            "color: #8ba0b5; font-size: 11px; font-weight: bold;"
+        )
+        profile_title.setToolTip(
+            "Saved gain, mute, solo, mono and routing of all four channels"
+        )
+        self.profile_list = QComboBox()
+        profile_buttons = QHBoxLayout()
+        profile_buttons.setSpacing(4)
+        self.profile_load_button = QPushButton("LOAD")
+        self.profile_load_button.clicked.connect(self.on_profile_load)
+        profile_save_button = QPushButton("SAVE AS…")
+        profile_save_button.clicked.connect(self.on_profile_save)
+        self.profile_delete_button = QPushButton("DELETE")
+        self.profile_delete_button.clicked.connect(self.on_profile_delete)
+        for button in (
+            self.profile_load_button,
+            profile_save_button,
+            self.profile_delete_button,
+        ):
+            button.setFixedHeight(24)
+            button.setStyleSheet(
+                "QPushButton { padding: 1px 4px; font-size: 11px; }"
+            )
+            profile_buttons.addWidget(button)
+        profile_layout.addWidget(profile_title)
+        profile_layout.addWidget(self.profile_list)
+        profile_layout.addLayout(profile_buttons)
+        processing_wrapper_layout.addWidget(
+            self.profile_panel,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+        self.refresh_profile_list()
 
         lower_layout.addWidget(
             processing_wrapper,
@@ -4401,7 +4629,9 @@ class MainWindow(QMainWindow):
             self.prepare_to_quit
         )
 
-        self.hotkey_filter = HotkeyFilter(self.on_hotkey, self.show_from_tray)
+        self.hotkey_filter = HotkeyFilter(
+            self.on_hotkey, self.show_from_tray, self.quit_application
+        )
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         self.register_hotkeys()
@@ -4552,6 +4782,8 @@ class MainWindow(QMainWindow):
         # Controls that would write to VoiceMeeter are greyed out meanwhile.
         self.mixer_container.setEnabled(self.connected)
         self.processing_toggle.setEnabled(self.connected)
+        self.profile_panel.setEnabled(self.connected)
+        self.update_processing_summary()
         self.sync_tray()
 
     def create_strips(self):
@@ -4686,6 +4918,134 @@ class MainWindow(QMainWindow):
         else:
             if self.processing_dialog is not None:
                 self.processing_dialog.close()
+
+    # Mixer profiles: the state of all four strips under a name, stored as
+    # JSON under "mixer_profiles". Mic processing has its own presets.
+
+    def load_profiles(self):
+        raw = self.window_settings.value("mixer_profiles", "")
+        try:
+            profiles = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            profiles = {}
+        return profiles if isinstance(profiles, dict) else {}
+
+    def store_profiles(self, profiles):
+        self.window_settings.setValue(
+            "mixer_profiles", json.dumps(profiles, sort_keys=True)
+        )
+        self.window_settings.sync()
+
+    def save_profile(self, name):
+        name = (name or "").strip()
+        if not name or not self.strips:
+            return False
+        profiles = self.load_profiles()
+        profiles[name] = {
+            strip_name: strip.profile_state()
+            for strip_name, strip in self.strips.items()
+        }
+        self.store_profiles(profiles)
+        self.refresh_profile_list(select=name)
+        return True
+
+    def apply_profile(self, name):
+        """Send a stored profile to VoiceMeeter. False if any strip failed."""
+        profile = self.load_profiles().get(name)
+        if not isinstance(profile, dict) or not self.connected:
+            return False
+        applied = True
+        for strip_name, strip in self.strips.items():
+            state = profile.get(strip_name)
+            if not isinstance(state, dict) or not strip.apply_profile(state):
+                applied = False
+        self.sync_tray()
+        return applied
+
+    def delete_profile(self, name):
+        profiles = self.load_profiles()
+        if profiles.pop(name, None) is None:
+            return False
+        self.store_profiles(profiles)
+        self.refresh_profile_list()
+        return True
+
+    def refresh_profile_list(self, select=None):
+        names = sorted(self.load_profiles(), key=str.casefold)
+        current = select or self.profile_list.currentText()
+        self.profile_list.blockSignals(True)
+        self.profile_list.clear()
+        self.profile_list.addItems(names)
+        if current in names:
+            self.profile_list.setCurrentText(current)
+        self.profile_list.blockSignals(False)
+        self.profile_list.setPlaceholderText("No profiles yet")
+        self.profile_load_button.setEnabled(bool(names))
+        self.profile_delete_button.setEnabled(bool(names))
+
+    def on_profile_load(self):
+        name = self.profile_list.currentText()
+        if name and not self.apply_profile(name):
+            QMessageBox.warning(
+                self,
+                "VMStreamer",
+                f"The profile \u201c{name}\u201d could not be applied completely.",
+            )
+
+    def on_profile_save(self):
+        name, accepted = QInputDialog.getText(
+            self,
+            "Save mixer profile",
+            "Name of the profile:",
+            text=self.profile_list.currentText(),
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        if name in self.load_profiles():
+            answer = QMessageBox.question(
+                self, "VMStreamer", f"Replace the profile \u201c{name}\u201d?"
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.save_profile(name)
+
+    def on_profile_delete(self):
+        name = self.profile_list.currentText()
+        if not name:
+            return
+        answer = QMessageBox.question(
+            self, "VMStreamer", f"Delete the profile \u201c{name}\u201d?"
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.delete_profile(name)
+
+    def update_processing_summary(self):
+        """Show each block's Amount under the button and its state on its tab."""
+        blocks = (
+            ("Compressor", "COMPRESSOR", self.compressor_control),
+            ("Gate", "GATE", self.gate_control),
+            ("Denoiser", "DENOISER", self.denoiser_control),
+        )
+        lines = []
+        for index, (label, tab, control) in enumerate(blocks):
+            if control is None or not self.connected:
+                continue
+            try:
+                amount = float(control.target.knob)
+            except Exception:
+                continue
+            if control._bypassed is not None:
+                state, mark = "bypassed", " · BYPASSED"
+            elif amount <= 0:
+                state, mark = "off", " · OFF"
+            else:
+                state, mark = f"{amount:.1f}", ""
+            lines.append(f"{label}: {state}")
+            if index < self.processing_tabs.count():
+                self.processing_tabs.setTabText(index, tab + mark)
+        self.processing_summary.setText("\n".join(lines))
+        self.processing_summary.setVisible(bool(lines))
 
     # Mic processing presets: one preset holds the compressor, the gate and
     # the denoiser together, stored as JSON under "processing_presets".
@@ -5040,12 +5400,12 @@ class MainWindow(QMainWindow):
             mic_strip = 0
         return {
             "mic_strip": mic_strip,
-            "hotkey_mic_mute": str(
-                settings.value("hotkey_mic_mute", DEFAULT_MIC_MUTE_HOTKEY)
-                or ""
-            ),
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
+            **{
+                key: str(settings.value(key, default) or "")
+                for _id, key, default in MUTE_HOTKEYS.values()
+            },
         }
 
     def open_settings(self):
@@ -5063,57 +5423,67 @@ class MainWindow(QMainWindow):
             self.window_settings.setValue(key, value)
         self.window_settings.sync()
 
-        if not self.register_hotkeys():
+        refused = self.register_hotkeys()
+        if refused:
             QMessageBox.warning(
                 self,
                 "VMStreamer",
-                f"{values['hotkey_mic_mute']} could not be registered. "
+                f"{', '.join(refused)} could not be registered. "
                 "Another program is probably using it already. "
                 "Choose a different combination in Settings.",
             )
 
     def register_hotkeys(self):
-        """(Re)register the global hotkeys. False if Windows refused one."""
+        """(Re)register the global hotkeys.
+
+        Returns the combinations Windows refused, usually because another
+        program holds them; an empty list means all is well.
+        """
         user32 = ctypes.windll.user32
         hwnd = int(self.winId())
-        user32.UnregisterHotKey(hwnd, HOTKEY_MIC_MUTE)
-
-        text = self.current_settings()["hotkey_mic_mute"]
-        parsed = parse_hotkey(text)
-        if parsed is None:
-            if text:
-                log.warning(f"Ignoring invalid mic mute hotkey: {text}")
-            return True
-
-        modifiers, key = parsed
-        if user32.RegisterHotKey(
-            hwnd, HOTKEY_MIC_MUTE, modifiers | MOD_NOREPEAT, key
-        ):
-            return True
-        log.warning(f"Could not register the mic mute hotkey {text}")
-        return False
+        current = self.current_settings()
+        refused = []
+        for name, (hotkey_id, key, _default) in MUTE_HOTKEYS.items():
+            user32.UnregisterHotKey(hwnd, hotkey_id)
+            text = current[key]
+            parsed = parse_hotkey(text)
+            if parsed is None:
+                if text:
+                    log.warning(f"Ignoring invalid {name} mute hotkey: {text}")
+                continue
+            modifiers, virtual_key = parsed
+            if not user32.RegisterHotKey(
+                hwnd, hotkey_id, modifiers | MOD_NOREPEAT, virtual_key
+            ):
+                log.warning(f"Could not register the {name} mute hotkey {text}")
+                refused.append(text)
+        return refused
 
     def unregister_hotkeys(self):
         try:
-            ctypes.windll.user32.UnregisterHotKey(
-                int(self.winId()), HOTKEY_MIC_MUTE
-            )
+            hwnd = int(self.winId())
+            for hotkey_id, _key, _default in MUTE_HOTKEYS.values():
+                ctypes.windll.user32.UnregisterHotKey(hwnd, hotkey_id)
         except Exception:
             pass
 
     def on_hotkey(self, hotkey_id):
-        if hotkey_id == HOTKEY_MIC_MUTE:
-            self.toggle_mic_mute()
+        for name, (registered_id, _key, _default) in MUTE_HOTKEYS.items():
+            if hotkey_id == registered_id:
+                self.toggle_strip_mute(name)
 
-    def toggle_mic_mute(self):
-        """Mute or unmute the microphone, also while the window is hidden."""
-        mic = self.strips.get("Mic")
-        if mic is None or not self.connected:
+    def toggle_strip_mute(self, name):
+        """Mute or unmute a strip, also while the window is hidden."""
+        strip = self.strips.get(name)
+        if strip is None or not self.connected:
             return
-        muted = not mic.mute_button.isChecked()
-        mic.mute_button.setChecked(muted)
-        mic.on_mute_clicked(muted)
+        muted = not strip.mute_button.isChecked()
+        strip.mute_button.setChecked(muted)
+        strip.on_mute_clicked(muted)
         self.sync_tray()
+
+    def toggle_mic_mute(self, *_args):
+        self.toggle_strip_mute("Mic")
 
     def on_vm_event(self, event):
 
@@ -5132,6 +5502,7 @@ class MainWindow(QMainWindow):
                 and self.processing_dialog.isVisible()
             ):
                 self.sync_processing_controls()
+            self.update_processing_summary()
             self.sync_tray()
 
     def sync_processing_controls(self):
@@ -5236,8 +5607,12 @@ def install_exit_handlers(window):
     ctypes.windll.kernel32.SetConsoleCtrlHandler(window._console_handler, True)
 
 
-def main():
+def main(arguments=()):
     setup_logging()
+    if "--quit" in arguments:
+        log.info("Asking the running VMStreamer to quit")
+        ask_running_instance_to_quit()
+        return
     # Kept until the program ends; Windows releases it then.
     single_instance = acquire_single_instance()
     if single_instance is None:
@@ -5283,4 +5658,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

@@ -25,6 +25,19 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+# A running VMStreamer locks dist\VMStreamer.exe (PyInstaller then fails with
+# WinError 5). Ask it to quit properly; stopping it by force would leave a
+# stale client behind in VoiceMeeter.
+$builtExe = Join-Path $projectDir "dist\VMStreamer.exe"
+if ((Get-Process VMStreamer -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $builtExe)) {
+    Write-Host "Asking the running VMStreamer to quit..."
+    & $builtExe --quit
+    Get-Process VMStreamer -ErrorAction SilentlyContinue | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+    if (Get-Process VMStreamer -ErrorAction SilentlyContinue) {
+        throw "VMStreamer is still running. Quit it from its tray icon, then build again."
+    }
+}
+
 Push-Location $projectDir
 try {
     & $python -m PyInstaller `

@@ -110,13 +110,20 @@ class FakeStrip:
         self.A1 = True
         self.A2 = False
         self.A3 = False
-        self.B1 = True
+        self.B1 = index == 0
+        self.B2 = False
+        self.B3 = False
         self.label = ""
         self.device = FakeDevice()
         self.levels = FakeLevels(2 if index < 5 else 8)
         self.comp = FakeBlock(dict(COMPRESSOR), COMPRESSOR_PRESET)
         self.gate = FakeBlock(dict(GATE), GATE_PRESET)
         self.denoiser = FakeBlock(dict(knob=2.0))
+
+
+class FakeBus:
+    def __init__(self):
+        self.label = ""
 
 
 class FakeObserver:
@@ -135,6 +142,7 @@ class FakeVM:
 
     def __init__(self):
         self.strip = [FakeStrip(index) for index in range(8)]
+        self.bus = [FakeBus() for _ in range(8)]
         self.observer = FakeObserver()
         self.sent = []
         self.logged_in = False

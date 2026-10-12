@@ -139,6 +139,9 @@ class SingleInstanceTest(unittest.TestCase):
         self.assertTrue(again)
         main.ctypes.windll.kernel32.CloseHandle(main.ctypes.c_void_p(again))
 
+    def test_quit_and_show_are_different_messages(self):
+        self.assertNotEqual(main.quit_message(), main.show_window_message())
+
     def test_source_and_packaged_runs_use_different_names(self):
         self.assertTrue(main.SINGLE_INSTANCE_NAME.endswith(".Source"))
         self.assertNotEqual(

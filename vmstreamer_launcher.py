@@ -39,13 +39,19 @@ def voicemeeter_is_running():
 
 
 def main():
-    if "--wait-for-voicemeeter" in sys.argv[1:]:
-        while not voicemeeter_is_running():
-            time.sleep(1)
-
-    # The launcher option is for this entry point only. Do not pass it to Qt.
+    arguments = sys.argv[1:]
+    # The options are for this entry point only. Do not pass them to Qt.
     sys.argv = [sys.argv[0]]
     from main import main as run_vmstreamer
+
+    if "--quit" in arguments:
+        # Ask the running VMStreamer to quit, then leave.
+        run_vmstreamer(["--quit"])
+        return
+
+    if "--wait-for-voicemeeter" in arguments:
+        while not voicemeeter_is_running():
+            time.sleep(1)
 
     run_vmstreamer()
 
