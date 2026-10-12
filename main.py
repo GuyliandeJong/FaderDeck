@@ -302,6 +302,34 @@ def setup_logging():
     threading.excepthook = log_uncaught_in_thread
 
 
+# Folder names that change with every update of an application:
+# "154.0.4258.53", "app-1.0.9163" and Store packages such as
+# "msteams_25275.2601.4002.2815_x64__8wekyb3d8bbwe".
+_VERSION_FOLDER = re.compile(r"^(app-|v)?\d+(\.\d+)+$")
+_STORE_FOLDER = re.compile(r"^(.+?)_\d+(\.\d+)+_(.+)$")
+
+
+def stable_hide_key(executable_path, app_name=""):
+    """Identify an application for hiding, independent of its version.
+
+    The key is the executable path with version folders replaced by "*", so
+    an application stays hidden after it updates into a new folder, while two
+    different programs with the same file name stay separate.
+    """
+    path = (executable_path or "").strip().casefold()
+    if not path:
+        return (app_name or "").strip().casefold()
+
+    parts = []
+    for part in path.replace("/", "\\").split("\\"):
+        if _VERSION_FOLDER.match(part):
+            part = "*"
+        else:
+            part = _STORE_FOLDER.sub(r"\1_*_\3", part)
+        parts.append(part)
+    return "\\".join(parts)
+
+
 # Window class of VoiceMeeter's main window (all editions).
 VOICEMEETER_WINDOW_CLASS = "VBCABLE0Voicemeeter0MainWindow0"
 
@@ -2431,7 +2459,7 @@ class ApplicationAudioWorker(QObject):
                                 "display_name": display_name,
                                 "bus": bus,
                                 "executable_path": executable_path,
-                                "hide_key": (executable_path or app_name).strip().casefold(),
+                                "hide_key": stable_hide_key(executable_path, app_name),
                                 "sessions": [],
                                 "volume": state["volume"],
                                 "muted": state["muted"],
@@ -2998,9 +3026,13 @@ class ApplicationControl(QWidget):
         self._notice_text = ""
         self._notice_until = 0.0
         self.settings = QSettings("VMStreamer", "VMStreamer")
+        self._hidden_needs_save = False
         self.hidden_applications = self._load_hidden_applications()
-        if self.settings.value("hidden_applications_v2", None) is None:
-            # First launch of the per-channel format: store the migrated list.
+        if (
+            self._hidden_needs_save
+            or self.settings.value("hidden_applications_v2", None) is None
+        ):
+            # First launch of a newer format: store the migrated list.
             self._save_hidden_applications()
 
         layout = QVBoxLayout(self)
@@ -3175,7 +3207,15 @@ class ApplicationControl(QWidget):
     def _load_hidden_applications(self):
         raw = self.settings.value("hidden_applications_v2", None)
         if raw is not None:
-            return self._parse_hidden_setting(raw)
+            stored = self._parse_hidden_setting(raw)
+            # Entries saved before hide keys ignored version folders are
+            # rewritten once, so they keep matching after an update.
+            current = set()
+            for hide_id in stored:
+                bus, _, key = hide_id.partition("|")
+                current.add(self._hide_id(bus, stable_hide_key(key)))
+            self._hidden_needs_save = current != stored
+            return current
 
         # Migrate the older global list. Previously a hidden application was
         # hidden on every channel, so keep exactly that behaviour once.
@@ -3183,7 +3223,7 @@ class ApplicationControl(QWidget):
             self.settings.value("hidden_applications", "")
         )
         return {
-            self._hide_id(bus, key)
+            self._hide_id(bus, stable_hide_key(key))
             for key in legacy
             for bus in self.BUS_NAMES
         }
