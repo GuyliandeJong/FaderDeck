@@ -43,7 +43,8 @@ Main controls:
 - Mute
 - Solo
 - Mono
-- Routing buttons (Mic: B1; Game, Chat, Media: A1–A3)
+- Routing buttons A1–A3 and B1–B3 on every strip
+- Mixer profiles (`mixer_profiles`)
 
 Mic processing:
 
@@ -177,12 +178,7 @@ Do not regress:
 
 ## Build Locking
 
-If building fails with `WinError 5` on `dist\VMStreamer.exe`, close/kill the running VMStreamer process before rebuilding:
-
-```powershell
-Get-Process VMStreamer -ErrorAction SilentlyContinue
-Stop-Process -Name VMStreamer -Force
-```
+The build script asks a running VMStreamer to quit (`VMStreamer.exe --quit`) before building. Never stop it by force: a killed process stays listed as a client in VoiceMeeter until VoiceMeeter is restarted.
 
 ## Future UI
 
@@ -194,9 +190,11 @@ Potential areas:
 
 - application routing rules
 - presets/profiles
-- more hotkeys (per-channel mute, volume)
+- hotkeys for volume and profile switching
+- compact window mode
 - configurable Game/Chat/Media mapping
-- whole-mixer profiles
+- local API
+- installer and signed EXE
 - volume persistence
 - pan/balance
 - additional VoiceMeeter controls

@@ -22,13 +22,15 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Mute
 - Solo
 - Mono
-- Output routing buttons (B1 for the microphone, A1–A3 for Game, Chat and Media)
+- Output routing buttons A1–A3 and B1–B3 on every channel, shown with the bus names you gave them in VoiceMeeter
+- Mixer profiles: save gain, mute, solo, mono and routing of all channels under a name, and load them again
 - Live level meters on every channel, with a dB scale on the faders
 - Reconnects by itself when VoiceMeeter is closed and started again
-- Global hotkey to mute the microphone (Ctrl+Shift+M by default)
+- Global hotkeys to mute the microphone (Ctrl+Shift+M by default) and each of Game, Chat and Media
 - System tray icon: keeps running when the window is closed, with mute and quit in its menu
 - Settings window for the microphone input, the hotkey and the tray behaviour
 - Starting VMStreamer a second time shows the running one instead of opening another
+- `VMStreamer.exe --quit` asks the running VMStreamer to quit, for use in scripts
 - Draggable divider between the mixer and the lower panels
 
 ### Application Audio
@@ -241,77 +243,19 @@ VMStreamer is currently under active development.
 
 The core mixer, microphone processing, application routing, live audio meters, and Windows application volume controls are functional.
 
-## Future Features
+## Roadmap
 
-VMStreamer is actively developed. The following features are planned or being considered for future releases:
+Done so far: reconnect, meters on every channel, global mute hotkeys, system tray, settings window, mic processing presets, mixer profiles, single running instance.
 
-### Configuration & Presets
+Next, roughly in this order:
 
-- [ ] Persistent application routing
-- [ ] Save and load mixer presets
-- [x] Save microphone processing presets
-- [ ] Save application volume and mute states
-- [ ] Multiple named profiles such as Gaming, Streaming, Recording, and Away
-- [ ] User-configurable application sorting and layout
-- [x] Dedicated settings window
+1. Hotkeys for volume and for switching profiles
+2. A compact window mode
+3. Configurable Game, Chat and Media mapping, and other VoiceMeeter editions
+4. A local API, so Stream Deck, OBS and scripts can control VMStreamer
+5. A Windows installer and a signed EXE
 
-### Application Management
-
-- [x] Display application icons
-- [ ] Remember application volume levels
-- [ ] Automatically route applications based on executable
-- [x] Move applications between Game, Chat, and Media
-- [ ] Improved application session detection
-- [ ] Application routing rules
-
-### VoiceMeeter Controls
-
-- [ ] Pan / balance controls
-- [ ] Additional strip controls
-- [ ] A/B bus controls
-- [ ] Bus volume and mute controls
-- [ ] Hardware input controls
-- [ ] Additional VoiceMeeter routing options
-
-### Streamer Features
-
-- [ ] Global hotkeys
-- [x] Global microphone mute
-- [ ] Game / Chat / Media volume hotkeys
-- [ ] Preset switching through hotkeys
-- [ ] Push-to-talk integration
-- [x] System tray support
-- [ ] Start with Windows
-- [x] Start minimized
-
-### Integrations
-
-- [ ] OBS Studio integration
-- [ ] Stream Deck integration
-- [ ] Local API for external applications and scripts
-- [ ] Home Assistant integration
-- [ ] Integration with other streaming tools
-
-### User Interface
-
-- [ ] Custom themes
-- [ ] Light mode
-- [ ] Custom accent colors
-- [ ] Compact mode
-- [ ] Improved high-DPI scaling
-- [ ] Customizable mixer layout
-- [ ] Additional visualization options
-
-### Distribution
-
-- [ ] Windows installer
-- [ ] Automatic updates
-- [x] GitHub Releases
-- [ ] Versioned release builds
-- [ ] Release notes and changelogs
-
-> This roadmap is subject to change as VMStreamer evolves and new ideas are explored.
-
+Not planned for now: light mode and custom themes, automatic updates.
 
 ## Support
 

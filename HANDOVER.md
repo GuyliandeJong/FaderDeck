@@ -133,6 +133,20 @@ A Mic processing preset stores the state of all three blocks together (`save_pre
 
 Only one VMStreamer runs at a time. `main()` claims a named mutex (`acquire_single_instance`); a second start broadcasts a registered window message and exits, and the running instance shows its window (handled in `HotkeyFilter`, for the main window's copy of the message only). The packaged program and a run from source use different names on purpose.
 
+## Mixer Profiles, Routing and Hotkeys
+
+A mixer profile stores gain, mute, solo, mono and the routing buttons of all four strips (`save_profile`, `apply_profile`, `delete_profile`; QSettings key `mixer_profiles`, JSON). `StripWidget.apply_profile()` sends each value through the same handler as a click, so only what differs reaches VoiceMeeter. Profiles and mic processing presets are separate on purpose.
+
+Every strip has the routing rows A1–A3 and B1–B3 (`ROUTE_ROWS`). A button shows the bus name from VoiceMeeter when the bus has one (`route_name`).
+
+Each strip has a mute hotkey (`MUTE_HOTKEYS`); only the microphone's has a default. `register_hotkeys()` returns the combinations Windows refused.
+
+The fader's unit is 0.01 dB. One wheel notch moves 0.5 dB, Shift+wheel and the arrow keys 0.1 dB, Page Up/Down 1 dB.
+
+`update_processing_summary()` shows each block's Amount under the MIC PROCESSING button and marks a bypassed or switched-off block on its tab. It reads three values per change event; the full panels are still only synchronized while their window is open.
+
+`VMStreamer.exe --quit` (and `python main.py --quit`) asks the running instance to quit through a registered window message, handled like the tray's Quit.
+
 ## Tests
 
 `tests/` holds unit tests on the standard library's `unittest`; run them with `python -m unittest discover -s tests` before committing a change to `main.py`. `tests/fakes.py` provides a fake mixer (`FakeVM`), an in-memory `QSettings` and a `Sandbox` that swaps them into `main`, so a real `MainWindow` can be built on Qt's offscreen platform without VoiceMeeter.
@@ -300,27 +314,11 @@ Output:
 
 ## Build Notes
 
-If PyInstaller reports:
+`build_vmstreamer.ps1` asks a running VMStreamer to quit before it builds (`dist\VMStreamer.exe --quit`), because a running copy locks the EXE and PyInstaller then fails with `PermissionError: [WinError 5]`. If it is still running after ten seconds, quit it from its tray icon and build again.
 
-```text
-PermissionError: [WinError 5]
-```
+Do not stop VMStreamer by force (`Stop-Process -Force`, `taskkill /F`, Task Manager). A killed process cannot log out, and VoiceMeeter keeps listing it as a client (an "R" mark at the top of its window) until VoiceMeeter is restarted. `--quit` only works for versions that have it (v1.3.0 and later); older ones must be quit from the tray.
 
-against `dist\VMStreamer.exe`, the old executable is usually still running/locked.
-
-Check:
-
-```powershell
-Get-Process VMStreamer -ErrorAction SilentlyContinue
-```
-
-If necessary:
-
-```powershell
-Stop-Process -Name VMStreamer -Force
-```
-
-Then rebuild.
+Run the build script plainly. Redirecting its output makes PowerShell 5.1 treat PyInstaller's progress messages as an error.
 
 ## GitHub Release
 
