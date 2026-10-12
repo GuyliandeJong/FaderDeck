@@ -4648,7 +4648,9 @@ class MainWindow(QMainWindow):
             "color: #8ba0b5; font-size: 11px; font-weight: bold;"
         )
         profile_title.setToolTip(
-            "Saved gain, mute, solo, mono and routing of all four channels"
+            "Saved gain, mute, solo, mono and routing of all four channels. "
+            "Mic processing is not part of it; that has its own presets in "
+            "the Mic Processing window."
         )
         self.profile_list = QComboBox()
         profile_buttons = QHBoxLayout()
@@ -4670,7 +4672,7 @@ class MainWindow(QMainWindow):
             )
             profile_buttons.addWidget(button)
         self.profile_status = QLabel("")
-        self.profile_status.setWordWrap(True)
+        # One short line: the panel has no room for more.
         self.profile_status.setStyleSheet("color: #8ba0b5; font-size: 11px;")
         self.profile_status.setVisible(False)
         profile_layout.addWidget(profile_title)
@@ -5034,7 +5036,7 @@ class MainWindow(QMainWindow):
         }
         self.store_profiles(profiles)
         self.refresh_profile_list(select=name)
-        self.show_profile_status(f"Saved the current mixer as \u201c{name}\u201d.")
+        self.show_profile_status("Saved.")
         return True
 
     def apply_profile(self, name):
@@ -5059,12 +5061,10 @@ class MainWindow(QMainWindow):
         # A press on LOAD always gets an answer, also when nothing differed.
         if changed:
             self.show_profile_status(
-                f"Loaded \u201c{name}\u201d: changed {', '.join(changed)}."
+                f"Loaded. Changed: {', '.join(changed)}."
             )
         else:
-            self.show_profile_status(
-                f"\u201c{name}\u201d already matches the mixer; nothing to change."
-            )
+            self.show_profile_status("Faders and buttons already match.")
         self.sync_tray()
         return applied
 

@@ -491,14 +491,16 @@ class ProfileTest(unittest.TestCase):
         self.assertIn("Saved", window.profile_status.text())
 
         window.profile_load_button.click()
-        self.assertIn("already matches", window.profile_status.text())
+        self.assertEqual(
+            window.profile_status.text(), "Faders and buttons already match."
+        )
 
         window.strips["Game"].fader.setValue(-600)
         window.strips["Media"].mute_button.click()
         window.profile_load_button.click()
         self.assertEqual(
             window.profile_status.text(),
-            "Loaded “Main”: changed Game, Media.",
+            "Loaded. Changed: Game, Media.",
         )
         self.assertEqual(self.vm.strip[5].gain, 0.0)
         self.assertFalse(self.vm.strip[7].mute)
