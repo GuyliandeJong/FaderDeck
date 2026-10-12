@@ -389,7 +389,6 @@ APPLICATION_PANEL_MIN_HEIGHT = 140
 # MainWindow). Every other toggle shows "on" as an outline in its own colour:
 # SOLO uses the colour below, MONO and the routing buttons use the strip accent.
 TOGGLE_COLORS = {
-    # TODO(human): pick the SOLO colour (amber is a placeholder).
     "solo": "#f5b83d",
 }
 

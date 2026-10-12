@@ -113,11 +113,19 @@ Compressor, Gate and Denoiser share one implementation, `ProcessingPanel`. Each 
 
 The processing controls are only synchronized while the popup is open, and once when it opens.
 
+Amount (`knob`) is a preset dial in VoiceMeeter: changing it rewrites the advanced values of that block. Bypass therefore stores the whole state of a block (QSettings `bypass_state_<block>`, so it survives a restart) and restores Amount first, then the advanced values. Reset restores the state the window was opened with through the same path (`_read_state` / `_restore_state`). Do not reduce this to remembering Amount only.
+
+The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate and compressor thresholds marked. Its sliders (`PanelSlider`) ignore the mouse wheel until clicked; Attack, Hold and Release use a logarithmic track. The window opens beside the main window and remembers its place (`processing_geometry_v1`).
+
+## Connection
+
+`check_connection()` runs every two seconds and looks for VoiceMeeter's main window with one Win32 call (`voicemeeter_is_running()`), which is cheap enough for the GUI thread. When VoiceMeeter goes away, `release_vm()` stops the level worker and event threads and logs out; when it returns, the same API object logs in again and the existing widgets are reused. Reconnecting only happens while VoiceMeeter is running, because `login()` would otherwise start it.
+
 ## Audio Meter Architecture
 
 ### Mic
 
-Mic level sampling runs in a dedicated worker and communicates with Qt through signals. With `ldirty=True` voicemeeterlib serves levels from a cache that refreshes every `ratelimit` (50 ms), so the worker only emits when the value changed. `ldirty` events are not forwarded to the GUI thread.
+Level sampling for all four strips runs in one dedicated worker (`StripLevelWorker`) and communicates with Qt through signals. Every strip has L/R meters. With `ldirty=True` voicemeeterlib serves levels from a cache that refreshes every `ratelimit` (50 ms), so the worker only emits when the value changed. `ldirty` events are not forwarded to the GUI thread.
 
 ### Applications
 
@@ -202,7 +210,7 @@ Implemented:
 - Right-click → Hide on <channel> / Hide on all channels (and the matching Unhide entries)
 - Eye button per column, plus one for all channels, toggles hidden applications
 - Hidden state persists via QSettings key `hidden_applications_v2`
-- The hide key is the executable path, so an application that installs into a versioned folder gets a new key after an update (known limitation)
+- The hide key is the executable path with version folders replaced by `*` (`stable_hide_key()`), so an application stays hidden after it updates; older stored entries are rewritten once on load
 - Hidden applications are excluded from normal visible counts
 - Hidden applications can be shown dimmed
 

@@ -1,6 +1,6 @@
 # VMStreamer — Project State
 
-State date: 2026-10-07
+State date: 2026-10-12
 Current release: `v1.0.2`
 Branch: `main`
 Repository: https://github.com/GuylianDeJong/VMStreamer
@@ -55,7 +55,9 @@ VoiceMeeter uses event-based bidirectional synchronization. `vm.init_thread()` i
 
 ## Audio
 
-Mic level sampling uses a dedicated worker, which emits only when the level changed.
+Level sampling for all four strips uses one dedicated worker (`StripLevelWorker`), which emits only when a level changed. Every strip has L/R meters.
+
+VMStreamer reconnects by itself when VoiceMeeter is closed and started again (`check_connection`, `release_vm`).
 
 Application audio uses a dedicated Python sampling loop at roughly 10 ms with GUI updates around 60 FPS.
 
@@ -97,7 +99,7 @@ Application rows contain name, volume, percentage, mute control and live meter.
 
 Application sliders support click/drag.
 
-Mic Processing opens in a popup. Compressor, Gate and Denoiser share `ProcessingPanel`.
+Mic Processing opens in a popup. Compressor, Gate and Denoiser share `ProcessingPanel`. The popup has a Mic input bar with threshold markers, and Bypass and Reset per block. Amount is a preset dial in VoiceMeeter, so Bypass and Reset restore every value, not Amount alone.
 
 A draggable splitter separates the mixer from the lower panels (`splitter_v1`).
 
@@ -152,7 +154,10 @@ Do not regress:
 
 - VoiceMeeter event synchronization
 - dedicated application audio loop
-- dedicated mic worker
+- dedicated level worker (`StripLevelWorker`)
+- reconnect without restarting VoiceMeeter on its own
+- Bypass and Reset restoring the whole processing state
+- version-independent hide keys
 - correct dB conversion
 - safe VoiceMeeter shutdown
 - compressor and gate timing setter (`sendtext`, `SCRIPT_KEYS`)
@@ -186,7 +191,8 @@ Potential areas:
 - application routing rules
 - presets/profiles
 - configurable strip mapping
-- reconnect when VoiceMeeter restarts
+- global hotkeys
+- system tray
 - volume persistence
 - pan/balance
 - additional VoiceMeeter controls

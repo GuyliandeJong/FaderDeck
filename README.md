@@ -23,7 +23,8 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Solo
 - Mono
 - Output routing buttons (B1 for the microphone, A1–A3 for Game, Chat and Media)
-- Live microphone level meters
+- Live level meters on every channel, with a dB scale on the faders
+- Reconnects by itself when VoiceMeeter is closed and started again
 - Draggable divider between the mixer and the lower panels
 
 ### Application Audio
@@ -87,11 +88,20 @@ VMStreamer provides direct control over VoiceMeeter's microphone processing.
 
 All processing controls are synchronized directly with VoiceMeeter.
 
+The Mic Processing window also provides:
+
+- A mic input level bar with the gate and compressor thresholds marked on it
+- **Bypass** per block, to compare with and without; all values are remembered and restored
+- **Reset**, which restores the values from when the window was opened
+- Logarithmic Attack, Hold and Release sliders, and a tooltip on every parameter
+
+Note: in VoiceMeeter, **Amount** is a preset dial. Moving it replaces the advanced values of that block.
+
 ### Live Audio Meters
 
 VMStreamer includes real-time audio monitoring for:
 
-- Microphone input
+- Microphone, Game, Chat and Media
 - Windows applications
 
 Application audio monitoring uses a dedicated sampling loop to keep the interface responsive and prevent audio metering from blocking the graphical interface.
