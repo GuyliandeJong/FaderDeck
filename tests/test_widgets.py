@@ -317,6 +317,14 @@ class CloseToTrayTest(unittest.TestCase):
         pump()
         self.assertFalse(self.window.connected)
 
+    def test_a_second_start_shows_the_hidden_window(self):
+        window = self.window
+        window.close()
+        self.assertFalse(window.isVisible())
+        # What the native event filter does when the request arrives.
+        window.hotkey_filter.show_callback()
+        self.assertTrue(window.isVisible())
+
     def test_tray_shows_the_mute_state(self):
         window = self.window
         window.toggle_mic_mute()

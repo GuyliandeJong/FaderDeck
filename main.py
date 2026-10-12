@@ -424,18 +424,76 @@ def parse_hotkey(text):
     return None
 
 
-class HotkeyFilter(QAbstractNativeEventFilter):
-    """Pass WM_HOTKEY messages for this application to a callback."""
+# Only one VMStreamer runs at a time: a second copy could not register the
+# hotkey and would fight the first over the mixer. Starting it again asks the
+# running one to show its window, which may be hidden in the tray.
+# The packaged program and a run from source use different names, so the
+# installed VMStreamer does not block development.
+SINGLE_INSTANCE_NAME = (
+    "VMStreamer.SingleInstance"
+    if getattr(sys, "frozen", False)
+    else "VMStreamer.SingleInstance.Source"
+)
+ERROR_ALREADY_EXISTS = 183
+HWND_BROADCAST = 0xFFFF
 
-    def __init__(self, callback):
+
+def show_window_message(name=SINGLE_INSTANCE_NAME):
+    """Id of the Windows message that asks a running VMStreamer to show up."""
+    return ctypes.windll.user32.RegisterWindowMessageW(f"{name}.Show")
+
+
+def acquire_single_instance(name=SINGLE_INSTANCE_NAME):
+    """Claim the right to be the running VMStreamer.
+
+    Returns a handle to keep for as long as the program runs, or None when
+    another VMStreamer already holds it.
+    """
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = ctypes.wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = (
+        ctypes.c_void_p, ctypes.wintypes.BOOL, ctypes.wintypes.LPCWSTR
+    )
+    kernel32.CloseHandle.argtypes = (ctypes.wintypes.HANDLE,)
+
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        # Could not ask Windows; running twice beats not running at all.
+        return -1
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return None
+    return handle
+
+
+def ask_running_instance_to_show(name=SINGLE_INSTANCE_NAME):
+    ctypes.windll.user32.PostMessageW(
+        HWND_BROADCAST, show_window_message(name), 0, 0
+    )
+
+
+class HotkeyFilter(QAbstractNativeEventFilter):
+    """Pass this application's own Windows messages to callbacks: global
+    hotkeys, and the request of a second start to show the window."""
+
+    def __init__(self, callback, show_callback=None):
         super().__init__()
         self.callback = callback
+        self.show_callback = show_callback
+        self.show_message = show_window_message()
+        # The request is broadcast, so every window of this program gets a
+        # copy (the tray icon has one too). Act on the main window's only.
+        self.window_handle = None
 
     def nativeEventFilter(self, event_type, message):
         if bytes(event_type) == b"windows_generic_MSG":
             msg = ctypes.wintypes.MSG.from_address(int(message))
             if msg.message == WM_HOTKEY:
                 self.callback(int(msg.wParam))
+                return True, 0
+            if msg.message == self.show_message and self.show_callback:
+                if self.window_handle in (None, msg.hWnd):
+                    self.show_callback()
                 return True, 0
         return False, 0
 
@@ -4260,7 +4318,8 @@ class MainWindow(QMainWindow):
             self.prepare_to_quit
         )
 
-        self.hotkey_filter = HotkeyFilter(self.on_hotkey)
+        self.hotkey_filter = HotkeyFilter(self.on_hotkey, self.show_from_tray)
+        self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         self.register_hotkeys()
 
@@ -4898,6 +4957,12 @@ def resource_path(filename):
 
 def main():
     setup_logging()
+    # Kept until the program ends; Windows releases it then.
+    single_instance = acquire_single_instance()
+    if single_instance is None:
+        log.info("VMStreamer is already running; showing that window")
+        ask_running_instance_to_show()
+        return
     log.info("VMStreamer starting")
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(

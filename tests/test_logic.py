@@ -125,5 +125,27 @@ class LevelsTest(unittest.TestCase):
         self.assertEqual(pair(None), (-200.0, -200.0))
 
 
+class SingleInstanceTest(unittest.TestCase):
+    NAME = "VMStreamer.Tests.SingleInstance"
+
+    def test_second_claim_is_refused_until_the_first_is_released(self):
+        first = main.acquire_single_instance(self.NAME)
+        self.assertTrue(first)
+        try:
+            self.assertIsNone(main.acquire_single_instance(self.NAME))
+        finally:
+            main.ctypes.windll.kernel32.CloseHandle(main.ctypes.c_void_p(first))
+        again = main.acquire_single_instance(self.NAME)
+        self.assertTrue(again)
+        main.ctypes.windll.kernel32.CloseHandle(main.ctypes.c_void_p(again))
+
+    def test_source_and_packaged_runs_use_different_names(self):
+        self.assertTrue(main.SINGLE_INSTANCE_NAME.endswith(".Source"))
+        self.assertNotEqual(
+            main.show_window_message("VMStreamer.SingleInstance"),
+            main.show_window_message(main.SINGLE_INSTANCE_NAME),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
