@@ -26,7 +26,9 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Setup profiles: save the whole setup under a name and load it again: gain, mute, solo, mono and routing of all channels, and the mic processing. The panel shows when the mixer no longer matches the loaded profile, with UPDATE to save it back
 - Live level meters on every channel, with a dB scale on the faders
 - Reconnects by itself when VoiceMeeter is closed and started again
-- Global hotkeys to mute the microphone (Ctrl+Shift+M by default) and each of Game, Chat and Media
+- Global hotkeys: mute and volume for every channel, and next or previous setup profile. Only the microphone's mute (Ctrl+Shift+M) is set out of the box
+- Compact view: the four channels with fader, meters and mute in a small window
+- Remote control for other programs on the same PC (Stream Deck plugins, OBS scripts), off by default; see below
 - System tray icon: keeps running when the window is closed, with mute and quit in its menu. Hold Shift while closing the window to quit at once
 - Settings window for the microphone input, the hotkey and the tray behaviour
 - Starting VMStreamer a second time shows the running one instead of opening another
@@ -161,6 +163,29 @@ Run VMStreamer:
 python main.py
 ```
 
+## Remote Control
+
+VMStreamer can be controlled by other programs on the same computer over HTTP. Switch it on under Settings, Remote control, and copy the token shown there.
+
+- It listens on `127.0.0.1` only, so nothing on the network can connect.
+- Every request needs the token, in the header `X-VMStreamer-Token`.
+- Requests from web pages are refused.
+
+| Request | Does |
+| --- | --- |
+| `GET /api/state` | connection, loaded profile, and gain, mute, solo, mono and routing of every channel |
+| `GET /api/profiles` | the setup profiles and which one is loaded |
+| `POST /api/mute/mic?state=toggle` | mute a channel: `on`, `off` or `toggle` |
+| `POST /api/gain/game?step=-1` | move a fader by decibels, or set it with `db=-6` |
+| `POST /api/profile/Streaming` | load a setup profile |
+| `POST /api/profile?step=next` | load the `next` or `previous` profile |
+
+Channels are `mic`, `game`, `chat` and `media`. Example:
+
+```powershell
+curl.exe -X POST -H "X-VMStreamer-Token: YOUR_TOKEN" http://127.0.0.1:8765/api/mute/mic
+```
+
 ## Running the Tests
 
 The tests use only the Python standard library and run without VoiceMeeter: the mixer, the registry and Windows audio are replaced by stand-ins.
@@ -245,15 +270,13 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global mute hotkeys, system tray, settings window, mic processing presets, mixer profiles, single running instance.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control.
 
 Next, roughly in this order:
 
-1. Hotkeys for volume and for switching profiles
-2. A compact window mode
-3. Configurable Game, Chat and Media mapping, and other VoiceMeeter editions
-4. A local API, so Stream Deck, OBS and scripts can control VMStreamer
-5. A Windows installer and a signed EXE
+1. A Windows installer, and a signed EXE so Windows does not warn about it
+2. Your own names for the Game, Chat and Media channels
+3. Support for VoiceMeeter Banana and the standard edition
 
 Not planned for now: light mode and custom themes, automatic updates.
 

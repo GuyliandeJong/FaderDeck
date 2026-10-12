@@ -159,6 +159,20 @@ Moving Amount by hand shows a notice under it with UNDO (`_before_amount_change`
 
 The tick under each slider marks what RESET returns to (`set_reference`). That is the state the window opened with, until a preset or profile is loaded or saved; from then on that one is the reference. Users read the ticks as "where the values belong", so they must follow a load.
 
+## Hotkey Table, Compact View and Local API
+
+`HOTKEYS` lists every global hotkey as a `HotkeyAction` (id, settings key, group, label, default, repeats, action, argument). The settings window, `register_hotkeys()` and `on_hotkey()` all read it, so a new hotkey is one more entry. Volume hotkeys repeat while held; mute and profile hotkeys are registered with `MOD_NOREPEAT`.
+
+Compact view (`MainWindow.set_compact`, `StripWidget.set_compact`) hides SOLO, MONO, routing and the lower pane; it does not remove them, so profiles, hotkeys and VoiceMeeter's own changes still reach the hidden buttons. Each view keeps its own geometry (`geometry_v2`, `geometry_compact`).
+
+The local API (`LocalApi`, `ApiServer`, `MainWindow.handle_api_call`) is off by default (`api_enabled`). Keep these properties when changing it:
+
+- It binds `127.0.0.1` only and refuses to share its port (`SO_EXCLUSIVEADDRUSE`). Without that, Windows lets a second program listen on the same port and receive the token.
+- Every request needs the token, compared with `hmac.compare_digest`.
+- A request with an `Origin` header, or a `Host` other than `127.0.0.1` or `localhost`, is refused, so a web page cannot reach the mixer.
+- Reads are GET and changes are POST; a GET never changes anything.
+- Requests arrive on server threads and are handed to the GUI thread through `call_requested`; the server thread waits for the answer with a timeout. Nothing in `LocalApi` touches a widget or VoiceMeeter.
+
 ## Tests
 
 `tests/` holds unit tests on the standard library's `unittest`; run them with `python -m unittest discover -s tests` before committing a change to `main.py`. `tests/fakes.py` provides a fake mixer (`FakeVM`), an in-memory `QSettings` and a `Sandbox` that swaps them into `main`, so a real `MainWindow` can be built on Qt's offscreen platform without VoiceMeeter.

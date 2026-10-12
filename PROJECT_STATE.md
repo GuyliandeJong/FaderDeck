@@ -162,6 +162,7 @@ Do not regress:
 - Bypass and Reset restoring the whole processing state
 - version-independent hide keys
 - the unit tests in `tests/` passing
+- the local API's protections (loopback only, token, no web pages, exclusive port)
 - quitting on Windows session end instead of hiding in the tray
 - correct dB conversion
 - safe VoiceMeeter shutdown
@@ -190,11 +191,9 @@ Potential areas:
 
 - application routing rules
 - presets/profiles
-- hotkeys for volume and profile switching
-- compact window mode
-- configurable Game/Chat/Media mapping
-- local API
 - installer and signed EXE
+- custom names for the Game, Chat and Media channels
+- VoiceMeeter Banana and standard edition
 - volume persistence
 - pan/balance
 - additional VoiceMeeter controls
