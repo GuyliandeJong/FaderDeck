@@ -255,6 +255,7 @@ FaderDeck/
 ├── tests/                    unit tests (no VoiceMeeter needed)
 ├── faderdeck.ico
 ├── screenshots/              pictures used in this README
+├── tools/make_icon.py        rebuilds faderdeck.ico from the logo in main.py
 ├── HANDOVER.md
 ├── PROJECT_STATE.md
 └── README.md

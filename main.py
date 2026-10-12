@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 
 from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
-from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QFontMetricsF, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
 
 from PySide6.QtSvg import QSvgRenderer
 
@@ -91,6 +91,33 @@ except Exception:
 
 # Monochrome UI icons. They are embedded as SVG so the application does not
 # need extra icon files at runtime or during PyInstaller packaging.
+
+
+# The FaderDeck mark: three faders on a tile. The window header draws it
+# from here, and tools/make_icon.py turns the same drawing into faderdeck.ico.
+LOGO_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"
+     viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2aa8ff"/>
+      <stop offset="1" stop-color="#8a5cff"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="236" height="236" rx="54" fill="url(#tile)"/>
+  <rect x="67" y="58" width="14" height="140" rx="7" fill="#ffffff"
+        fill-opacity="0.35"/>
+  <rect x="51" y="89" width="46" height="30" rx="8" fill="#ffffff"/>
+  <rect x="121" y="58" width="14" height="140" rx="7" fill="#ffffff"
+        fill-opacity="0.35"/>
+  <rect x="105" y="145" width="46" height="30" rx="8" fill="#ffffff"/>
+  <rect x="175" y="58" width="14" height="140" rx="7" fill="#ffffff"
+        fill-opacity="0.35"/>
+  <rect x="159" y="109" width="46" height="30" rx="8" fill="#ffffff"/>
+</svg>
+"""
+# The two colours of the tile's gradient, also used for the name beside it.
+LOGO_GRADIENT = ("#2aa8ff", "#8a5cff")
 
 
 def _svg_icon(svg, size=22):
@@ -912,6 +939,54 @@ STRIP_COLORS = {
     "Chat": {"accent": "#a68aff", "border": "#504273", "header": "#241e37"},
     "Media": {"accent": "#24d6a0", "border": "#236450", "header": "#102a24"},
 }
+
+
+class Wordmark(QWidget):
+    """The program's name in the header, drawn with the logo's gradient.
+
+    "Fader" is heavy and "Deck" is light, so the name reads as a mark and
+    not as a line of text. A stylesheet cannot colour text with a gradient,
+    hence the painting.
+    """
+
+    WORDS = (("Fader", QFont.Weight.ExtraBold), ("Deck", QFont.Weight.Normal))
+    PIXEL_SIZE = 18
+
+    def __init__(self):
+        super().__init__()
+        self._fonts = []
+        width = 0.0
+        height = 0.0
+        for _text, weight in self.WORDS:
+            font = QFont("Segoe UI")
+            font.setPixelSize(self.PIXEL_SIZE)
+            font.setWeight(weight)
+            self._fonts.append(font)
+        for (text, _weight), font in zip(self.WORDS, self._fonts):
+            metrics = QFontMetricsF(font)
+            width += metrics.horizontalAdvance(text)
+            height = max(height, metrics.height())
+        self.setFixedSize(int(width) + 2, int(height) + 2)
+        self.setToolTip("FaderDeck")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        gradient = QLinearGradient(0, 0, self.width(), 0)
+        gradient.setColorAt(0.0, QColor(LOGO_GRADIENT[0]))
+        gradient.setColorAt(1.0, QColor(LOGO_GRADIENT[1]))
+        painter.setPen(QPen(QBrush(gradient), 1))
+        x = 0.0
+        for (text, _weight), font in zip(self.WORDS, self._fonts):
+            metrics = QFontMetricsF(font)
+            painter.setFont(font)
+            painter.drawText(
+                QRectF(x, 0, metrics.horizontalAdvance(text) + 1, self.height()),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                text,
+            )
+            x += metrics.horizontalAdvance(text)
+        painter.end()
 
 
 class VMEventBridge(QObject):
@@ -4862,10 +4937,11 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
 
 
-        app_title = QLabel("FaderDeck")
-        app_title.setStyleSheet(
-            "color: #e6edf3; font-size: 17px; font-weight: 800;"
-        )
+        logo_mark = QLabel()
+        logo_mark.setFixedSize(26, 26)
+        logo_mark.setPixmap(_svg_icon(LOGO_SVG, 26).pixmap(26, 26))
+
+        app_title = Wordmark()
 
         app_subtitle = QLabel("for VoiceMeeter Potato")
         app_subtitle.setStyleSheet(
@@ -4882,6 +4958,8 @@ class MainWindow(QMainWindow):
         )
 
 
+        header.setSpacing(7)
+        header.addWidget(logo_mark)
         header.addWidget(app_title)
         header.addWidget(app_subtitle)
 
