@@ -187,6 +187,14 @@ def reference_eye_icon(size=20):
 
 
 MONO_ICONS = {
+    "compact": """
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+             viewBox="0 0 24 24">
+          <path d="M9 4v5H4 M15 4v5h5 M9 20v-5H4 M15 20v-5h5"
+                fill="none" stroke="#d7e1eb" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    """,
     "speaker": """
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
              viewBox="0 0 24 24">
@@ -630,6 +638,16 @@ MIC_METER_SPACING = 6   # pixels between the two meters
 # The mixer and the lower panels share the window height through a
 # draggable splitter, so these are minimums and starting sizes, not fixed sizes.
 MIXER_CARD_MIN_HEIGHT = 330
+# Compact view: the four strips with fader, meters and MUTE only.
+COMPACT_CARD_MIN_HEIGHT = 190
+COMPACT_HEADER_HEIGHT = 34
+COMPACT_FADER_WIDTH = 44
+COMPACT_METER_WIDTH = 12
+NORMAL_METER_WIDTH = 28
+WINDOW_MIN_SIZE = (820, 680)
+WINDOW_DEFAULT_SIZE = (960, 900)
+COMPACT_MIN_SIZE = (520, 300)
+COMPACT_DEFAULT_SIZE = (580, 380)
 DEFAULT_MIXER_PANE_HEIGHT = 655
 CHANNEL_HEADER_HEIGHT = 58
 CHANNEL_FADER_MIN_HEIGHT = 100
@@ -758,8 +776,8 @@ class VUMeter(QProgressBar):
 
         self.setTextVisible(False)
 
-        self.setMinimumWidth(28)
-        self.setMaximumWidth(28)
+        self.setMinimumWidth(NORMAL_METER_WIDTH)
+        self.setMaximumWidth(NORMAL_METER_WIDTH)
 
         # Height is flexible: the Mic meters follow the fader length.
         self.setMinimumHeight(40)
@@ -825,7 +843,8 @@ class VUMeter(QProgressBar):
             painter.drawLine(
                 QPointF(inner.left() + 3, y), QPointF(inner.right() - 3, y)
             )
-        if self._label:
+        # A slim (compact view) meter has no room for the letter.
+        if self._label and self.width() >= NORMAL_METER_WIDTH:
             font = painter.font()
             font.setPixelSize(10)
             font.setBold(True)
@@ -1884,7 +1903,10 @@ class MicFaderArea(QWidget):
         self.layout().activate()
         widths = [meter.maximumWidth() for meter in self.meters]
         total = sum(widths) + MIC_METER_SPACING * (len(widths) - 1)
-        x = max(0, self.fader.x() - MIC_METER_GAP - total)
+        # Keep the usual gap when there is room, and close up to the fader
+        # in a narrow card rather than sliding under it.
+        gap = min(MIC_METER_GAP, max(4, self.fader.x() - total - 2))
+        x = max(0, self.fader.x() - gap - total)
         y = self.fader.y()
         height = self.fader.height()
         for meter, width in zip(self.meters, widths):
@@ -1988,6 +2010,9 @@ class StripWidget(QWidget):
         strip_header_layout.addStretch(1)
         strip_header.setFixedHeight(CHANNEL_HEADER_HEIGHT)
         layout.addWidget(strip_header)
+        self.strip_header = strip_header
+        self.source_label = source_label
+        self.compact = False
         layout.addSpacing(8)
 
 
@@ -2140,6 +2165,7 @@ class StripWidget(QWidget):
             "color: #8ba0b5; font-size: 11px; font-weight: bold;"
         )
         layout.addWidget(routing_title)
+        self.routing_title = routing_title
         layout.addSpacing(2)
         routing_layout = QGridLayout()
         routing_layout.setContentsMargins(0, 0, 0, 0)
@@ -2172,6 +2198,37 @@ class StripWidget(QWidget):
         )
         layout.addWidget(button, row, column)
         self.route_buttons[output] = button
+
+    def set_compact(self, compact):
+        """Compact view keeps the fader, the meters, the level and MUTE.
+
+        Everything else is hidden, not removed: profiles, hotkeys and
+        VoiceMeeter's own changes still reach the hidden buttons.
+        """
+        self.compact = bool(compact)
+        for widget in (
+            self.source_label,
+            self.solo_button,
+            self.mono_button,
+            self.routing_title,
+            *self.route_buttons.values(),
+        ):
+            widget.setVisible(not compact)
+        self.strip_header.setFixedHeight(
+            COMPACT_HEADER_HEIGHT if compact else CHANNEL_HEADER_HEIGHT
+        )
+        self.fader.setFixedWidth(
+            COMPACT_FADER_WIDTH if compact else MixerFader.WIDTH
+        )
+        self.fader.show_labels = not compact and self.name == "Mic"
+        width = COMPACT_METER_WIDTH if compact else NORMAL_METER_WIDTH
+        for meter in self.vu_meters:
+            meter.setMinimumWidth(width)
+            meter.setMaximumWidth(width)
+        self.setMinimumHeight(
+            COMPACT_CARD_MIN_HEIGHT if compact else MIXER_CARD_MIN_HEIGHT
+        )
+        self.fader.update()
 
     def profile_state(self):
         """What a mixer profile stores for this strip."""
@@ -4434,16 +4491,10 @@ class MainWindow(QMainWindow):
         # Compact default size fits the open desktop area beside monitoring
         # tools while keeping the window resizable. Restore the last saved
         # geometry when available.
-        self.setMinimumSize(820, 680)
-        saved_geometry = self.window_settings.value("geometry_v2")
-        if saved_geometry is not None:
-            try:
-                if not self.restoreGeometry(saved_geometry):
-                    self.resize(960, 900)
-            except Exception:
-                self.resize(960, 900)
-        else:
-            self.resize(960, 900)
+        # Applied once the widgets exist; see the end of __init__.
+        self.compact = False
+        self.setMinimumSize(*WINDOW_MIN_SIZE)
+        self.restore_window_geometry()
 
 
         self.setStyleSheet(
@@ -4602,13 +4653,31 @@ class MainWindow(QMainWindow):
         )
         self.settings_button.clicked.connect(self.open_settings)
 
+        self.compact_button = QPushButton()
+        self.compact_button.setCheckable(True)
+        self.compact_button.setFixedSize(32, 26)
+        self.compact_button.setIcon(mono_icon("compact", 18))
+        self.compact_button.setIconSize(QSize(18, 18))
+        self.compact_button.setToolTip(
+            "Compact view: faders, meters and mute only"
+        )
+        self.compact_button.setStyleSheet(
+            "QPushButton { background: #18232e; border: 1px solid #314558; "
+            "border-radius: 6px; padding: 0; }"
+            "QPushButton:hover { background: #243b52; }"
+            "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
+        )
+        self.compact_button.clicked.connect(self.set_compact)
+
         header.addStretch()
 
         header.addWidget(
             self.status_label
         )
         header.addSpacing(8)
+        header.addWidget(self.compact_button)
         header.addWidget(self.settings_button)
+        self.app_subtitle = app_subtitle
 
         main_layout.addLayout(
             header
@@ -4858,6 +4927,8 @@ class MainWindow(QMainWindow):
         self.hotkey_filter = HotkeyFilter(
             self.on_hotkey, self.show_from_tray, self.quit_application
         )
+        if setting_bool(self.window_settings, "compact_mode", False):
+            self.set_compact(True, remember_geometry=False)
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         self.register_hotkeys()
@@ -5032,6 +5103,7 @@ class MainWindow(QMainWindow):
 
 
             widget.setMinimumHeight(MIXER_CARD_MIN_HEIGHT)
+            widget.set_compact(self.compact)
             widget.setSizePolicy(
                 QSizePolicy.Policy.Preferred,
                 QSizePolicy.Policy.Expanding,
@@ -5708,6 +5780,47 @@ class MainWindow(QMainWindow):
             self.mic_level_bar.set_level(max(left, right))
 
 
+    # The normal and the compact view each remember their own size and place.
+
+    def geometry_setting(self):
+        return "geometry_compact" if self.compact else "geometry_v2"
+
+    def save_window_geometry(self):
+        self.window_settings.setValue(self.geometry_setting(), self.saveGeometry())
+
+    def restore_window_geometry(self):
+        default = COMPACT_DEFAULT_SIZE if self.compact else WINDOW_DEFAULT_SIZE
+        saved = self.window_settings.value(self.geometry_setting())
+        if saved is not None:
+            try:
+                if self.restoreGeometry(saved):
+                    return
+            except Exception:
+                pass
+        self.resize(*default)
+
+    def set_compact(self, compact, remember_geometry=True):
+        """Switch between the full window and the compact strips-only view."""
+        compact = bool(compact)
+        if remember_geometry and compact != self.compact:
+            self.save_window_geometry()
+        self.compact = compact
+        self.compact_button.setChecked(compact)
+        self.compact_button.setToolTip(
+            "Back to the full view"
+            if compact
+            else "Compact view: faders, meters and mute only"
+        )
+        self.window_settings.setValue("compact_mode", compact)
+
+        for strip in self.strips.values():
+            strip.set_compact(compact)
+        # Applications, mic processing and profiles live in the lower pane.
+        self.lower_container.setVisible(not compact)
+        self.app_subtitle.setVisible(not compact)
+        self.setMinimumSize(*(COMPACT_MIN_SIZE if compact else WINDOW_MIN_SIZE))
+        self.restore_window_geometry()
+
     def create_tray(self):
         """Add the tray icon with its menu, when the desktop has a tray."""
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -5997,8 +6110,11 @@ class MainWindow(QMainWindow):
         self.release_vm()
         self.vm = None
 
-        self.window_settings.setValue("geometry_v2", self.saveGeometry())
-        self.window_settings.setValue("splitter_v1", self.main_splitter.saveState())
+        self.save_window_geometry()
+        if not self.compact:
+            self.window_settings.setValue(
+                "splitter_v1", self.main_splitter.saveState()
+            )
         self._save_processing_geometry()
         self.window_settings.sync()
 

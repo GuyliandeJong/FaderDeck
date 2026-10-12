@@ -398,6 +398,69 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog.hotkey_problem(), "")
         self.assertEqual(dialog.values()["hotkey_game_mute"], "Ctrl+Alt+G")
 
+    def test_compact_view_keeps_fader_meters_and_mute(self):
+        window = self.window
+        window.show()
+        pump()
+        self.assertFalse(window.compact)
+
+        window.compact_button.click()
+        pump()
+        self.assertTrue(window.compact)
+        self.assertTrue(FakeSettings.store["compact_mode"])
+        self.assertFalse(window.lower_container.isVisible())
+        strip = window.strips["Game"]
+        for hidden in (strip.solo_button, strip.mono_button, strip.routing_title,
+                       strip.route_buttons["A1"], strip.source_label):
+            self.assertFalse(hidden.isVisible())
+        for shown in (strip.fader, strip.mute_button, strip.gain_label, *strip.vu_meters):
+            self.assertTrue(shown.isVisible())
+        self.assertEqual(window.minimumSize().width(), main.COMPACT_MIN_SIZE[0])
+
+        window.compact_button.click()
+        pump()
+        self.assertFalse(window.compact)
+        self.assertTrue(window.lower_container.isVisible())
+        self.assertTrue(strip.solo_button.isVisible())
+        self.assertTrue(window.strips["Mic"].fader.show_labels)
+        self.assertEqual(window.minimumSize().width(), main.WINDOW_MIN_SIZE[0])
+
+    def test_compact_view_still_follows_hotkeys_and_profiles(self):
+        window, vm = self.window, self.sandbox.vm
+        window.strips["Chat"].route_buttons["B1"].click()
+        window.save_profile("Main")
+        window.set_compact(True)
+
+        window.strips["Chat"].route_buttons["B1"].click()      # hidden, still works
+        self.assertFalse(vm.strip[6].B1)
+        window.on_hotkey(main.MUTE_HOTKEYS["Game"][0])
+        self.assertTrue(vm.strip[5].mute)
+        self.assertTrue(window.apply_profile("Main"))
+        self.assertTrue(vm.strip[6].B1)
+        self.assertFalse(vm.strip[5].mute)
+
+    def test_each_view_remembers_its_own_size(self):
+        window = self.window
+        window.show()
+        window.set_compact(True)
+        self.assertIn("geometry_v2", FakeSettings.store)
+        window.resize(600, 360)
+        window.set_compact(False)
+        self.assertIn("geometry_compact", FakeSettings.store)
+        self.assertGreaterEqual(window.width(), main.WINDOW_MIN_SIZE[0])
+        # (The test screen is smaller than the full window, so only the
+        # compact size can be compared exactly.)
+        window.set_compact(True)
+        self.assertEqual((window.width(), window.height()), (600, 360))
+
+    def test_starts_in_the_view_it_was_closed_in(self):
+        self.window.set_compact(True)
+        again = self.sandbox.window()
+        self.addCleanup(self.sandbox.close, again)
+        self.assertTrue(again.compact)
+        self.assertTrue(again.compact_button.isChecked())
+        self.assertTrue(again.strips["Game"].compact)
+
     def test_every_strip_has_both_routing_rows(self):
         vm = self.sandbox.vm
         for name, strip in self.window.strips.items():
