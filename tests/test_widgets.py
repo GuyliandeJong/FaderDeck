@@ -274,6 +274,101 @@ class MainWindowTest(unittest.TestCase):
         self.assertIs(again.compressor_control.target, self.sandbox.vm.strip[3].comp)
 
 
+class PresetTest(unittest.TestCase):
+    """One preset holds the compressor, gate and denoiser together."""
+
+    def setUp(self):
+        self.sandbox = Sandbox()
+        self.sandbox.__enter__()
+        self.addCleanup(self.sandbox.__exit__)
+        self.window = self.sandbox.window()
+        self.addCleanup(self.sandbox.close, self.window)
+        self.mic = self.sandbox.vm.strip[0]
+
+    def test_save_change_and_load_restores_all_blocks(self):
+        window, mic = self.window, self.mic
+        self.assertTrue(window.save_preset("Stream"))
+
+        window.compressor_control.controls["knob"]["slider"].setValue(80)
+        window.gate_control._apply("hold", 900.0)
+        window.denoiser_control._apply("knob", 7.0)
+        mic.comp.makeup = False
+        self.assertNotEqual(compressor_state(self.sandbox.vm), COMPRESSOR)
+
+        self.assertTrue(window.apply_preset("Stream"))
+        self.assertEqual(compressor_state(self.sandbox.vm), COMPRESSOR)
+        self.assertEqual(mic.gate.hold, 120.0)
+        self.assertEqual(mic.gate.knob, 2.0)
+        self.assertEqual(mic.denoiser.knob, 2.0)
+        self.assertEqual(
+            window.gate_control.controls["hold"]["edit"].text(), "120.0 ms"
+        )
+
+    def test_presets_are_stored_as_json_and_can_be_deleted(self):
+        window = self.window
+        window.save_preset("  Stream  ")
+        window.save_preset("Recording")
+        stored = json.loads(FakeSettings.store["processing_presets"])
+        self.assertEqual(sorted(stored), ["Recording", "Stream"])
+        self.assertEqual(sorted(stored["Stream"]), ["compressor", "denoiser", "gate"])
+        self.assertEqual(stored["Stream"]["compressor"]["values"]["threshold"], -18.0)
+
+        self.assertTrue(window.delete_preset("Stream"))
+        self.assertFalse(window.delete_preset("Stream"))
+        self.assertEqual(list(window.load_presets()), ["Recording"])
+
+    def test_empty_name_and_unknown_preset_are_refused(self):
+        self.assertFalse(self.window.save_preset("   "))
+        self.assertFalse(self.window.apply_preset("Nope"))
+
+    def test_saving_while_bypassed_stores_the_real_values(self):
+        window = self.window
+        panel = window.compressor_control
+        panel.bypass_button.setChecked(True)
+        panel.on_bypass_clicked(True)
+        self.assertEqual(self.mic.comp.knob, 0.0)
+
+        window.save_preset("Stream")
+        values = window.load_presets()["Stream"]["compressor"]["values"]
+        self.assertEqual(values["knob"], 3.1)
+        self.assertEqual(values["threshold"], -18.0)
+
+    def test_loading_ends_a_bypass(self):
+        window = self.window
+        window.save_preset("Stream")
+        panel = window.compressor_control
+        panel.bypass_button.setChecked(True)
+        panel.on_bypass_clicked(True)
+        self.assertTrue(window.apply_preset("Stream"))
+        self.assertFalse(panel.bypass_button.isChecked())
+        self.assertEqual(compressor_state(self.sandbox.vm), COMPRESSOR)
+
+    def test_damaged_presets_do_no_harm(self):
+        window = self.window
+        FakeSettings.store["processing_presets"] = "not json"
+        self.assertEqual(window.load_presets(), {})
+
+        FakeSettings.store["processing_presets"] = json.dumps({
+            "Wild": {
+                "compressor": {"values": {"knob": 99, "threshold": -500, "bogus": 1}},
+                "gate": {"values": {"threshold": -38}},      # no Amount
+                "denoiser": "nonsense",
+            }
+        })
+        self.assertFalse(window.apply_preset("Wild"), "two blocks are unusable")
+        self.assertEqual(self.mic.comp.knob, 10.0, "kept inside the range")
+        self.assertEqual(self.mic.comp.threshold, -40.0)
+        self.assertEqual(self.mic.gate.knob, 2.0, "an unusable block is left alone")
+        self.assertEqual(self.mic.denoiser.knob, 2.0)
+
+    def test_not_applied_while_disconnected(self):
+        window = self.window
+        window.save_preset("Stream")
+        self.sandbox.running = False
+        window.check_connection()
+        self.assertFalse(window.apply_preset("Stream"))
+
+
 class CloseToTrayTest(unittest.TestCase):
     def setUp(self):
         self.sandbox = Sandbox()

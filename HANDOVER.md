@@ -127,6 +127,12 @@ The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate an
 
 The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit and Windows' session end (`commitDataRequest`) do. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it VMStreamer would hold up a Windows shutdown.
 
+## Presets and Single Instance
+
+A Mic processing preset stores the state of all three blocks together (`save_preset`, `apply_preset`, `delete_preset` on `MainWindow`; QSettings key `processing_presets`, JSON). Blocks hand out and take in a state through `preset_state()` and `apply_preset()`, which reuse the bypass/reset path: Amount first, then the advanced values. A preset saved while a block is bypassed stores the real values, not Amount 0. Stored values are clamped to the slider ranges when applied.
+
+Only one VMStreamer runs at a time. `main()` claims a named mutex (`acquire_single_instance`); a second start broadcasts a registered window message and exits, and the running instance shows its window (handled in `HotkeyFilter`, for the main window's copy of the message only). The packaged program and a run from source use different names on purpose.
+
 ## Tests
 
 `tests/` holds unit tests on the standard library's `unittest`; run them with `python -m unittest discover -s tests` before committing a change to `main.py`. `tests/fakes.py` provides a fake mixer (`FakeVM`), an in-memory `QSettings` and a `Sandbox` that swaps them into `main`, so a real `MainWindow` can be built on Qt's offscreen platform without VoiceMeeter.

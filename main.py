@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialogButtonBox,
     QFormLayout,
+    QInputDialog,
     QKeySequenceEdit,
     QMessageBox,
     QFileIconProvider,
@@ -1285,6 +1286,46 @@ class ProcessingPanel(QWidget):
             )
             self.sync_from_voicemeeter()
 
+    # Presets: a stored state of this block, applied like Reset.
+
+    def preset_state(self):
+        """The state a preset should store: the real values, also while
+        bypassed (bypass is a temporary switch, not part of a preset)."""
+        state = self._bypassed or self._read_state()
+        return {"values": dict(state["values"]), "extras": dict(state["extras"])}
+
+    def apply_preset(self, state):
+        """Apply a stored state. Returns False if it is not usable.
+
+        Presets come from a settings file, so unknown parameters are skipped
+        and values are kept inside the slider ranges.
+        """
+        try:
+            stored = state["values"]
+            values = {}
+            for key, control in self.controls.items():
+                if key in stored:
+                    actual = float(stored[key])
+                    if not math.isfinite(actual):
+                        return False
+                    values[key] = max(
+                        control["minimum"], min(control["maximum"], actual)
+                    )
+            if "knob" not in values:
+                return False
+            if self._bypassed is not None:
+                self._clear_bypass()
+            self._restore_state(
+                {"values": values, "extras": dict(state.get("extras") or {})}
+            )
+            return True
+        except Exception as e:
+            log.error(
+                f"Failed to apply {self.LABEL} preset: {type(e).__name__}: {e}"
+            )
+            self.sync_from_voicemeeter()
+            return False
+
     # Reset: go back to the values the window was opened with.
 
     def take_snapshot(self):
@@ -1388,7 +1429,8 @@ class CompressorControl(ProcessingPanel):
         return {"makeup": bool(self.target.makeup)}
 
     def apply_extras(self, values):
-        self.target.makeup = values["makeup"]
+        if "makeup" in values:
+            self.target.makeup = bool(values["makeup"])
         self.sync_extras()
 
     def on_makeup_changed(self, state):
@@ -4086,6 +4128,23 @@ class MainWindow(QMainWindow):
                 background: #0d1117;
             }
 
+            QComboBox, QLineEdit {
+                background: #18232e;
+                border: 1px solid #314558;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+
+            QComboBox:focus, QLineEdit:focus {
+                border-color: #58a6ff;
+            }
+
+            QComboBox QAbstractItemView {
+                background: #18232e;
+                color: #e6edf3;
+                selection-background-color: #243b52;
+            }
+
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
@@ -4265,6 +4324,7 @@ class MainWindow(QMainWindow):
         )
         self.processing_dialog = None
         self.mic_level_bar = None
+        self.preset_list = None
 
         self.applications_panel = QWidget()
         self.applications_panel.setObjectName("applicationsPanel")
@@ -4508,6 +4568,42 @@ class MainWindow(QMainWindow):
                 level_row.addWidget(self.mic_level_bar, 1)
                 dialog_layout.addLayout(level_row)
 
+                preset_row = QHBoxLayout()
+                preset_row.setContentsMargins(4, 0, 4, 2)
+                preset_row.setSpacing(6)
+                preset_title = QLabel("PRESET")
+                preset_title.setStyleSheet(
+                    "color: #8ba0b5; font-size: 11px; font-weight: bold;"
+                )
+                self.preset_list = QComboBox()
+                self.preset_list.setToolTip(
+                    "Saved settings of the compressor, gate and denoiser together"
+                )
+                self.preset_load_button = QPushButton("LOAD")
+                self.preset_load_button.setToolTip(
+                    "Replace the compressor, gate and denoiser values with "
+                    "this preset. RESET brings back the values from when the "
+                    "window was opened."
+                )
+                self.preset_load_button.clicked.connect(self.on_preset_load)
+                save_button = QPushButton("SAVE AS…")
+                save_button.setToolTip("Save the current values as a preset")
+                save_button.clicked.connect(self.on_preset_save)
+                self.preset_delete_button = QPushButton("DELETE")
+                self.preset_delete_button.clicked.connect(self.on_preset_delete)
+                for button in (
+                    self.preset_load_button, save_button, self.preset_delete_button
+                ):
+                    button.setFixedHeight(26)
+                    button.setStyleSheet("QPushButton { padding: 2px 10px; }")
+                preset_row.addWidget(preset_title)
+                preset_row.addWidget(self.preset_list, 1)
+                preset_row.addWidget(self.preset_load_button)
+                preset_row.addWidget(save_button)
+                preset_row.addWidget(self.preset_delete_button)
+                dialog_layout.addLayout(preset_row)
+                self.refresh_preset_list()
+
                 self.processing_tabs.setVisible(True)
                 dialog_layout.addWidget(self.processing_tabs, 1)
 
@@ -4545,6 +4641,119 @@ class MainWindow(QMainWindow):
         else:
             if self.processing_dialog is not None:
                 self.processing_dialog.close()
+
+    # Mic processing presets: one preset holds the compressor, the gate and
+    # the denoiser together, stored as JSON under "processing_presets".
+
+    def processing_blocks(self):
+        return {
+            "compressor": self.compressor_control,
+            "gate": self.gate_control,
+            "denoiser": self.denoiser_control,
+        }
+
+    def load_presets(self):
+        raw = self.window_settings.value("processing_presets", "")
+        try:
+            presets = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            presets = {}
+        return presets if isinstance(presets, dict) else {}
+
+    def store_presets(self, presets):
+        self.window_settings.setValue(
+            "processing_presets", json.dumps(presets, sort_keys=True)
+        )
+        self.window_settings.sync()
+
+    def save_preset(self, name):
+        """Store the current values of all three blocks under a name."""
+        name = (name or "").strip()
+        if not name or not all(self.processing_blocks().values()):
+            return False
+        presets = self.load_presets()
+        presets[name] = {
+            label: control.preset_state()
+            for label, control in self.processing_blocks().items()
+        }
+        self.store_presets(presets)
+        self.refresh_preset_list(select=name)
+        return True
+
+    def apply_preset(self, name):
+        """Send a stored preset to VoiceMeeter. False if any block failed."""
+        preset = self.load_presets().get(name)
+        if not isinstance(preset, dict) or not self.connected:
+            return False
+        applied = True
+        for label, control in self.processing_blocks().items():
+            if control is None or not control.apply_preset(preset.get(label)):
+                applied = False
+        return applied
+
+    def delete_preset(self, name):
+        presets = self.load_presets()
+        if presets.pop(name, None) is None:
+            return False
+        self.store_presets(presets)
+        self.refresh_preset_list()
+        return True
+
+    def refresh_preset_list(self, select=None):
+        if self.preset_list is None:
+            return
+        names = sorted(self.load_presets(), key=str.casefold)
+        current = select or self.preset_list.currentText()
+        self.preset_list.blockSignals(True)
+        self.preset_list.clear()
+        self.preset_list.addItems(names)
+        if current in names:
+            self.preset_list.setCurrentText(current)
+        self.preset_list.blockSignals(False)
+        self.preset_list.setPlaceholderText("No presets yet")
+        self.preset_load_button.setEnabled(bool(names))
+        self.preset_delete_button.setEnabled(bool(names))
+
+    def on_preset_load(self):
+        name = self.preset_list.currentText()
+        if name and not self.apply_preset(name):
+            QMessageBox.warning(
+                self.processing_dialog,
+                "VMStreamer",
+                f"The preset \u201c{name}\u201d could not be applied completely.",
+            )
+
+    def on_preset_save(self):
+        name, accepted = QInputDialog.getText(
+            self.processing_dialog,
+            "Save preset",
+            "Name of the preset:",
+            text=self.preset_list.currentText(),
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        if name in self.load_presets():
+            answer = QMessageBox.question(
+                self.processing_dialog,
+                "VMStreamer",
+                f"Replace the preset \u201c{name}\u201d?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.save_preset(name)
+
+    def on_preset_delete(self):
+        name = self.preset_list.currentText()
+        if not name:
+            return
+        answer = QMessageBox.question(
+            self.processing_dialog,
+            "VMStreamer",
+            f"Delete the preset \u201c{name}\u201d?",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.delete_preset(name)
 
     def _mark_thresholds(self):
         """Show the gate and compressor thresholds on the Mic input bar."""

@@ -160,6 +160,7 @@ Do not regress:
 - reconnect without restarting VoiceMeeter on its own
 - Bypass and Reset restoring the whole processing state
 - version-independent hide keys
+- the unit tests in `tests/` passing
 - quitting on Windows session end instead of hiding in the tray
 - correct dB conversion
 - safe VoiceMeeter shutdown
@@ -195,7 +196,7 @@ Potential areas:
 - presets/profiles
 - more hotkeys (per-channel mute, volume)
 - configurable Game/Chat/Media mapping
-- single running instance
+- whole-mixer profiles
 - volume persistence
 - pan/balance
 - additional VoiceMeeter controls

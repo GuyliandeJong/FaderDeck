@@ -28,6 +28,7 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Global hotkey to mute the microphone (Ctrl+Shift+M by default)
 - System tray icon: keeps running when the window is closed, with mute and quit in its menu
 - Settings window for the microphone input, the hotkey and the tray behaviour
+- Starting VMStreamer a second time shows the running one instead of opening another
 - Draggable divider between the mixer and the lower panels
 
 ### Application Audio
@@ -96,6 +97,7 @@ The Mic Processing window also provides:
 - A mic input level bar with the gate and compressor thresholds marked on it
 - **Bypass** per block, to compare with and without; all values are remembered and restored
 - **Reset**, which restores the values from when the window was opened
+- **Presets**: save the compressor, gate and denoiser values together under a name, and load them again
 - Logarithmic Attack, Hold and Release sliders, and a tooltip on every parameter
 
 Note: in VoiceMeeter, **Amount** is a preset dial. Moving it replaces the advanced values of that block.
@@ -247,7 +249,7 @@ VMStreamer is actively developed. The following features are planned or being co
 
 - [ ] Persistent application routing
 - [ ] Save and load mixer presets
-- [ ] Save microphone processing presets
+- [x] Save microphone processing presets
 - [ ] Save application volume and mute states
 - [ ] Multiple named profiles such as Gaming, Streaming, Recording, and Away
 - [ ] User-configurable application sorting and layout
