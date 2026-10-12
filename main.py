@@ -20,6 +20,9 @@ from PySide6.QtWidgets import (
 
     QApplication,
     QCheckBox,
+    QComboBox,
+    QDialogButtonBox,
+    QFormLayout,
     QFileIconProvider,
     QGridLayout,
     QHBoxLayout,
@@ -176,6 +179,20 @@ def reference_eye_icon(size=20):
 
 
 MONO_ICONS = {
+    "settings": """
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+             viewBox="0 0 24 24">
+          <path d="M4 7h9 M17 7h3 M4 12h3 M11 12h9 M4 17h10 M18 17h2"
+                fill="none" stroke="#d7e1eb" stroke-width="1.8"
+                stroke-linecap="round"/>
+          <circle cx="15" cy="7" r="2" fill="none" stroke="#d7e1eb"
+                  stroke-width="1.8"/>
+          <circle cx="9" cy="12" r="2" fill="none" stroke="#d7e1eb"
+                  stroke-width="1.8"/>
+          <circle cx="16" cy="17" r="2" fill="none" stroke="#d7e1eb"
+                  stroke-width="1.8"/>
+        </svg>
+    """,
     "eye": """
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
              viewBox="0 0 24 24">
@@ -359,6 +376,26 @@ STRIPS = {
 
 # The Mic strip is the only strip with processing controls and a VU meter.
 MIC_STRIP = STRIPS["Mic"]
+
+# VoiceMeeter Potato has five hardware inputs (strips 0-4); the microphone
+# can be on any of them. Chosen in the settings window, used from the next
+# start (see set_mic_strip).
+HARDWARE_INPUTS = 5
+
+
+def set_mic_strip(index):
+    """Choose which hardware input is the Mic strip. Call before the window
+    is built: the strip, its processing controls and the level worker all
+    read STRIPS / MIC_STRIP when they are created."""
+    global MIC_STRIP
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        index = 0
+    if not 0 <= index < HARDWARE_INPUTS:
+        index = 0
+    STRIPS["Mic"] = index
+    MIC_STRIP = index
 
 # Hide/unhide scope meaning "every virtual channel".
 ALL_CHANNELS = "*"
@@ -1462,7 +1499,7 @@ class StripWidget(QWidget):
 
         # Two-line source header, following VoiceMeeter's input cards.
         source_names = {
-            "Mic": "Stereo Input 1",
+            "Mic": f"Stereo Input {MIC_STRIP + 1}",
             "Game": "VAIO",
             "Chat": "VAIO AUX",
             "Media": "VAIO3",
@@ -3603,6 +3640,76 @@ class StripLevelWorker(QObject):
         self.finished.emit()
 
 
+class SettingsDialog(QDialog):
+    """Program settings. values() returns what the user chose."""
+
+    def __init__(self, parent, vm=None):
+        super().__init__(parent)
+        self.setWindowTitle("VMStreamer — Settings")
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        self.setMinimumWidth(460)
+        self.setStyleSheet(
+            "QComboBox, QLineEdit { background: #18232e; "
+            "border: 1px solid #314558; border-radius: 4px; padding: 4px 8px; }"
+            "QComboBox:focus, QLineEdit:focus { border-color: #58a6ff; }"
+            "QComboBox QAbstractItemView { background: #18232e; "
+            "color: #e6edf3; selection-background-color: #243b52; }"
+            "QLabel#settingsNote { color: #8ba0b5; font-size: 11px; }"
+            "QLabel#settingsHeading { color: #8ba0b5; font-size: 11px; "
+            "font-weight: bold; padding-top: 8px; }"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        self.form = QFormLayout()
+        self.form.setHorizontalSpacing(14)
+        self.form.setVerticalSpacing(8)
+        layout.addLayout(self.form)
+
+        self.add_heading("MIXER")
+        self.mic_input = QComboBox()
+        for index in range(HARDWARE_INPUTS):
+            text = f"Hardware Input {index + 1}"
+            try:
+                # The name given to the strip in VoiceMeeter, when there is one.
+                label = str(vm.strip[index].label).strip() if vm else ""
+            except Exception:
+                label = ""
+            self.mic_input.addItem(f"{text} — {label}" if label else text, index)
+        self.mic_input.setCurrentIndex(MIC_STRIP)
+        self.form.addRow("Microphone input", self.mic_input)
+        self.add_note(
+            "The VoiceMeeter input your microphone is on. "
+            "Used after VMStreamer is restarted."
+        )
+
+        layout.addStretch(1)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def add_heading(self, text):
+        heading = QLabel(text)
+        heading.setObjectName("settingsHeading")
+        self.form.addRow(heading)
+
+    def add_note(self, text):
+        note = QLabel(text)
+        note.setObjectName("settingsNote")
+        note.setWordWrap(True)
+        self.form.addRow("", note)
+
+    def values(self):
+        return {
+            "mic_strip": int(self.mic_input.currentData()),
+        }
+
+
 class GripSplitterHandle(QSplitterHandle):
     """Splitter handle with a visible grip, so it is obviously draggable."""
 
@@ -3683,6 +3790,8 @@ class MainWindow(QMainWindow):
         self._seen_running = 0
         self.strips = {}
         self.window_settings = QSettings("VMStreamer", "VMStreamer")
+        # Before any strip or processing control exists.
+        set_mic_strip(self.window_settings.value("mic_strip", 0))
 
 
         # Qt bridge for VoiceMeeter's background event thread.
@@ -3855,11 +3964,25 @@ class MainWindow(QMainWindow):
         header.addWidget(app_title)
         header.addWidget(app_subtitle)
 
+        self.settings_button = QPushButton()
+        self.settings_button.setFixedSize(32, 26)
+        self.settings_button.setIcon(mono_icon("settings", 18))
+        self.settings_button.setIconSize(QSize(18, 18))
+        self.settings_button.setToolTip("Settings")
+        self.settings_button.setStyleSheet(
+            "QPushButton { background: #18232e; border: 1px solid #314558; "
+            "border-radius: 6px; padding: 0; }"
+            "QPushButton:hover { background: #243b52; }"
+        )
+        self.settings_button.clicked.connect(self.open_settings)
+
         header.addStretch()
 
         header.addWidget(
             self.status_label
         )
+        header.addSpacing(8)
+        header.addWidget(self.settings_button)
 
         main_layout.addLayout(
             header
@@ -4379,6 +4502,16 @@ class MainWindow(QMainWindow):
         if name == "Mic" and self.mic_level_bar is not None:
             self.mic_level_bar.set_level(max(left, right))
 
+
+    def open_settings(self):
+        dialog = SettingsDialog(self, self.vm if self.connected else None)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.apply_settings(dialog.values())
+
+    def apply_settings(self, values):
+        """Store the settings and apply those that can change while running."""
+        self.window_settings.setValue("mic_strip", values["mic_strip"])
+        self.window_settings.sync()
 
     def on_vm_event(self, event):
 
