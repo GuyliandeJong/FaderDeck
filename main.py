@@ -554,6 +554,15 @@ class VUMeter(QProgressBar):
 class NumericEdit(QLineEdit):
     """Editable numeric field that selects its contents when focused."""
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            "QLineEdit { background: #0d141b; border: 1px solid #314558; "
+            "border-radius: 4px; padding: 2px 5px; }"
+            "QLineEdit:hover { border-color: #4b6179; }"
+            "QLineEdit:focus { border-color: #58a6ff; background: #101c28; }"
+        )
+
     def focusInEvent(self, event):
         super().focusInEvent(event)
         self.selectAll()
@@ -599,6 +608,163 @@ def parse_parameter(kind, text):
     return float(value)
 
 
+class MicLevelBar(QWidget):
+    """Horizontal Mic input level with the processing thresholds marked.
+
+    Thresholds only mean something next to the level they are compared with,
+    so the Mic Processing window shows both on one scale.
+    """
+
+    MIN_DB = -60.0
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(40)
+        self.setToolTip(
+            "Mic input level (before processing) with the gate and "
+            "compressor thresholds"
+        )
+        self._markers = []
+        self._target = self.MIN_DB
+        self._display = self.MIN_DB
+        self._last_animation = time.monotonic()
+
+    def add_marker(self, label, color, getter):
+        """Mark a threshold; getter returns its current value in dB."""
+        self._markers.append((label, QColor(color), getter))
+
+    def set_level(self, level):
+        self._target = max(self.MIN_DB, min(0.0, float(level)))
+
+    def animate(self):
+        """Fast attack, slower release, like the Mic strip meters."""
+        now = time.monotonic()
+        elapsed = min(now - self._last_animation, 0.05)
+        self._last_animation = now
+        display = self._display
+        if self._target > display:
+            display = min(self._target, display + 500.0 * elapsed)
+        elif self._target < display:
+            display = max(self._target, display - 110.0 * elapsed)
+        if display != self._display:
+            self._display = display
+            self.update()
+
+    def _x(self, bar, db):
+        fraction = (db - self.MIN_DB) / -self.MIN_DB
+        return bar.left() + bar.width() * max(0.0, min(1.0, fraction))
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        bar = QRectF(1, 5, self.width() - 2, 14)
+
+        painter.setPen(QPen(QColor("#303a45"), 1))
+        painter.setBrush(QColor("#111820"))
+        painter.drawRoundedRect(bar, 4, 4)
+
+        inner = bar.adjusted(2, 2, -2, -2)
+        filled = self._x(inner, self._display) - inner.left()
+        if filled > 0:
+            gradient = QLinearGradient(inner.left(), 0, inner.right(), 0)
+            gradient.setColorAt(0.0, QColor("#27c76f"))
+            gradient.setColorAt(0.7, QColor("#54db39"))
+            gradient.setColorAt(0.9, QColor("#f5df27"))
+            gradient.setColorAt(1.0, QColor("#ff514b"))
+            painter.fillRect(
+                QRectF(inner.left(), inner.top(), filled, inner.height()),
+                QBrush(gradient),
+            )
+
+        font = painter.font()
+        font.setPixelSize(10)
+        font.setBold(True)
+        painter.setFont(font)
+        for index, (label, color, getter) in enumerate(self._markers):
+            try:
+                db = float(getter())
+            except Exception:
+                continue
+            x = self._x(inner, db)
+            painter.setPen(QPen(color, 2))
+            painter.drawLine(QPointF(x, bar.top() - 3), QPointF(x, bar.bottom() + 3))
+            # The first marker's text goes left of its line and the next one's
+            # right, so two nearby thresholds stay readable.
+            text = f"{label} {db:.0f} dB"
+            if index % 2 == 0:
+                rect = QRectF(x - 124, bar.bottom() + 4, 120, 14)
+                align = Qt.AlignmentFlag.AlignRight
+            else:
+                rect = QRectF(x + 4, bar.bottom() + 4, 120, 14)
+                align = Qt.AlignmentFlag.AlignLeft
+            painter.drawText(rect, align | Qt.AlignmentFlag.AlignVCenter, text)
+        painter.end()
+
+
+class PanelSlider(QSlider):
+    """Horizontal slider of a Mic processing parameter.
+
+    It ignores the mouse wheel until it has been clicked, so scrolling over
+    the window cannot change the live microphone by accident, and it can show
+    a notch at a reference value.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMinimumHeight(26)
+        self._mark = None
+
+    def set_mark(self, value):
+        self._mark = value
+        self.update()
+
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        span = self.maximum() - self.minimum()
+        if self._mark is None or span <= 0:
+            return
+
+        option = QStyleOptionSlider()
+        self.initStyleOption(option)
+        style = self.style()
+        groove = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderGroove,
+            self,
+        )
+        handle = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderHandle,
+            self,
+        )
+        travel = groove.width() - handle.width()
+        x = (
+            groove.left()
+            + handle.width() / 2
+            + travel * (self._mark - self.minimum()) / span
+        )
+        y = self.height() / 2
+        painter = QPainter(self)
+        painter.setPen(QPen(QColor("#8ba0b5"), 2))
+        painter.drawLine(QPointF(x, y + 8), QPointF(x, y + 12))
+        painter.end()
+
+
+# Time sliders are logarithmic: hearing works in ratios, and a linear track
+# up to 5 s would squeeze the useful 5-300 ms range into a few pixels.
+TIME_SLIDER_STEPS = 1000
+TIME_CURVE_MS = 20.0  # smaller gives the short times more of the track
+
+
 class ProcessingPanel(QWidget):
     """Sliders with editable value fields for one Mic processing block.
 
@@ -615,6 +781,8 @@ class ProcessingPanel(QWidget):
     # violation for these with some VoiceMeeter/Python combinations, so they
     # are sent through VoiceMeeter's own script parser. Do not replace this.
     SCRIPT_KEYS = ()
+    # One-line explanation per parameter key, shown as a tooltip.
+    HELP = {}
 
     def __init__(self, vm):
         super().__init__()
@@ -622,17 +790,62 @@ class ProcessingPanel(QWidget):
         self.target = getattr(vm.strip[MIC_STRIP], self.ATTRIBUTE)
         self.setVisible(False)
         self.controls = {}
+        self.settings = QSettings("VMStreamer", "VMStreamer")
+        self._snapshot = {}
+        # Amount to restore when bypass is switched off, or None.
+        self._bypassed_amount = None
 
         self.panel_layout = QVBoxLayout(self)
         self.panel_layout.setContentsMargins(6, 6, 6, 6)
+
+        tools = QHBoxLayout()
+        tools.setContentsMargins(0, 0, 0, 0)
+        self.bypass_button = QPushButton("BYPASS")
+        self.bypass_button.setCheckable(True)
+        self.bypass_button.setFixedHeight(26)
+        self.bypass_button.setStyleSheet(
+            "QPushButton { padding: 2px 12px; }"
+            + outline_toggle_style(TOGGLE_COLORS["solo"])
+        )
+        self.bypass_button.setToolTip(
+            f"Switch the {self.LABEL} off and remember its Amount, "
+            "so you can compare with and without"
+        )
+        self.bypass_button.clicked.connect(self.on_bypass_clicked)
+        self.reset_button = QPushButton("RESET")
+        self.reset_button.setFixedHeight(26)
+        self.reset_button.setStyleSheet("QPushButton { padding: 2px 12px; }")
+        self.reset_button.setToolTip(
+            "Restore the values from when this window was opened "
+            "(marked by the notch under each slider)"
+        )
+        self.reset_button.clicked.connect(self.reset)
+        tools.addWidget(self.bypass_button)
+        tools.addStretch(1)
+        tools.addWidget(self.reset_button)
+        self.panel_layout.addLayout(tools)
+
         grid = QGridLayout()
         grid.setHorizontalSpacing(4)
         grid.setVerticalSpacing(6)
-        for row, parameter in enumerate(self.PARAMETERS):
+        row = 0
+        for parameter in self.PARAMETERS:
             self.add_slider(grid, row, *parameter)
+            row += 1
+            if parameter[1] == "knob" and len(self.PARAMETERS) > 1:
+                # Amount is VoiceMeeter's one-knob control; the rest fine-tune.
+                heading = QLabel("ADVANCED")
+                heading.setStyleSheet(
+                    "color: #8ba0b5; font-size: 11px; font-weight: bold; "
+                    "padding-top: 6px;"
+                )
+                grid.addWidget(heading, row, 0)
+                row += 1
         self.panel_layout.addLayout(grid)
 
         self.build_extras()
+        self.panel_layout.addStretch(1)
+        self._restore_bypass()
         self.sync_from_voicemeeter()
 
     def build_extras(self):
@@ -640,6 +853,13 @@ class ProcessingPanel(QWidget):
 
     def sync_extras(self):
         """Synchronize the controls added by build_extras()."""
+
+    def read_extras(self):
+        """Return the values of the build_extras() controls for a snapshot."""
+        return {}
+
+    def apply_extras(self, values):
+        """Restore values returned by read_extras()."""
 
     def add_slider(self, grid, row, name, key, minimum, maximum, scale, kind):
         container = QWidget()
@@ -658,12 +878,23 @@ class ProcessingPanel(QWidget):
             lambda k=key: self.on_value_edit_finished(k)
         )
 
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(minimum, maximum)
+        logarithmic = kind == "time"
+        slider = PanelSlider()
+        if logarithmic:
+            slider.setRange(0, TIME_SLIDER_STEPS)
+        else:
+            slider.setRange(minimum, maximum)
         slider.setMinimumWidth(36)
         slider.valueChanged.connect(
             lambda value, k=key: self.on_slider_changed(k, value)
         )
+
+        help_text = self.HELP.get(key, "")
+        if help_text:
+            name_label.setToolTip(help_text)
+            slider.setToolTip(help_text)
+        if key == "knob":
+            name_label.setStyleSheet("font-weight: bold;")
 
         layout.addWidget(name_label)
         layout.addWidget(slider, 1)
@@ -675,12 +906,31 @@ class ProcessingPanel(QWidget):
             "edit": value_edit,
             "scale": scale,
             "kind": kind,
+            "logarithmic": logarithmic,
             "minimum": minimum / scale,
             "maximum": maximum / scale,
         }
 
     def format_actual(self, key, actual):
         return format_parameter(self.controls[key]["kind"], actual)
+
+    def _to_slider(self, key, actual):
+        """Slider position for a value in VoiceMeeter units."""
+        control = self.controls[key]
+        if not control["logarithmic"]:
+            return int(round(actual * control["scale"]))
+        full = math.log1p(control["maximum"] / TIME_CURVE_MS)
+        fraction = math.log1p(max(0.0, actual) / TIME_CURVE_MS) / full
+        return int(round(max(0.0, min(1.0, fraction)) * TIME_SLIDER_STEPS))
+
+    def _from_slider(self, key, value):
+        """Value in VoiceMeeter units for a slider position."""
+        control = self.controls[key]
+        if not control["logarithmic"]:
+            return value / control["scale"]
+        full = math.log1p(control["maximum"] / TIME_CURVE_MS)
+        actual = TIME_CURVE_MS * math.expm1(value / TIME_SLIDER_STEPS * full)
+        return round(min(control["maximum"], max(0.0, actual)), 1)
 
     def set_parameter(self, key, actual):
         """Set a parameter through the safest API path."""
@@ -701,11 +951,16 @@ class ProcessingPanel(QWidget):
         setattr(self.target, key, actual)
 
     def _set_slider(self, key, actual):
-        control = self.controls[key]
-        slider = control["slider"]
+        slider = self.controls[key]["slider"]
         slider.blockSignals(True)
-        slider.setValue(int(round(actual * control["scale"])))
+        slider.setValue(self._to_slider(key, actual))
         slider.blockSignals(False)
+
+    def _apply(self, key, actual):
+        """Send a value to VoiceMeeter and show it."""
+        self.set_parameter(key, actual)
+        self._set_slider(key, actual)
+        self.controls[key]["edit"].setText(self.format_actual(key, actual))
 
     def on_value_edit_finished(self, key):
         control = self.controls[key]
@@ -722,6 +977,7 @@ class ProcessingPanel(QWidget):
             self._set_slider(key, actual)
             edit.setText(self.format_actual(key, actual))
             self.set_parameter(key, actual)
+            self._amount_changed(key, actual)
         except Exception as e:
             log.error(
                 f"Invalid {self.LABEL} {key} value: {type(e).__name__}: {e}"
@@ -736,14 +992,102 @@ class ProcessingPanel(QWidget):
                 pass
 
     def on_slider_changed(self, key, value):
-        actual = value / self.controls[key]["scale"]
+        actual = self._from_slider(key, value)
         self.controls[key]["edit"].setText(self.format_actual(key, actual))
         try:
             self.set_parameter(key, actual)
+            self._amount_changed(key, actual)
         except Exception as e:
             log.error(
                 f"Failed to set {self.LABEL} {key}: {type(e).__name__}: {e}"
             )
+
+    # Bypass: Amount 0 switches a block off. The previous Amount is kept (also
+    # across restarts) so switching bypass off brings the block back as it was.
+
+    def _bypass_setting(self):
+        return f"bypass_amount_{self.LABEL}"
+
+    def _restore_bypass(self):
+        stored = self.settings.value(self._bypass_setting(), None)
+        if stored is None:
+            return
+        try:
+            if float(stored) > 0 and float(self.target.knob) == 0:
+                self._bypassed_amount = float(stored)
+                self.bypass_button.setChecked(True)
+                return
+        except Exception:
+            pass
+        self.settings.remove(self._bypass_setting())
+
+    def _clear_bypass(self):
+        self._bypassed_amount = None
+        self.bypass_button.setChecked(False)
+        self.settings.remove(self._bypass_setting())
+
+    def _amount_changed(self, key, actual):
+        """Turning Amount up by hand ends a bypass."""
+        if key == "knob" and actual > 0 and self._bypassed_amount is not None:
+            self._clear_bypass()
+
+    def on_bypass_clicked(self, checked):
+        try:
+            if checked:
+                amount = float(self.target.knob)
+                if amount <= 0:
+                    # Already off and nothing to remember.
+                    self.bypass_button.setChecked(False)
+                    return
+                self._bypassed_amount = amount
+                self.settings.setValue(self._bypass_setting(), amount)
+                self._apply("knob", 0.0)
+            else:
+                amount = self._bypassed_amount
+                self._clear_bypass()
+                if amount:
+                    self._apply("knob", amount)
+        except Exception as e:
+            log.error(
+                f"Failed to bypass {self.LABEL}: {type(e).__name__}: {e}"
+            )
+            self.sync_from_voicemeeter()
+
+    # Reset: go back to the values the window was opened with.
+
+    def take_snapshot(self):
+        """Remember the current values as the target of RESET."""
+        try:
+            values = {
+                key: float(getattr(self.target, key))
+                for key in self.controls
+            }
+            extras = self.read_extras()
+        except Exception as e:
+            log.error(
+                f"Failed to read {self.LABEL}: {type(e).__name__}: {e}"
+            )
+            return
+        if self._bypassed_amount is not None:
+            values["knob"] = self._bypassed_amount
+        self._snapshot = {"values": values, "extras": extras}
+        for key, actual in values.items():
+            self.controls[key]["slider"].set_mark(self._to_slider(key, actual))
+
+    def reset(self):
+        if not self._snapshot:
+            return
+        try:
+            if self._bypassed_amount is not None:
+                self._clear_bypass()
+            for key, actual in self._snapshot["values"].items():
+                self._apply(key, actual)
+            self.apply_extras(self._snapshot["extras"])
+        except Exception as e:
+            log.error(
+                f"Failed to reset {self.LABEL}: {type(e).__name__}: {e}"
+            )
+            self.sync_from_voicemeeter()
 
     def sync_from_voicemeeter(self):
         """Synchronize every control from VoiceMeeter."""
@@ -752,6 +1096,9 @@ class ProcessingPanel(QWidget):
                 key: getattr(self.target, key)
                 for key in self.controls
             }
+            if self._bypassed_amount is not None and values["knob"] > 0:
+                # Switched back on from VoiceMeeter itself.
+                self._clear_bypass()
             for key, actual in values.items():
                 self._set_slider(key, actual)
                 # Do not overwrite text while the user is typing in the field.
@@ -784,9 +1131,23 @@ class CompressorControl(ProcessingPanel):
         ("Output Gain", "gainout", -240, 240, 10, "gain"),
     )
     SCRIPT_KEYS = ("attack", "release")
+    HELP = {
+        "knob": "How much compression is applied, 0 to 10. 0 switches the compressor off.",
+        "gainin": "Level change before the compressor.",
+        "ratio": "How strongly sound above the threshold is turned down. 4:1 lets 1 dB through for every 4 dB over.",
+        "threshold": "Level above which the compressor starts working. Compare with the Mic input bar above.",
+        "attack": "How quickly the compressor reacts when you get loud.",
+        "release": "How quickly it lets go again when you get quieter.",
+        "knee": "How gradually compression sets in around the threshold. 0 is abrupt, 1 is smooth.",
+        "gainout": "Level change after the compressor.",
+    }
 
     def build_extras(self):
         self.makeup_checkbox = QCheckBox("Auto Makeup")
+        self.makeup_checkbox.setToolTip(
+            "Raise the level automatically to make up for what the "
+            "compressor turned down"
+        )
         self.makeup_checkbox.stateChanged.connect(self.on_makeup_changed)
         self.panel_layout.addWidget(
             self.makeup_checkbox,
@@ -798,6 +1159,13 @@ class CompressorControl(ProcessingPanel):
         self.makeup_checkbox.blockSignals(True)
         self.makeup_checkbox.setChecked(makeup)
         self.makeup_checkbox.blockSignals(False)
+
+    def read_extras(self):
+        return {"makeup": bool(self.target.makeup)}
+
+    def apply_extras(self, values):
+        self.target.makeup = values["makeup"]
+        self.sync_extras()
 
     def on_makeup_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
@@ -825,6 +1193,15 @@ class GateControl(ProcessingPanel):
         ("Release", "release", 0, 50000, 10, "time"),
     )
     SCRIPT_KEYS = ("attack", "hold", "release")
+    HELP = {
+        "knob": "How strongly the gate works, 0 to 10. 0 switches the gate off.",
+        "threshold": "Level below which the gate closes. Set it just above your room noise; compare with the Mic input bar above.",
+        "damping": "How far the signal is turned down while the gate is closed.",
+        "bpsidechain": "Centre frequency the gate listens at when deciding to open.",
+        "attack": "How quickly the gate opens when you start talking.",
+        "hold": "How long the gate stays open after you stop.",
+        "release": "How quickly the gate closes after the hold time.",
+    }
 
 
 class DenoiserControl(ProcessingPanel):
@@ -835,6 +1212,9 @@ class DenoiserControl(ProcessingPanel):
     PARAMETERS = (
         ("Amount", "knob", 0, 100, 10, "plain"),
     )
+    HELP = {
+        "knob": "How much steady background noise is removed, 0 to 10. 0 switches the denoiser off.",
+    }
 
 
 class FineControlSlider(QSlider):
@@ -3327,6 +3707,10 @@ class MainWindow(QMainWindow):
                 spacing: 8px;
             }
 
+            QDialog {
+                background: #0d1117;
+            }
+
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
@@ -3480,6 +3864,7 @@ class MainWindow(QMainWindow):
             "border-color: #35a7ff; }"
         )
         self.processing_dialog = None
+        self.mic_level_bar = None
 
         self.applications_panel = QWidget()
         self.applications_panel.setObjectName("applicationsPanel")
@@ -3620,7 +4005,8 @@ class MainWindow(QMainWindow):
     def toggle_processing(self, expanded):
         """Open or close Mic Processing in a separate popup dialog."""
         if expanded:
-            if self.processing_dialog is None:
+            first_open = self.processing_dialog is None
+            if first_open:
                 self.processing_dialog = QDialog(self)
                 self.processing_dialog.setWindowTitle("VMStreamer — Mic Processing")
                 self.processing_dialog.setWindowIcon(self.windowIcon())
@@ -3635,12 +4021,18 @@ class MainWindow(QMainWindow):
                 dialog_layout.setContentsMargins(8, 8, 8, 8)
                 dialog_layout.setSpacing(6)
 
-                title = QLabel("MIC PROCESSING")
-                title.setStyleSheet(
-                    "color: #d7e1eb; font-size: 15px; font-weight: bold; "
-                    "padding: 3px 4px;"
+                level_row = QHBoxLayout()
+                level_row.setContentsMargins(4, 0, 4, 0)
+                level_row.setSpacing(8)
+                level_title = QLabel("MIC INPUT")
+                level_title.setStyleSheet(
+                    "color: #8ba0b5; font-size: 11px; font-weight: bold; "
+                    "padding-bottom: 14px;"
                 )
-                dialog_layout.addWidget(title)
+                self.mic_level_bar = MicLevelBar()
+                level_row.addWidget(level_title)
+                level_row.addWidget(self.mic_level_bar, 1)
+                dialog_layout.addLayout(level_row)
 
                 self.processing_tabs.setVisible(True)
                 dialog_layout.addWidget(self.processing_tabs, 1)
@@ -3657,18 +4049,21 @@ class MainWindow(QMainWindow):
             self.create_gate()
             self.create_denoiser()
             self.sync_processing_controls()
+            for control in (
+                self.compressor_control,
+                self.gate_control,
+                self.denoiser_control,
+            ):
+                control.take_snapshot()
 
-            self.processing_dialog.adjustSize()
-            self.processing_dialog.resize(
-                max(560, self.processing_dialog.width()),
-                max(430, self.processing_dialog.height()),
-            )
-
-            # Center the popup over the main window without resizing it.
-            center = self.frameGeometry().center()
-            rect = self.processing_dialog.frameGeometry()
-            rect.moveCenter(center)
-            self.processing_dialog.move(rect.topLeft())
+            if first_open:
+                self._mark_thresholds()
+                self.processing_dialog.adjustSize()
+                self.processing_dialog.resize(
+                    max(560, self.processing_dialog.width()),
+                    max(430, self.processing_dialog.height()),
+                )
+                self._place_processing_dialog()
 
             self.processing_dialog.show()
             self.processing_dialog.raise_()
@@ -3677,7 +4072,53 @@ class MainWindow(QMainWindow):
             if self.processing_dialog is not None:
                 self.processing_dialog.close()
 
+    def _mark_thresholds(self):
+        """Show the gate and compressor thresholds on the Mic input bar."""
+        for label, color, control in (
+            ("Gate", "#f5b83d", self.gate_control),
+            ("Comp", "#35c8ff", self.compressor_control),
+        ):
+            slider = control.controls["threshold"]["slider"]
+            scale = control.controls["threshold"]["scale"]
+            self.mic_level_bar.add_marker(
+                label, color, lambda s=slider, k=scale: s.value() / k
+            )
+            slider.valueChanged.connect(self.mic_level_bar.update)
+
+    def _place_processing_dialog(self):
+        """Put the popup where it was last, else beside the main window.
+
+        It must not cover the mixer: the Mic meters are what you watch while
+        changing these values.
+        """
+        saved = self.window_settings.value("processing_geometry_v1")
+        if saved is not None:
+            try:
+                if self.processing_dialog.restoreGeometry(saved):
+                    return
+            except Exception:
+                pass
+
+        dialog = self.processing_dialog.frameGeometry()
+        window = self.frameGeometry()
+        screen = self.screen().availableGeometry()
+        if window.right() + dialog.width() <= screen.right():
+            dialog.moveTopLeft(window.topRight())
+        elif window.left() - dialog.width() >= screen.left():
+            dialog.moveTopRight(window.topLeft())
+        else:
+            dialog.moveCenter(window.center())
+        self.processing_dialog.move(dialog.topLeft())
+
+    def _save_processing_geometry(self):
+        if self.processing_dialog is not None:
+            self.window_settings.setValue(
+                "processing_geometry_v1",
+                self.processing_dialog.saveGeometry(),
+            )
+
     def _processing_dialog_closed(self, _result):
+        self._save_processing_geometry()
         self.processing_toggle.blockSignals(True)
         self.processing_toggle.setChecked(False)
         self.processing_toggle.blockSignals(False)
@@ -3777,6 +4218,8 @@ class MainWindow(QMainWindow):
 
         for widget in self.strips.values():
             widget.animate_level()
+        if self.mic_level_bar is not None and self.mic_level_bar.isVisible():
+            self.mic_level_bar.animate()
 
 
     def on_mic_levels_received(self, left, right):
@@ -3784,6 +4227,8 @@ class MainWindow(QMainWindow):
         mic = self.strips.get("Mic")
         if mic is not None:
             mic.set_channel_levels((left, right))
+        if self.mic_level_bar is not None:
+            self.mic_level_bar.set_level(max(left, right))
 
 
     def on_vm_event(self, event):
@@ -3865,6 +4310,7 @@ class MainWindow(QMainWindow):
 
         self.window_settings.setValue("geometry_v2", self.saveGeometry())
         self.window_settings.setValue("splitter_v1", self.main_splitter.saveState())
+        self._save_processing_geometry()
         self.window_settings.sync()
 
         event.accept()
