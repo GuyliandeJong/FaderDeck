@@ -11,6 +11,7 @@ import signal
 import time
 import warnings
 import threading
+from collections import namedtuple
 from logging.handlers import RotatingFileHandler
 
 
@@ -429,6 +430,48 @@ MUTE_HOTKEYS = {
     "Chat": (3, "hotkey_chat_mute", ""),
     "Media": (4, "hotkey_media_mute", ""),
 }
+
+# One press of a volume hotkey; holding the keys repeats it.
+HOTKEY_GAIN_STEP_DB = 1.0
+
+# Every global hotkey: its RegisterHotKey id, its settings key, how it is
+# listed in the settings window, and what it does (see MainWindow.on_hotkey).
+HotkeyAction = namedtuple(
+    "HotkeyAction", "id key group label default repeats action argument"
+)
+
+
+def _hotkey_actions():
+    names = {"Mic": "microphone", "Game": "Game", "Chat": "Chat", "Media": "Media"}
+    actions = []
+    for strip, (hotkey_id, key, default) in MUTE_HOTKEYS.items():
+        actions.append(HotkeyAction(
+            hotkey_id, key, "MUTE", f"Mute {names[strip]}", default,
+            False, "mute", strip,
+        ))
+    for index, strip in enumerate(MUTE_HOTKEYS):
+        lower = strip.lower()
+        title = names[strip][0].upper() + names[strip][1:]
+        actions.append(HotkeyAction(
+            11 + index * 2, f"hotkey_{lower}_up", "VOLUME",
+            f"{title} louder", "", True, "gain", (strip, HOTKEY_GAIN_STEP_DB),
+        ))
+        actions.append(HotkeyAction(
+            12 + index * 2, f"hotkey_{lower}_down", "VOLUME",
+            f"{title} quieter", "", True, "gain", (strip, -HOTKEY_GAIN_STEP_DB),
+        ))
+    actions.append(HotkeyAction(
+        31, "hotkey_profile_next", "SETUP PROFILES",
+        "Next profile", "", False, "profile", 1,
+    ))
+    actions.append(HotkeyAction(
+        32, "hotkey_profile_previous", "SETUP PROFILES",
+        "Previous profile", "", False, "profile", -1,
+    ))
+    return tuple(actions)
+
+
+HOTKEYS = _hotkey_actions()
 
 
 def parse_hotkey(text):
@@ -4104,26 +4147,29 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("VMStreamer — Settings")
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
-        self.setMinimumWidth(460)
+        self.setMinimumSize(500, 520)
         self.setStyleSheet(
-            "QComboBox, QLineEdit { background: #18232e; "
-            "border: 1px solid #314558; border-radius: 4px; padding: 4px 8px; }"
-            "QComboBox:focus, QLineEdit:focus { border-color: #58a6ff; }"
-            "QComboBox QAbstractItemView { background: #18232e; "
-            "color: #e6edf3; selection-background-color: #243b52; }"
             "QLabel#settingsNote { color: #8ba0b5; font-size: 11px; }"
             "QLabel#settingsHeading { color: #8ba0b5; font-size: 11px; "
             "font-weight: bold; padding-top: 8px; }"
+            "QTabWidget::pane { border: 1px solid #30363d; "
+            "border-radius: 6px; background: #0d141b; }"
+            "QTabBar::tab { background: #18232e; color: #aebdca; "
+            "border: 1px solid #30363d; padding: 6px 16px; }"
+            "QTabBar::tab:selected { background: #1769aa; color: #ffffff; "
+            "border-color: #35a7ff; }"
+            "QScrollArea, QScrollArea > QWidget > QWidget "
+            "{ background: transparent; }"
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
-        self.form = QFormLayout()
-        self.form.setHorizontalSpacing(14)
-        self.form.setVerticalSpacing(8)
-        layout.addLayout(self.form)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs, 1)
 
+        # ---- General ----
+        self.form = self.add_tab("General")
         self.add_heading("MIXER")
         self.mic_input = QComboBox()
         for index in range(HARDWARE_INPUTS):
@@ -4134,27 +4180,6 @@ class SettingsDialog(QDialog):
             "The VoiceMeeter input your microphone is on. "
             "Used after VMStreamer is restarted."
         )
-
-        self.add_heading("HOTKEYS")
-        self.hotkey_edits = {}
-        for name, (_id, key, _default) in MUTE_HOTKEYS.items():
-            edit = QKeySequenceEdit(QKeySequence(current[key]))
-            edit.setMaximumSequenceLength(1)
-            edit.setClearButtonEnabled(True)
-            label = "Mute microphone" if name == "Mic" else f"Mute {name}"
-            self.form.addRow(label, edit)
-            self.hotkey_edits[key] = edit
-        self.add_note(
-            "Click a field and press the keys. Hotkeys work while VMStreamer "
-            "is in the background. Other programs cannot use these "
-            "combinations while VMStreamer runs. Clear a field to switch "
-            "it off."
-        )
-        self.error_label = QLabel("")
-        self.error_label.setStyleSheet("color: #f85149;")
-        self.error_label.setWordWrap(True)
-        self.error_label.setVisible(False)
-        self.form.addRow("", self.error_label)
 
         self.add_heading("WINDOW")
         self.close_to_tray = QCheckBox(
@@ -4171,7 +4196,32 @@ class SettingsDialog(QDialog):
             "Holding Shift while closing the window quits at once."
         )
 
-        layout.addStretch(1)
+        # ---- Hotkeys ----
+        self.form = self.add_tab("Hotkeys", scrolling=True)
+        self.add_note(
+            "Click a field and press the keys. Hotkeys work while VMStreamer "
+            "is in the background. Other programs cannot use these "
+            "combinations while VMStreamer runs. Clear a field to switch "
+            "it off."
+        )
+        self.hotkey_edits = {}
+        group = None
+        for action in HOTKEYS:
+            if action.group != group:
+                group = action.group
+                self.add_heading(group)
+            edit = QKeySequenceEdit(QKeySequence(current[action.key]))
+            edit.setMaximumSequenceLength(1)
+            edit.setClearButtonEnabled(True)
+            self.form.addRow(action.label, edit)
+            self.hotkey_edits[action.key] = edit
+
+        self.error_label = QLabel("")
+        self.error_label.setStyleSheet("color: #f85149;")
+        self.error_label.setWordWrap(True)
+        self.error_label.setVisible(False)
+        layout.addWidget(self.error_label)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
@@ -4179,6 +4229,23 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def add_tab(self, title, scrolling=False):
+        """Add a page and return its form layout."""
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setContentsMargins(12, 10, 12, 10)
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(8)
+        if scrolling:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(page)
+            self.tabs.addTab(scroll, title)
+        else:
+            self.tabs.addTab(page, title)
+        return form
 
     @staticmethod
     def input_name(vm, index):
@@ -4208,7 +4275,7 @@ class SettingsDialog(QDialog):
         note = QLabel(text)
         note.setObjectName("settingsNote")
         note.setWordWrap(True)
-        self.form.addRow("", note)
+        self.form.addRow(note)
 
     def hotkey_texts(self):
         return {
@@ -5733,8 +5800,8 @@ class MainWindow(QMainWindow):
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
             **{
-                key: str(settings.value(key, default) or "")
-                for _id, key, default in MUTE_HOTKEYS.values()
+                action.key: str(settings.value(action.key, action.default) or "")
+                for action in HOTKEYS
             },
         }
 
@@ -5773,34 +5840,69 @@ class MainWindow(QMainWindow):
         hwnd = int(self.winId())
         current = self.current_settings()
         refused = []
-        for name, (hotkey_id, key, _default) in MUTE_HOTKEYS.items():
-            user32.UnregisterHotKey(hwnd, hotkey_id)
-            text = current[key]
+        for action in HOTKEYS:
+            user32.UnregisterHotKey(hwnd, action.id)
+            text = current[action.key]
             parsed = parse_hotkey(text)
             if parsed is None:
                 if text:
-                    log.warning(f"Ignoring invalid {name} mute hotkey: {text}")
+                    log.warning(f"Ignoring invalid hotkey for {action.label}: {text}")
                 continue
             modifiers, virtual_key = parsed
-            if not user32.RegisterHotKey(
-                hwnd, hotkey_id, modifiers | MOD_NOREPEAT, virtual_key
-            ):
-                log.warning(f"Could not register the {name} mute hotkey {text}")
+            if not action.repeats:
+                # A held mute key must not toggle over and over.
+                modifiers |= MOD_NOREPEAT
+            if not user32.RegisterHotKey(hwnd, action.id, modifiers, virtual_key):
+                log.warning(f"Could not register {text} for {action.label}")
                 refused.append(text)
         return refused
 
     def unregister_hotkeys(self):
         try:
             hwnd = int(self.winId())
-            for hotkey_id, _key, _default in MUTE_HOTKEYS.values():
-                ctypes.windll.user32.UnregisterHotKey(hwnd, hotkey_id)
+            for action in HOTKEYS:
+                ctypes.windll.user32.UnregisterHotKey(hwnd, action.id)
         except Exception:
             pass
 
     def on_hotkey(self, hotkey_id):
-        for name, (registered_id, _key, _default) in MUTE_HOTKEYS.items():
-            if hotkey_id == registered_id:
-                self.toggle_strip_mute(name)
+        for action in HOTKEYS:
+            if action.id != hotkey_id:
+                continue
+            if action.action == "mute":
+                self.toggle_strip_mute(action.argument)
+            elif action.action == "gain":
+                self.step_strip_gain(*action.argument)
+            elif action.action == "profile":
+                self.cycle_profile(action.argument)
+
+    def step_strip_gain(self, name, decibels):
+        """Move a strip's fader, also while the window is hidden."""
+        strip = self.strips.get(name)
+        if strip is None or not self.connected:
+            return
+        # The fader clamps to its range and sends the change like a drag.
+        strip.fader.setValue(
+            strip.fader.value() + int(round(decibels * 100))
+        )
+
+    def cycle_profile(self, direction):
+        """Load the next or previous setup profile, in the list's order."""
+        names = sorted(self.load_profiles(), key=str.casefold)
+        if not names or not self.connected:
+            return
+        if self.active_profile in names:
+            index = (names.index(self.active_profile) + direction) % len(names)
+        else:
+            index = 0 if direction > 0 else len(names) - 1
+        name = names[index]
+        self.apply_profile(name)
+        self.refresh_profile_list(select=name)
+        # With the window hidden there is nothing to see otherwise.
+        if self.tray is not None and not self.isVisible():
+            self.tray.showMessage(
+                "VMStreamer", f"Setup profile: {name}", self.tray.icon(), 2000
+            )
 
     def toggle_strip_mute(self, name):
         """Mute or unmute a strip, also while the window is hidden."""

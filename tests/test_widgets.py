@@ -326,6 +326,65 @@ class MainWindowTest(unittest.TestCase):
                 window.on_hotkey(hotkey_id)
                 self.assertFalse(strip.mute)
 
+    def test_hotkey_ids_and_keys_are_unique(self):
+        self.assertEqual(len({a.id for a in main.HOTKEYS}), len(main.HOTKEYS))
+        self.assertEqual(len({a.key for a in main.HOTKEYS}), len(main.HOTKEYS))
+        self.assertEqual(len({a.label for a in main.HOTKEYS}), len(main.HOTKEYS))
+
+    def hotkey(self, key):
+        return next(action.id for action in main.HOTKEYS if action.key == key)
+
+    def test_volume_hotkeys_move_the_fader_by_one_decibel(self):
+        window, game = self.window, self.sandbox.vm.strip[5]
+        window.on_hotkey(self.hotkey("hotkey_game_up"))
+        self.assertEqual(game.gain, 1.0)
+        window.on_hotkey(self.hotkey("hotkey_game_down"))
+        window.on_hotkey(self.hotkey("hotkey_game_down"))
+        self.assertEqual(game.gain, -1.0)
+        self.assertEqual(window.strips["Game"].gain_label.text(), "-1.00 dB")
+        self.assertEqual(self.sandbox.vm.strip[6].gain, 0.0, "other strips untouched")
+
+    def test_volume_hotkeys_stop_at_the_end_of_the_fader(self):
+        window, mic = self.window, self.sandbox.vm.strip[0]
+        window.strips["Mic"].fader.setValue(1150)
+        window.on_hotkey(self.hotkey("hotkey_mic_up"))
+        window.on_hotkey(self.hotkey("hotkey_mic_up"))
+        self.assertEqual(mic.gain, 12.0)
+
+    def test_volume_hotkeys_repeat_while_held_but_mute_does_not(self):
+        by_key = {action.key: action for action in main.HOTKEYS}
+        self.assertTrue(by_key["hotkey_game_up"].repeats)
+        self.assertFalse(by_key["hotkey_game_mute"].repeats)
+        self.assertFalse(by_key["hotkey_profile_next"].repeats)
+
+    def test_profile_hotkeys_walk_through_the_profiles(self):
+        window, game = self.window, self.sandbox.vm.strip[5]
+        for name, gain in (("Alpha", -300), ("Beta", -600), ("Gamma", -900)):
+            window.strips["Game"].fader.setValue(gain)
+            window.save_profile(name)
+        self.assertEqual(window.active_profile, "Gamma")
+
+        window.on_hotkey(self.hotkey("hotkey_profile_next"))     # wraps round
+        self.assertEqual((window.active_profile, game.gain), ("Alpha", -3.0))
+        window.on_hotkey(self.hotkey("hotkey_profile_next"))
+        self.assertEqual((window.active_profile, game.gain), ("Beta", -6.0))
+        window.on_hotkey(self.hotkey("hotkey_profile_previous"))
+        window.on_hotkey(self.hotkey("hotkey_profile_previous"))
+        self.assertEqual((window.active_profile, game.gain), ("Gamma", -9.0))
+        self.assertEqual(window.profile_list.currentText(), "Gamma")
+
+    def test_profile_hotkey_without_profiles_does_nothing(self):
+        self.window.on_hotkey(self.hotkey("hotkey_profile_next"))
+        self.assertEqual(self.window.active_profile, "")
+
+    def test_settings_window_lists_every_hotkey(self):
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        self.assertEqual(set(dialog.hotkey_edits), {a.key for a in main.HOTKEYS})
+        self.assertEqual(dialog.tabs.tabText(0), "General")
+        self.assertEqual(dialog.tabs.tabText(1), "Hotkeys")
+        self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
+                         {"mic_strip", "close_to_tray", "start_minimized"})
+
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
         self.assertEqual(dialog.hotkey_problem(), "")
@@ -423,15 +482,18 @@ class MainWindowTest(unittest.TestCase):
 
     def test_settings_defaults_and_storage(self):
         window = self.window
-        self.assertEqual(window.current_settings(), {
-            "mic_strip": 0,
-            "hotkey_mic_mute": "Ctrl+Shift+M",
-            "hotkey_game_mute": "",
-            "hotkey_chat_mute": "",
-            "hotkey_media_mute": "",
-            "close_to_tray": True,
-            "start_minimized": False,
-        })
+        current = window.current_settings()
+        self.assertEqual(
+            (current["mic_strip"], current["close_to_tray"], current["start_minimized"]),
+            (0, True, False),
+        )
+        # Only the microphone's mute has a hotkey out of the box.
+        hotkeys = {key: text for key, text in current.items() if key.startswith("hotkey_")}
+        self.assertEqual(len(hotkeys), len(main.HOTKEYS))
+        self.assertEqual(
+            {key: text for key, text in hotkeys.items() if text},
+            {"hotkey_mic_mute": "Ctrl+Shift+M"},
+        )
         FakeSettings.store.update(mic_strip="2", close_to_tray="false", hotkey_mic_mute="")
         current = window.current_settings()
         self.assertEqual((current["mic_strip"], current["close_to_tray"], current["hotkey_mic_mute"]), (2, False, ""))
