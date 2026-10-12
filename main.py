@@ -1,18 +1,24 @@
 import sys
 import math
 import atexit
+import concurrent.futures
 import ctypes
 import ctypes.wintypes
+import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import signal
+import socket
 import time
 import warnings
 import threading
 from collections import namedtuple
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
+from urllib.parse import parse_qs, unquote, urlsplit
 
 
 from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
@@ -45,6 +51,7 @@ from PySide6.QtWidgets import (
 
     QProgressBar,
     QScrollArea,
+    QSpinBox,
 
     QStyle,
     QSlider,
@@ -570,6 +577,147 @@ def ask_running_instance_to_quit(name=SINGLE_INSTANCE_NAME):
     ctypes.windll.user32.PostMessageW(
         HWND_BROADCAST, quit_message(name), 0, 0
     )
+
+
+# Local API: lets other programs on this PC (a Stream Deck plugin, an OBS
+# script, curl) control VMStreamer over HTTP. Off unless switched on in the
+# settings window.
+API_DEFAULT_PORT = 8765
+API_TOKEN_HEADER = "X-VMStreamer-Token"
+
+
+class ApiCall:
+    """One request, handed from the server thread to the GUI thread."""
+
+    def __init__(self, method, parts, params):
+        self.method = method
+        self.parts = parts
+        self.params = params
+        self.future = concurrent.futures.Future()
+
+
+class ApiServer(ThreadingHTTPServer):
+    """HTTP server that insists on having its port to itself.
+
+    The standard server sets SO_REUSEADDR, which on Windows lets a second
+    program listen on the same port and take the requests. The token would
+    then be sent to that program.
+    """
+
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        super().server_bind()
+
+
+class LocalApi(QObject):
+    """A small HTTP server that is reachable from this computer only.
+
+    It listens on 127.0.0.1, so nothing on the network can connect. Every
+    request needs the token from the settings window. Requests coming from a
+    web page (they carry an Origin header) and requests addressed to any
+    other host name are refused, so a site open in a browser cannot reach
+    the mixer either.
+
+    Requests arrive on server threads. They are passed to the GUI thread
+    through call_requested and wait there for the answer; nothing in this
+    class touches a widget or VoiceMeeter.
+    """
+
+    call_requested = Signal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.server = None
+        self.thread = None
+        self.token = ""
+        self.port = 0
+
+    def start(self, port, token):
+        """Start listening. Raises OSError when the port cannot be used."""
+        self.stop()
+        api = self
+
+        class Handler(BaseHTTPRequestHandler):
+            server_version = "VMStreamer"
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                api.serve(self, "GET")
+
+            def do_POST(self):
+                api.serve(self, "POST")
+
+        self.server = ApiServer(("127.0.0.1", int(port)), Handler)
+        self.port = self.server.server_address[1]
+        self.token = token
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            kwargs={"poll_interval": 0.1},  # stop() then returns quickly
+            name="VMStreamer-LocalApi",
+            daemon=True,
+        )
+        self.thread.start()
+
+    def stop(self):
+        server, thread = self.server, self.thread
+        self.server = self.thread = None
+        self.port = 0
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if thread is not None:
+            thread.join(timeout=1.0)
+
+    def serve(self, handler, method):
+        try:
+            length = int(handler.headers.get("Content-Length") or 0)
+            if length:
+                handler.rfile.read(min(length, 65536))
+            status, body = self.answer(handler, method)
+        except Exception as e:
+            log.error(f"Local API request failed: {type(e).__name__}: {e}")
+            status, body = 500, {"error": "Internal error."}
+        data = json.dumps(body).encode("utf-8")
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(data)))
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
+        handler.wfile.write(data)
+
+    def answer(self, handler, method):
+        url = urlsplit(handler.path)
+        params = {key: values[-1] for key, values in parse_qs(url.query).items()}
+
+        if handler.headers.get("Origin"):
+            return 403, {"error": "Requests from web pages are not accepted."}
+        host = (handler.headers.get("Host") or "").rsplit(":", 1)[0].lower()
+        if host not in ("127.0.0.1", "localhost"):
+            return 403, {"error": "Only 127.0.0.1 and localhost are accepted."}
+
+        supplied = handler.headers.get(API_TOKEN_HEADER) or params.pop("token", "")
+        if not self.token or not hmac.compare_digest(
+            supplied.encode("utf-8"), self.token.encode("utf-8")
+        ):
+            return 401, {"error": "Missing or wrong token."}
+
+        parts = [unquote(part) for part in url.path.split("/") if part]
+        if not parts or parts[0] != "api":
+            return 404, {"error": "Unknown address."}
+
+        call = ApiCall(method, parts[1:], params)
+        self.call_requested.emit(call)
+        try:
+            return call.future.result(timeout=3.0)
+        except Exception:
+            return 503, {"error": "VMStreamer did not answer in time."}
 
 
 class HotkeyFilter(QAbstractNativeEventFilter):
@@ -4273,6 +4421,63 @@ class SettingsDialog(QDialog):
             self.form.addRow(action.label, edit)
             self.hotkey_edits[action.key] = edit
 
+        # ---- Remote control ----
+        self.form = self.add_tab("Remote control")
+        self.add_note(
+            "Lets other programs on this computer control VMStreamer: a "
+            "Stream Deck plugin, an OBS script, a shortcut. Nothing outside "
+            "this computer can connect, and every request needs the token "
+            "below."
+        )
+        self.api_enabled = QCheckBox("Allow control by other programs")
+        self.api_enabled.setChecked(current["api_enabled"])
+        self.form.addRow(self.api_enabled)
+        self.api_port = QSpinBox()
+        self.api_port.setRange(1024, 65535)
+        self.api_port.setValue(current["api_port"])
+        self.form.addRow("Port", self.api_port)
+
+        self.api_token = QLineEdit(
+            current["api_token"] or secrets.token_urlsafe(16)
+        )
+        self.api_token.setReadOnly(True)
+        copy_button = QPushButton("COPY")
+        copy_button.clicked.connect(
+            lambda: QApplication.clipboard().setText(self.api_token.text())
+        )
+        new_button = QPushButton("NEW")
+        new_button.setToolTip(
+            "Make a new token. Programs using the old one stop working."
+        )
+        new_button.clicked.connect(
+            lambda: self.api_token.setText(secrets.token_urlsafe(16))
+        )
+        token_row = QHBoxLayout()
+        token_row.addWidget(self.api_token, 1)
+        for button in (copy_button, new_button):
+            button.setStyleSheet("QPushButton { padding: 4px 10px; }")
+            token_row.addWidget(button)
+        self.form.addRow("Token", token_row)
+
+        self.add_heading("HOW TO USE IT")
+        example = QLabel(
+            "Send the token in the header X-VMStreamer-Token.\n\n"
+            "GET   /api/state\n"
+            "GET   /api/profiles\n"
+            "POST  /api/mute/mic?state=toggle      (on, off, toggle)\n"
+            "POST  /api/gain/game?step=-1          (or db=-6)\n"
+            "POST  /api/profile/Streaming\n"
+            "POST  /api/profile?step=next          (next, previous)\n\n"
+            "Channels: mic, game, chat, media."
+        )
+        example.setStyleSheet(
+            "color: #aebdca; font-family: Consolas; font-size: 11px;"
+        )
+        example.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.form.addRow(example)
+
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #f85149;")
         self.error_label.setWordWrap(True)
@@ -4369,6 +4574,9 @@ class SettingsDialog(QDialog):
             "mic_strip": int(self.mic_input.currentData()),
             "close_to_tray": self.close_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
+            "api_enabled": self.api_enabled.isChecked(),
+            "api_port": self.api_port.value(),
+            "api_token": self.api_token.text(),
         }
         values.update(self.hotkey_texts())
         return values
@@ -4929,6 +5137,10 @@ class MainWindow(QMainWindow):
         )
         if setting_bool(self.window_settings, "compact_mode", False):
             self.set_compact(True, remember_geometry=False)
+
+        self.local_api = LocalApi(self)
+        self.local_api.call_requested.connect(self.on_api_call)
+        self.restart_api()
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         self.register_hotkeys()
@@ -5912,6 +6124,9 @@ class MainWindow(QMainWindow):
             "mic_strip": mic_strip,
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
+            "api_enabled": setting_bool(settings, "api_enabled", False),
+            "api_port": self.api_port_setting(),
+            "api_token": str(settings.value("api_token", "") or ""),
             **{
                 action.key: str(settings.value(action.key, action.default) or "")
                 for action in HOTKEYS
@@ -5933,6 +6148,10 @@ class MainWindow(QMainWindow):
             self.window_settings.setValue(key, value)
         self.window_settings.sync()
 
+        problem = self.restart_api()
+        if problem:
+            QMessageBox.warning(self, "VMStreamer", problem)
+
         refused = self.register_hotkeys()
         if refused:
             QMessageBox.warning(
@@ -5942,6 +6161,127 @@ class MainWindow(QMainWindow):
                 "Another program is probably using it already. "
                 "Choose a different combination in Settings.",
             )
+
+    # Local API.
+
+    def api_port_setting(self):
+        try:
+            port = int(self.window_settings.value("api_port", API_DEFAULT_PORT))
+        except (TypeError, ValueError):
+            port = API_DEFAULT_PORT
+        return port if 0 <= port <= 65535 else API_DEFAULT_PORT
+
+    def restart_api(self):
+        """Start or stop the local API to match the settings.
+
+        Returns a message when it should run but cannot, else an empty string.
+        """
+        self.local_api.stop()
+        current = self.current_settings()
+        if not current["api_enabled"] or not current["api_token"]:
+            return ""
+        try:
+            self.local_api.start(current["api_port"], current["api_token"])
+        except OSError as e:
+            log.warning(f"Local API could not start: {e}")
+            return (
+                f"Remote control could not start on port {current['api_port']}. "
+                "Another program is probably using that port; choose a "
+                "different one in Settings."
+            )
+        log.info(f"Local API listening on 127.0.0.1:{self.local_api.port}")
+        return ""
+
+    def on_api_call(self, call):
+        """Answer a request from the local API. Runs on the GUI thread."""
+        try:
+            result = self.handle_api_call(call.method, call.parts, call.params)
+        except Exception as e:
+            log.error(f"Local API call failed: {type(e).__name__}: {e}")
+            result = (500, {"error": "Internal error."})
+        if not call.future.done():
+            call.future.set_result(result)
+
+    def api_state(self):
+        return {
+            "connected": self.connected,
+            "profile": self.active_profile,
+            "profile_changed": self.profile_is_changed(),
+            "channels": {
+                name: strip.profile_state()
+                for name, strip in self.strips.items()
+            },
+        }
+
+    def handle_api_call(self, method, parts, params):
+        """Carry out one API request and return (HTTP status, answer)."""
+        reading = (parts == ["state"] or parts == ["profiles"])
+        if reading and method != "GET":
+            return 405, {"error": "Use GET to read."}
+        if not reading and method != "POST":
+            return 405, {"error": "Use POST to change something."}
+
+        if parts == ["state"]:
+            return 200, self.api_state()
+        if parts == ["profiles"]:
+            return 200, {
+                "profiles": sorted(self.load_profiles(), key=str.casefold),
+                "active": self.active_profile,
+            }
+
+        if not self.connected:
+            return 409, {"error": "VoiceMeeter is not connected."}
+
+        if len(parts) == 2 and parts[0] in ("mute", "gain"):
+            channels = {name.casefold(): name for name in self.strips}
+            name = channels.get(parts[1].casefold())
+            if name is None:
+                return 404, {"error": f"Unknown channel: {parts[1]}"}
+            strip = self.strips[name]
+
+            if parts[0] == "mute":
+                wanted = params.get("state", "toggle").casefold()
+                if wanted not in ("on", "off", "toggle"):
+                    return 400, {"error": "state must be on, off or toggle."}
+                muted = strip.mute_button.isChecked()
+                if wanted == "toggle" or (wanted == "on") != muted:
+                    self.toggle_strip_mute(name)
+                return 200, {"channel": name, "mute": strip.mute_button.isChecked()}
+
+            try:
+                if "db" in params:
+                    decibels = float(params["db"])
+                    if not math.isfinite(decibels):
+                        raise ValueError
+                    strip.fader.setValue(int(round(decibels * 100)))
+                elif "step" in params:
+                    step = float(params["step"])
+                    if not math.isfinite(step):
+                        raise ValueError
+                    self.step_strip_gain(name, step)
+                else:
+                    return 400, {"error": "Give db or step."}
+            except ValueError:
+                return 400, {"error": "db and step must be numbers."}
+            return 200, {"channel": name, "gain": strip.fader.value() / 100}
+
+        if parts and parts[0] == "profile" and len(parts) <= 2:
+            if len(parts) == 2:
+                if parts[1] not in self.load_profiles():
+                    return 404, {"error": f"Unknown profile: {parts[1]}"}
+                applied = self.apply_profile(parts[1])
+                self.refresh_profile_list(select=parts[1])
+            else:
+                step = params.get("step", "").casefold()
+                if step not in ("next", "previous"):
+                    return 400, {"error": "Give a profile name, or step=next or previous."}
+                if not self.load_profiles():
+                    return 404, {"error": "There are no profiles."}
+                self.cycle_profile(1 if step == "next" else -1)
+                applied = True
+            return 200, {"profile": self.active_profile, "applied": bool(applied)}
+
+        return 404, {"error": "Unknown address."}
 
     def register_hotkeys(self):
         """(Re)register the global hotkeys.
@@ -6101,6 +6441,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "connection_timer"):
             self.connection_timer.stop()
         self.unregister_hotkeys()
+        self.local_api.stop()
 
         if self.vm is not None and self.vm_observer is not None:
             try:

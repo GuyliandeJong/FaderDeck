@@ -383,7 +383,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog.tabs.tabText(0), "General")
         self.assertEqual(dialog.tabs.tabText(1), "Hotkeys")
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
-                         {"mic_strip", "close_to_tray", "start_minimized"})
+                         {"mic_strip", "close_to_tray", "start_minimized",
+                          "api_enabled", "api_port", "api_token"})
 
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
