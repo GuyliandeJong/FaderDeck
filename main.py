@@ -427,7 +427,7 @@ class VMObserver:
         self.bridge = bridge
 
     def on_update(self, event):
-        # Mic levels are sampled by MicLevelWorker, so level events are not
+        # Mic levels are sampled by StripLevelWorker, so level events are not
         # forwarded to the GUI thread at all. Never read levels here: this
         # runs on VoiceMeeter's own update thread.
         if event != "ldirty":
@@ -1516,10 +1516,9 @@ class StripWidget(QWidget):
         layout.addSpacing(8)
 
 
-        # Mic signal meters. They are placed relative to the fader (see
+        # Input level meters. They are placed relative to the fader (see
         # MicFaderArea) so they can never push the fader off center.
-        self.vu_meters = [VUMeter("L"), VUMeter("R")] if name == "Mic" else []
-        self.vu_meter = self.vu_meters[0] if self.vu_meters else None
+        self.vu_meters = [VUMeter("L"), VUMeter("R")]
 
         # Fader
 
@@ -1564,17 +1563,9 @@ class StripWidget(QWidget):
         )
 
 
-        if self.vu_meter is not None:
-            # The fader is centered in the card exactly like the other
-            # strips; the two input meters sit to its left.
-            layout.addWidget(MicFaderArea(self.fader, self.vu_meters), 1)
-        else:
-            control_layout = QHBoxLayout()
-            control_layout.setContentsMargins(0, 0, 0, 0)
-            control_layout.addStretch(1)
-            control_layout.addWidget(self.fader)
-            control_layout.addStretch(1)
-            layout.addLayout(control_layout, 1)
+        # The fader is centered in the card; the two input meters sit to
+        # its left.
+        layout.addWidget(MicFaderArea(self.fader, self.vu_meters), 1)
 
 
         # Gain readout
@@ -1778,19 +1769,15 @@ class StripWidget(QWidget):
 
 
     def set_channel_levels(self, levels):
-        """Apply already-read Mic levels to the UI without any VM I/O."""
-        if self.vu_meter is None:
-            return
-
+        """Apply already-read levels to the UI without any VM I/O."""
         for meter, level in zip(self.vu_meters, levels):
             meter.set_level(level)
 
 
     def animate_level(self):
-        """Advance the Mic meter animation without VoiceMeeter I/O."""
-        if self.vu_meter is not None:
-            for meter in self.vu_meters:
-                meter.animate_level()
+        """Advance the meter animation without VoiceMeeter I/O."""
+        for meter in self.vu_meters:
+            meter.animate_level()
 
 
     def sync_from_voicemeeter(self):
@@ -3545,10 +3532,14 @@ class ApplicationControl(QWidget):
         self.worker_thread = None
 
 
-class MicLevelWorker(QObject):
-    """Read the Mic strip level on a dedicated worker thread."""
+class StripLevelWorker(QObject):
+    """Read the level of every strip on a dedicated worker thread.
 
-    levels_received = Signal(float, float)
+    This worker is the only place levels are read; the GUI thread never
+    queries VoiceMeeter for them.
+    """
+
+    levels_received = Signal(str, float, float)  # strip name, left, right
     error = Signal(str)
     finished = Signal()
 
@@ -3556,46 +3547,53 @@ class MicLevelWorker(QObject):
         super().__init__()
         self.vm = vm
         self.timer = None
-        self._last_levels = None
+        self._last_levels = {}
 
     @Slot()
     def start(self):
         self.timer = QTimer(self)
         self.timer.setInterval(10)
-        self.timer.timeout.connect(self.read_level)
+        self.timer.timeout.connect(self.read_levels)
         self.timer.start()
-        self.read_level()
+        self.read_levels()
+
+    @staticmethod
+    def _left_right(raw_levels):
+        """Reduce VoiceMeeter's per-channel levels to a left/right pair.
+
+        Hardware strips report two channels and virtual strips eight; the
+        first two are front left and right.
+        """
+        if isinstance(raw_levels, (tuple, list)):
+            levels = [
+                float(value)
+                for value in raw_levels
+                if isinstance(value, (int, float))
+            ]
+        elif isinstance(raw_levels, (int, float)):
+            levels = [float(raw_levels)]
+        else:
+            levels = []
+
+        if not levels:
+            return -200.0, -200.0
+        if len(levels) == 1:
+            return levels[0], levels[0]
+        return levels[0], levels[1]
 
     @Slot()
-    def read_level(self):
+    def read_levels(self):
         try:
-            raw_levels = self.vm.strip[MIC_STRIP].levels.prefader
-            if isinstance(raw_levels, (tuple, list)):
-                levels = [
-                    float(value)
-                    for value in raw_levels
-                    if isinstance(value, (int, float))
-                ]
-            elif isinstance(raw_levels, (int, float)):
-                levels = [float(raw_levels)]
-            else:
-                levels = []
-
-            if not levels:
-                left = right = -200.0
-            elif len(levels) == 1:
-                left = right = levels[0]
-            else:
-                left, right = levels[:2]
-
-            # VoiceMeeter's level cache refreshes more slowly than this
-            # timer, so most reads repeat the previous one.
-            if (left, right) != self._last_levels:
-                self._last_levels = (left, right)
-                self.levels_received.emit(left, right)
+            for name, index in STRIPS.items():
+                pair = self._left_right(self.vm.strip[index].levels.prefader)
+                # VoiceMeeter's level cache refreshes more slowly than this
+                # timer, so most reads repeat the previous one.
+                if pair != self._last_levels.get(name):
+                    self._last_levels[name] = pair
+                    self.levels_received.emit(name, pair[0], pair[1])
         except Exception as exc:
             self.error.emit(
-                f"Mic level worker read failed: {type(exc).__name__}: {exc}"
+                f"Level worker read failed: {type(exc).__name__}: {exc}"
             )
 
     @Slot()
@@ -4315,12 +4313,12 @@ class MainWindow(QMainWindow):
             return
 
         self.mic_level_thread = QThread(self)
-        self.mic_level_worker = MicLevelWorker(self.vm)
+        self.mic_level_worker = StripLevelWorker(self.vm)
         self.mic_level_worker.moveToThread(self.mic_level_thread)
 
         self.mic_level_thread.started.connect(self.mic_level_worker.start)
         self.mic_level_worker.levels_received.connect(
-            self.on_mic_levels_received
+            self.on_levels_received
         )
         self.mic_level_worker.error.connect(
             lambda message: log.error(message)
@@ -4374,12 +4372,12 @@ class MainWindow(QMainWindow):
             self.mic_level_bar.animate()
 
 
-    def on_mic_levels_received(self, left, right):
-        """Receive Mic levels from MicLevelWorker."""
-        mic = self.strips.get("Mic")
-        if mic is not None:
-            mic.set_channel_levels((left, right))
-        if self.mic_level_bar is not None:
+    def on_levels_received(self, name, left, right):
+        """Receive one strip's levels from StripLevelWorker."""
+        strip = self.strips.get(name)
+        if strip is not None:
+            strip.set_channel_levels((left, right))
+        if name == "Mic" and self.mic_level_bar is not None:
             self.mic_level_bar.set_level(max(left, right))
 
 
