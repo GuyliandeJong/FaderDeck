@@ -25,6 +25,9 @@ Control your main VoiceMeeter channels directly from VMStreamer:
 - Output routing buttons (B1 for the microphone, A1–A3 for Game, Chat and Media)
 - Live level meters on every channel, with a dB scale on the faders
 - Reconnects by itself when VoiceMeeter is closed and started again
+- Global hotkey to mute the microphone (Ctrl+Shift+M by default)
+- System tray icon: keeps running when the window is closed, with mute and quit in its menu
+- Settings window for the microphone input, the hotkey and the tray behaviour
 - Draggable divider between the mixer and the lower panels
 
 ### Application Audio
@@ -205,7 +208,7 @@ VMStreamer currently works with **VoiceMeeter Potato** and uses the following ch
 | Chat | Virtual Input 2 (AUX) | VoiceMeeter VAIO AUX |
 | Media | Virtual Input 3 (VAIO3) | VoiceMeeter VAIO3 |
 
-This mapping is currently fixed in `main.py` (`STRIPS`).
+The microphone's hardware input (1 to 5) can be chosen in Settings and is used after a restart. The Game, Chat and Media mapping is fixed in `main.py` (`STRIPS`).
 
 Windows applications routed through these VoiceMeeter devices are automatically detected and displayed in the corresponding VMStreamer section.
 
@@ -239,7 +242,7 @@ VMStreamer is actively developed. The following features are planned or being co
 - [ ] Save application volume and mute states
 - [ ] Multiple named profiles such as Gaming, Streaming, Recording, and Away
 - [ ] User-configurable application sorting and layout
-- [ ] Dedicated settings window
+- [x] Dedicated settings window
 
 ### Application Management
 
@@ -262,13 +265,13 @@ VMStreamer is actively developed. The following features are planned or being co
 ### Streamer Features
 
 - [ ] Global hotkeys
-- [ ] Global microphone mute
+- [x] Global microphone mute
 - [ ] Game / Chat / Media volume hotkeys
 - [ ] Preset switching through hotkeys
 - [ ] Push-to-talk integration
-- [ ] System tray support
+- [x] System tray support
 - [ ] Start with Windows
-- [ ] Start minimized
+- [x] Start minimized
 
 ### Integrations
 

@@ -117,6 +117,16 @@ Amount (`knob`) is a preset dial in VoiceMeeter: changing it rewrites the advanc
 
 The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate and compressor thresholds marked. Its sliders (`PanelSlider`) ignore the mouse wheel until clicked; Attack, Hold and Release use a logarithmic track. The window opens beside the main window and remembers its place (`processing_geometry_v1`).
 
+## Settings, Hotkey and Tray
+
+`SettingsDialog` (button in the header) edits the program settings, stored in QSettings and read through `MainWindow.current_settings()`:
+
+- `mic_strip`: hardware input 0-4 of the microphone. Applied by `set_mic_strip()` before the window is built, because the strip, its processing controls and the level worker read `STRIPS` / `MIC_STRIP` when they are created. It therefore takes effect at the next start.
+- `hotkey_mic_mute`: global hotkey, `Ctrl+Shift+M` by default, empty to switch off. Registered with Win32 `RegisterHotKey` on the main window and received through `HotkeyFilter`, a native event filter. `parse_hotkey()` accepts a modifier plus a letter, digit or F1-F24. A registered combination is taken from all other programs while VMStreamer runs.
+- `close_to_tray` (default on) and `start_minimized` (default off).
+
+The tray icon (`create_tray`) offers Show, Mute microphone and Quit. With close-to-tray on, `closeEvent` only hides the window unless `_quitting` is set, which Quit and Windows' session end (`commitDataRequest`) do. `main()` switches off quit-on-last-window-closed, so the real `closeEvent` ends with `QApplication.quit()`. Do not remove the session-end hook: without it VMStreamer would hold up a Windows shutdown.
+
 ## Connection
 
 `check_connection()` runs every two seconds and looks for VoiceMeeter's main window with one Win32 call (`voicemeeter_is_running()`), which is cheap enough for the GUI thread. When VoiceMeeter goes away, `release_vm()` stops the level worker and event threads and logs out; when it returns, the same API object logs in again and the existing widgets are reused. Reconnecting only happens while VoiceMeeter is running, because `login()` would otherwise start it.

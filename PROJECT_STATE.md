@@ -59,6 +59,8 @@ Level sampling for all four strips uses one dedicated worker (`StripLevelWorker`
 
 VMStreamer reconnects by itself when VoiceMeeter is closed and started again (`check_connection`, `release_vm`).
 
+A settings window (`SettingsDialog`) sets the microphone's hardware input (used after a restart), the global mic mute hotkey (`Ctrl+Shift+M` by default) and the tray behaviour (close to tray on by default, start minimised off).
+
 Application audio uses a dedicated Python sampling loop at roughly 10 ms with GUI updates around 60 FPS.
 
 This architecture fixed severe stalls from the previous QTimer/GUI-thread implementation.
@@ -158,6 +160,7 @@ Do not regress:
 - reconnect without restarting VoiceMeeter on its own
 - Bypass and Reset restoring the whole processing state
 - version-independent hide keys
+- quitting on Windows session end instead of hiding in the tray
 - correct dB conversion
 - safe VoiceMeeter shutdown
 - compressor and gate timing setter (`sendtext`, `SCRIPT_KEYS`)
@@ -190,9 +193,9 @@ Potential areas:
 
 - application routing rules
 - presets/profiles
-- configurable strip mapping
-- global hotkeys
-- system tray
+- more hotkeys (per-channel mute, volume)
+- configurable Game/Chat/Media mapping
+- single running instance
 - volume persistence
 - pan/balance
 - additional VoiceMeeter controls
