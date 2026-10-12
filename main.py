@@ -1,5 +1,6 @@
 import sys
 import math
+import ctypes
 import json
 import logging
 import os
@@ -299,6 +300,24 @@ def setup_logging():
 
     sys.excepthook = log_uncaught
     threading.excepthook = log_uncaught_in_thread
+
+
+# Window class of VoiceMeeter's main window (all editions).
+VOICEMEETER_WINDOW_CLASS = "VBCABLE0Voicemeeter0MainWindow0"
+
+
+def voicemeeter_is_running():
+    """Return True while VoiceMeeter's main window exists.
+
+    One Win32 call that returns immediately, so it is safe to poll from the
+    GUI thread (listing processes is not).
+    """
+    try:
+        return bool(
+            ctypes.windll.user32.FindWindowW(VOICEMEETER_WINDOW_CLASS, None)
+        )
+    except Exception:
+        return False
 
 
 # VoiceMeeter strip indexes
@@ -3619,7 +3638,12 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.vm = None
+        self.vm_observer = None
         self.connected = False
+        self._logged_in = False
+        # Health checks in a row that found VoiceMeeter running while we were
+        # disconnected; see check_connection().
+        self._seen_running = 0
         self.strips = {}
         self.window_settings = QSettings("VMStreamer", "VMStreamer")
 
@@ -3819,6 +3843,17 @@ class MainWindow(QMainWindow):
         self.mixer_layout.setContentsMargins(0, 0, 0, 0)
         self.mixer_layout.setSpacing(4)
         self.main_splitter.addWidget(self.mixer_container)
+        self.offline_banner = QLabel(
+            "VoiceMeeter Potato is not running. VMStreamer connects "
+            "automatically when it starts."
+        )
+        self.offline_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.offline_banner.setStyleSheet(
+            "color: #f0b6b1; background: #2b1516; border: 1px solid #69353c; "
+            "border-radius: 6px; padding: 8px; font-weight: bold;"
+        )
+        self.offline_banner.setVisible(False)
+        main_layout.addWidget(self.offline_banner)
         main_layout.addWidget(self.main_splitter, 1)
 
 
@@ -3927,73 +3962,130 @@ class MainWindow(QMainWindow):
         if not restored:
             self.main_splitter.reset_sizes()
 
-        # Connect to VoiceMeeter
+        # Connect to VoiceMeeter, then keep watching: it can be closed and
+        # started again while VMStreamer stays open.
         self.connect_vm()
+        self.connection_timer = QTimer(self)
+        self.connection_timer.setInterval(2000)
+        self.connection_timer.timeout.connect(self.check_connection)
+        self.connection_timer.start()
 
 
     def connect_vm(self):
+        """Log in to VoiceMeeter and start the event and level threads.
+
+        Safe to call again after VoiceMeeter was restarted: the same API
+        object is reused, so the existing widgets keep working.
+        """
         try:
-            self.vm = voicemeeterlib.api(
-                "potato",
-                ratelimit=0.05,
-                ldirty=True,
-                pdirty=True,
-            )
+            if self.vm is None:
+                self.vm = voicemeeterlib.api(
+                    "potato",
+                    ratelimit=0.05,
+                    ldirty=True,
+                    pdirty=True,
+                )
 
             self.vm.login()
+            self._logged_in = True
 
-            self.vm_observer = VMObserver(
-                self.vm_bridge,
-            )
-
-            self.vm.observer.add(
-                self.vm_observer
-            )
+            if self.vm_observer is None:
+                self.vm_observer = VMObserver(self.vm_bridge)
+                self.vm.observer.add(self.vm_observer)
 
             self.vm.init_thread()
             self.start_mic_level_worker()
 
-            self.connected = True
-
-            self.status_label.setText(
-                "● Connected to VoiceMeeter Potato"
-            )
-            self.status_label.setStyleSheet(
-                "color: #3fb950; font-weight: bold;"
-            )
-
-            log.info(
-                "Connected to VoiceMeeter Potato"
-            )
-            log.info(
-                "VoiceMeeter event observer started"
-            )
-
-
             self.create_strips()
-
             self.create_compressor()
             self.create_gate()
             self.create_denoiser()
             self.create_applications()
 
+            self.connected = True
+            log.info("Connected to VoiceMeeter Potato")
+
+            # After a reconnect the widgets already exist and may be stale.
+            for widget in self.strips.values():
+                widget.sync_from_voicemeeter()
+            self.sync_processing_controls()
 
         except Exception as e:
-
             log.error(
                 f"VoiceMeeter connection failed: "
                 f"{type(e).__name__}: {e}"
             )
+            self.release_vm()
 
-            self.vm = None
-            self.connected = False
+        self._show_connection_state()
 
-            self.status_label.setText(
-                "● Disconnected"
+    def release_vm(self):
+        """Stop every thread that talks to VoiceMeeter, then log out.
+
+        The API object is kept: the strip and processing widgets hold on to
+        it and are reused when VoiceMeeter comes back.
+        """
+        self.connected = False
+        self.stop_mic_level_worker()
+        if self.vm is None:
+            return
+
+        try:
+            # IMPORTANT: stop and join the updater/producer threads BEFORE
+            # logging out.
+            self.vm.end_thread()
+        except Exception as e:
+            log.error(
+                f"Failed to stop VoiceMeeter event thread: "
+                f"{type(e).__name__}: {e}"
             )
+
+        if self._logged_in:
+            self._logged_in = False
+            try:
+                self.vm.logout()
+            except Exception as e:
+                # Expected when VoiceMeeter itself has gone away.
+                log.info(
+                    f"VoiceMeeter logout: {type(e).__name__}: {e}"
+                )
+
+    def check_connection(self):
+        """Notice VoiceMeeter closing or starting. Runs every two seconds."""
+        running = voicemeeter_is_running()
+
+        if self.connected:
+            if not running:
+                log.warning("VoiceMeeter was closed; waiting for it to return")
+                if self.processing_dialog is not None:
+                    self.processing_dialog.close()
+                self.release_vm()
+                self._show_connection_state()
+            return
+
+        # Only log in while VoiceMeeter is running: logging in would start it,
+        # and it may have been closed on purpose. Wait one extra check so its
+        # audio engine is up before the first calls.
+        self._seen_running = self._seen_running + 1 if running else 0
+        if self._seen_running >= 2:
+            self._seen_running = 0
+            self.connect_vm()
+
+    def _show_connection_state(self):
+        if self.connected:
+            self.status_label.setText("● Connected to VoiceMeeter Potato")
+            self.status_label.setStyleSheet(
+                "color: #3fb950; font-weight: bold;"
+            )
+        else:
+            self.status_label.setText("● Disconnected")
             self.status_label.setStyleSheet(
                 "color: #f85149; font-weight: bold;"
             )
+        self.offline_banner.setVisible(not self.connected)
+        # Controls that would write to VoiceMeeter are greyed out meanwhile.
+        self.mixer_container.setEnabled(self.connected)
+        self.processing_toggle.setEnabled(self.connected)
 
     def create_strips(self):
         if self.strips:
@@ -4295,38 +4387,16 @@ class MainWindow(QMainWindow):
         if hasattr(self, "level_timer"):
             self.level_timer.stop()
 
-        self.stop_mic_level_worker()
-        if self.vm is not None:
+        if hasattr(self, "connection_timer"):
+            self.connection_timer.stop()
+
+        if self.vm is not None and self.vm_observer is not None:
             try:
-                self.vm.observer.remove(
-                    self.vm_observer
-                )
+                self.vm.observer.remove(self.vm_observer)
             except Exception:
                 pass
-
-            try:
-                # IMPORTANT:
-                # Stop and join the updater/producer
-                # threads BEFORE logging out.
-                self.vm.end_thread()
-            except Exception as e:
-                log.error(
-                    f"Failed to stop VoiceMeeter event thread: "
-                    f"{type(e).__name__}: {e}"
-                )
-
-            try:
-                self.vm.logout()
-            except Exception as e:
-                log.error(
-                    f"Failed to logout from VoiceMeeter: "
-                    f"{type(e).__name__}: {e}"
-                )
-
-            self.vm = None
-
-            self.connected = False
-
+        self.release_vm()
+        self.vm = None
 
         self.window_settings.setValue("geometry_v2", self.saveGeometry())
         self.window_settings.setValue("splitter_v1", self.main_splitter.saveState())
