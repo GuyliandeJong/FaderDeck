@@ -1002,6 +1002,7 @@ class ProcessingPanel(QWidget):
         self._snapshot = {}
         # State to restore when bypass is switched off, or None.
         self._bypassed = None
+        self._sync_hold_until = 0.0
 
         self.panel_layout = QVBoxLayout(self)
         self.panel_layout.setContentsMargins(6, 6, 6, 6)
@@ -1230,13 +1231,28 @@ class ProcessingPanel(QWidget):
     def _restore_state(self, state):
         """Send a state from _read_state() back to VoiceMeeter."""
         values = state["values"]
+        # VoiceMeeter reports in-between values while a batch of changes is
+        # being applied (Release has been seen at 0). Show the values being
+        # sent and read back once things have settled.
+        self._hold_sync(0.6)
         # Amount first: setting it replaces the advanced values, which are
-        # then overwritten with the ones that belong to this state.
-        self._apply("knob", values["knob"])
+        # then overwritten with the ones that belong to this state. When
+        # Amount is already right it is left alone, so the advanced values
+        # are not disturbed, on screen or in the sound.
+        if abs(float(self.target.knob) - values["knob"]) > 0.001:
+            self._apply("knob", values["knob"])
         for key, actual in values.items():
             if key != "knob":
                 self._apply(key, actual)
         self.apply_extras(state.get("extras", {}))
+
+    def _hold_sync(self, seconds):
+        """Ignore VoiceMeeter's change events briefly, then read once."""
+        self._sync_hold_until = time.monotonic() + seconds
+        # With this panel as context the call is dropped if the panel is gone.
+        QTimer.singleShot(
+            int(seconds * 1000) + 100, self, self.sync_from_voicemeeter
+        )
 
     def _restore_bypass(self):
         stored = self.settings.value(self._bypass_setting(), None)
@@ -1274,6 +1290,7 @@ class ProcessingPanel(QWidget):
                 self.settings.setValue(
                     self._bypass_setting(), json.dumps(state)
                 )
+                self._hold_sync(0.6)
                 self._apply("knob", 0.0)
             else:
                 state = self._bypassed
@@ -1356,6 +1373,8 @@ class ProcessingPanel(QWidget):
 
     def sync_from_voicemeeter(self):
         """Synchronize every control from VoiceMeeter."""
+        if time.monotonic() < self._sync_hold_until:
+            return
         try:
             values = {
                 key: getattr(self.target, key)

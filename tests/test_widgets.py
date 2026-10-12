@@ -304,6 +304,36 @@ class PresetTest(unittest.TestCase):
             window.gate_control.controls["hold"]["edit"].text(), "120.0 ms"
         )
 
+    def test_amount_is_left_alone_when_it_is_already_right(self):
+        """Touching Amount makes VoiceMeeter rewrite the other values, which
+        shows on screen and is heard, so it is only written when it differs."""
+        window, comp = self.window, self.mic.comp
+        window.save_preset("Stream")
+        window.compressor_control._apply("threshold", -30.0)
+        comp.__dict__["knob_writes"] = 0
+
+        self.assertTrue(window.apply_preset("Stream"))
+        self.assertEqual(comp.knob_writes, 0)
+        self.assertEqual(comp.threshold, -18.0)
+
+    def test_in_between_values_are_not_shown_while_loading(self):
+        window, comp = self.window, self.mic.comp
+        panel = window.compressor_control
+        window.save_preset("Stream")
+        window.apply_preset("Stream")
+
+        comp.release = 0.0                  # VoiceMeeter mid-change
+        panel.sync_from_voicemeeter()       # the change event that follows
+        self.assertEqual(panel.controls["release"]["edit"].text(), "150.0 ms")
+
+        comp.release = 150.0                # settled
+        pump(0.9)
+        panel.sync_from_voicemeeter()
+        self.assertEqual(panel.controls["release"]["edit"].text(), "150.0 ms")
+        comp.release = 80.0                 # a later change is shown again
+        panel.sync_from_voicemeeter()
+        self.assertEqual(panel.controls["release"]["edit"].text(), "80.0 ms")
+
     def test_presets_are_stored_as_json_and_can_be_deleted(self):
         window = self.window
         window.save_preset("  Stream  ")

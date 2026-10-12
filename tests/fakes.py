@@ -75,6 +75,7 @@ class FakeBlock:
     @knob.setter
     def knob(self, value):
         self.__dict__["_knob"] = value
+        self.__dict__["knob_writes"] = self.__dict__.get("knob_writes", 0) + 1
         self.__dict__.update(self._preset)
 
 
