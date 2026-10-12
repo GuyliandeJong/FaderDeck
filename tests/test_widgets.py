@@ -207,6 +207,25 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.strips["Game"].gain_label.text(), "-12.00 dB")
         self.assertTrue(window.mixer_container.isEnabled())
 
+    def test_logs_out_when_the_program_ends_without_closing_the_window(self):
+        window, vm = self.window, self.sandbox.vm
+        self.assertTrue(vm.logged_in)
+        window.release_vm_at_exit()
+        self.assertFalse(vm.logged_in or vm.thread_running)
+        vm.logged_in = True                 # a second call must not act again
+        window.release_vm_at_exit()
+        self.assertTrue(vm.logged_in)
+        vm.logged_in = False
+
+    def test_no_logout_at_exit_after_a_normal_close(self):
+        window, vm = self.window, self.sandbox.vm
+        self.sandbox.close(window)
+        self.assertFalse(vm.logged_in)
+        vm.logged_in = True
+        window.release_vm_at_exit()
+        self.assertTrue(vm.logged_in, "already released; nothing to do")
+        vm.logged_in = False
+
     def test_does_not_log_in_while_voicemeeter_is_closed(self):
         window, vm = self.window, self.sandbox.vm
         self.sandbox.running = False

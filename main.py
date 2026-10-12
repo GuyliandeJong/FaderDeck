@@ -1,11 +1,13 @@
 import sys
 import math
+import atexit
 import ctypes
 import ctypes.wintypes
 import json
 import logging
 import os
 import re
+import signal
 import time
 import warnings
 import threading
@@ -4031,6 +4033,8 @@ class MainWindow(QMainWindow):
         self.vm_observer = None
         self.connected = False
         self._logged_in = False
+        self._exit_lock = threading.Lock()
+        atexit.register(self.release_vm_at_exit)
         # Health checks in a row that found VoiceMeeter running while we were
         # disconnected; see check_connection().
         self._seen_running = 0
@@ -4458,6 +4462,28 @@ class MainWindow(QMainWindow):
             self.release_vm()
 
         self._show_connection_state()
+
+    def release_vm_at_exit(self):
+        """Log out when the program ends without its window being closed:
+        Ctrl+C, a closed terminal, an error, Windows signing out.
+
+        VoiceMeeter cannot tell that a client has died. A login that is never
+        logged out stays listed there (the "R" marks at the top of its
+        window) until VoiceMeeter itself is restarted.
+        """
+        with self._exit_lock:
+            if self.vm is None or not self._logged_in:
+                return
+            self._logged_in = False
+            try:
+                self.vm.end_thread()
+            except Exception:
+                pass
+            try:
+                self.vm.logout()
+                log.info("Logged out of VoiceMeeter at exit")
+            except Exception as e:
+                log.info(f"VoiceMeeter logout at exit: {type(e).__name__}: {e}")
 
     def release_vm(self):
         """Stop every thread that talks to VoiceMeeter, then log out.
@@ -5183,6 +5209,33 @@ def resource_path(filename):
 
     return os.path.join(base_path, filename)
 
+def install_exit_handlers(window):
+    """Leave VoiceMeeter properly on the ways out that skip closeEvent."""
+
+    def quit_from_signal(*_args):
+        # Ctrl+C in the terminal: quit like the tray's Quit does.
+        QTimer.singleShot(0, window.quit_application)
+
+    for name in ("SIGINT", "SIGBREAK"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), quit_from_signal)
+
+    # The terminal window being closed, signing out, shutting down. Windows
+    # ends the process right after this returns, so log out here and now.
+    handler_type = ctypes.WINFUNCTYPE(
+        ctypes.wintypes.BOOL, ctypes.wintypes.DWORD
+    )
+
+    def on_console_event(event):
+        if event in (2, 5, 6):  # close, logoff, shutdown
+            window.release_vm_at_exit()
+        return False
+
+    # Kept on the window: Windows calls it later, so it must stay alive.
+    window._console_handler = handler_type(on_console_event)
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(window._console_handler, True)
+
+
 def main():
     setup_logging()
     # Kept until the program ends; Windows releases it then.
@@ -5222,6 +5275,7 @@ def main():
         window.setWindowIcon(app_icon)
     if not window.start_minimized_enabled():
         window.show()
+    install_exit_handlers(window)
 
     sys.exit(
         app.exec()
