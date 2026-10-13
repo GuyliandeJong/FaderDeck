@@ -487,6 +487,25 @@ def setting_bool(settings, key, default):
     return bool(value)
 
 
+# The channels the user may rename. The built-in name stays the key for
+# settings, profiles, hotkeys and the local API.
+CHANNEL_NAME_KEYS = {
+    "Game": "channel_name_game",
+    "Chat": "channel_name_chat",
+    "Media": "channel_name_media",
+}
+CHANNEL_NAME_MAX = 12  # more does not fit the strip header
+
+
+def channel_label(name, settings=None):
+    """The user's own name for a channel, or its built-in one."""
+    key = CHANNEL_NAME_KEYS.get(name)
+    if key is None:
+        return name
+    custom = str((settings or app_settings()).value(key, "") or "").strip()
+    return custom[:CHANNEL_NAME_MAX] or name
+
+
 # Global hotkeys: they work while FaderDeck is in the background, through
 # Win32 RegisterHotKey. A registered combination is taken away from every
 # other program for as long as FaderDeck runs.
@@ -2265,7 +2284,7 @@ class StripWidget(QWidget):
         title_stack = QVBoxLayout()
         title_stack.setContentsMargins(0, 0, 0, 0)
         title_stack.setSpacing(0)
-        self.name_label = QLabel(name)
+        self.name_label = QLabel(channel_label(name))
         self.name_label.setStyleSheet(
             f"color: {accent}; background: transparent; border: none; "
             "font-size: 14px; font-weight: bold;"
@@ -3697,11 +3716,11 @@ class ApplicationRow(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         if self.is_hidden:
-            this_action = menu.addAction(f"Unhide on {self.bus}")
+            this_action = menu.addAction(f"Unhide on {channel_label(self.bus)}")
             all_action = menu.addAction("Unhide on all channels")
             hide = False
         else:
-            this_action = menu.addAction(f"Hide on {self.bus}")
+            this_action = menu.addAction(f"Hide on {channel_label(self.bus)}")
             all_action = menu.addAction("Hide on all channels")
             hide = True
 
@@ -3868,6 +3887,7 @@ class ApplicationControl(QWidget):
         self.setVisible(False)
         self.sessions = {}
         self.rows = {name: {} for name in self.BUS_NAMES}
+        self.titles = {}
         self._topology_signature = None
         self._closing = False
         # Hiding is per virtual channel: the same application can be hidden
@@ -3944,7 +3964,8 @@ class ApplicationControl(QWidget):
                 "Chat": "VoiceMeeter VAIO AUX",
                 "Media": "VoiceMeeter VAIO3",
             }[bus]
-            title = QLabel(f"{bus.upper()} APPS")
+            title = QLabel(f"{channel_label(bus).upper()} APPS")
+            self.titles[bus] = title
             title.setToolTip(f"Applications playing on {endpoint}")
             title.setStyleSheet(
                 f"color: {colors['accent']}; background: {colors['header']}; "
@@ -4511,6 +4532,16 @@ class SettingsDialog(QDialog):
             "Used after FaderDeck is restarted."
         )
 
+        self.add_heading("CHANNEL NAMES")
+        self.channel_names = {}
+        for channel, key in CHANNEL_NAME_KEYS.items():
+            edit = QLineEdit(current[key])
+            edit.setMaxLength(CHANNEL_NAME_MAX)
+            edit.setPlaceholderText(channel)
+            self.form.addRow(channel, edit)
+            self.channel_names[key] = edit
+        self.add_note("Leave a field empty to keep the built-in name.")
+
         self.add_heading("WINDOW")
         self.close_to_tray = QCheckBox(
             "Keep running in the system tray when the window is closed"
@@ -4543,7 +4574,10 @@ class SettingsDialog(QDialog):
             edit = QKeySequenceEdit(QKeySequence(current[action.key]))
             edit.setMaximumSequenceLength(1)
             edit.setClearButtonEnabled(True)
-            self.form.addRow(action.label, edit)
+            label = action.label
+            for channel, key in CHANNEL_NAME_KEYS.items():
+                label = label.replace(channel, current[key] or channel)
+            self.form.addRow(label, edit)
             self.hotkey_edits[action.key] = edit
 
         # ---- Remote control ----
@@ -4704,6 +4738,9 @@ class SettingsDialog(QDialog):
             "api_token": self.api_token.text(),
         }
         values.update(self.hotkey_texts())
+        values.update(
+            (key, edit.text().strip()) for key, edit in self.channel_names.items()
+        )
         return values
 
 
@@ -6257,6 +6294,10 @@ class MainWindow(QMainWindow):
             "api_port": self.api_port_setting(),
             "api_token": str(settings.value("api_token", "") or ""),
             **{
+                key: str(settings.value(key, "") or "")
+                for key in CHANNEL_NAME_KEYS.values()
+            },
+            **{
                 action.key: str(settings.value(action.key, action.default) or "")
                 for action in HOTKEYS
             },
@@ -6271,11 +6312,22 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.apply_settings(dialog.values())
 
+    def refresh_channel_names(self):
+        """Show the channel names from the settings on the strips and lists."""
+        for name in CHANNEL_NAME_KEYS:
+            label = channel_label(name, self.window_settings)
+            if name in self.strips:
+                self.strips[name].name_label.setText(label)
+            title = self.application_control.titles.get(name)
+            if title is not None:
+                title.setText(f"{label.upper()} APPS")
+
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
         for key, value in values.items():
             self.window_settings.setValue(key, value)
         self.window_settings.sync()
+        self.refresh_channel_names()
 
         problem = self.restart_api()
         if problem:

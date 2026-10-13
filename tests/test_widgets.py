@@ -384,7 +384,20 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog.tabs.tabText(1), "Hotkeys")
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
-                          "api_enabled", "api_port", "api_token"})
+                          "api_enabled", "api_port", "api_token",
+                          *main.CHANNEL_NAME_KEYS.values()})
+
+    def test_own_channel_name_is_shown_but_the_key_stays(self):
+        settings = self.window.window_settings
+        settings.setValue("channel_name_game", "  Music  ")
+        self.window.refresh_channel_names()
+        self.assertEqual(self.window.strips["Game"].name_label.text(), "Music")
+        self.assertIn("Game", self.window.strips)
+        self.assertEqual(
+            self.window.current_settings()["channel_name_game"], "  Music  ")
+        settings.setValue("channel_name_game", "")
+        self.window.refresh_channel_names()
+        self.assertEqual(self.window.strips["Game"].name_label.text(), "Game")
 
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
