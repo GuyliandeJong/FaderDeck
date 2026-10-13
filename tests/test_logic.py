@@ -150,5 +150,33 @@ class SingleInstanceTest(unittest.TestCase):
         )
 
 
+class ThemeTest(unittest.TestCase):
+    def test_the_default_theme_changes_nothing(self):
+        self.assertEqual(main.theme_color("#0d1117"), "#0d1117")
+        self.assertIs(main.QColor, main._PlainColor)
+
+    def test_light_theme_swaps_dark_and_pale_but_keeps_the_hue(self):
+        background = main.QColor(main.theme_color("#0d1117", light=True))
+        text = main.QColor(main.theme_color("#e6edf3", light=True))
+        self.assertGreater(background.lightnessF(), 0.8)
+        self.assertLess(text.lightnessF(), 0.2)
+        red = main.QColor(main.theme_color("#ff514b", light=True))
+        self.assertAlmostEqual(red.hslHueF(), main.QColor("#ff514b").hslHueF(), 2)
+
+    def test_accent_replaces_blue_only(self):
+        green = main.ACCENTS["Green"]
+        self.assertAlmostEqual(
+            main.QColor(main.theme_color("#58a6ff", accent_hue=green)).hslHueF(),
+            green, 2)
+        self.assertEqual(main.theme_color("#ff514b", accent_hue=green), "#ff514b")
+
+    def test_unknown_stored_theme_falls_back(self):
+        class Stored:
+            def value(self, key, default=None):
+                return "Neon"
+        self.assertEqual(main.theme_settings(Stored()),
+                         {"theme": "Dark", "theme_accent": "Blue"})
+
+
 if __name__ == "__main__":
     unittest.main()

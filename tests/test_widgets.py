@@ -385,6 +385,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
+                          "theme", "theme_accent",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):

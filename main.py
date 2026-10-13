@@ -329,7 +329,7 @@ MONO_ICONS = {
 
 
 def mono_icon(name, size=22):
-    return _svg_icon(MONO_ICONS[name], size)
+    return _svg_icon(translate_colors(MONO_ICONS[name]), size)
 
 
 # Qt can emit a harmless font warning from an internal style/font fallback
@@ -504,6 +504,89 @@ def channel_label(name, settings=None):
         return name
     custom = str((settings or app_settings()).value(key, "") or "").strip()
     return custom[:CHANNEL_NAME_MAX] or name
+
+
+# Themes. Every colour in this file is written for the dark theme. Another
+# theme is a translation of those colours, applied where they reach Qt: in
+# style sheets and in QColor("#rrggbb"). The default theme translates nothing.
+THEMES = ("Dark", "Light")
+# Accent name -> hue (0-1) that replaces the dark theme's blue.
+ACCENTS = {
+    "Blue": None,
+    "Teal": 0.49,
+    "Green": 0.38,
+    "Orange": 0.08,
+    "Pink": 0.92,
+    "Purple": 0.75,
+}
+BLUE_HUES = (0.52, 0.66)  # the dark theme's blues, backgrounds included
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+_PlainColor = QColor
+_plain_set_style_sheet = QWidget.setStyleSheet
+
+
+def light_lightness(lightness):
+    """Lightness (0-1) in the light theme of a colour from the dark theme."""
+    # TODO(human): tune this curve. Plain inversion turns the near-black
+    # backgrounds near-white and the pale text near-black.
+    return 1.0 - lightness
+
+
+def theme_color(code, light=False, accent_hue=None):
+    """Translate one "#rrggbb" colour of the dark theme."""
+    hue, saturation, lightness, _alpha = _PlainColor(code).getHslF()
+    if accent_hue is not None and BLUE_HUES[0] <= hue <= BLUE_HUES[1]:
+        hue = accent_hue
+    if light:
+        lightness = min(1.0, max(0.0, light_lightness(lightness)))
+    return _PlainColor.fromHslF(max(hue, 0.0), saturation, lightness).name()
+
+
+def translate_colors(text):
+    """The colours in a style sheet or drawing, in the chosen theme."""
+    return text  # replaced by install_theme
+
+
+def theme_settings(settings):
+    """The stored theme and accent; anything unknown is the default."""
+    theme = str(settings.value("theme", "") or "")
+    accent = str(settings.value("theme_accent", "") or "")
+    return {
+        "theme": theme if theme in THEMES else THEMES[0],
+        "theme_accent": accent if accent in ACCENTS else "Blue",
+    }
+
+
+def install_theme(theme, accent):
+    """Translate every colour from here on. Call before any widget exists."""
+    light = theme == "Light"
+    accent_hue = ACCENTS.get(accent)
+    if not light and accent_hue is None:
+        return
+    cache = {}
+
+    def translate(match):
+        code = match.group(0).lower()
+        if code not in cache:
+            cache[code] = theme_color(code, light, accent_hue)
+        return cache[code]
+
+    def translate_colors(text):
+        return _HEX_COLOR.sub(translate, text)
+
+    class ThemedColor(_PlainColor):
+        def __init__(self, *args):
+            if len(args) == 1 and isinstance(args[0], str):
+                args = (translate_colors(args[0]),)
+            super().__init__(*args)
+
+    def set_style_sheet(widget, text):
+        _plain_set_style_sheet(widget, translate_colors(text))
+
+    globals()["translate_colors"] = translate_colors
+    globals()["QColor"] = ThemedColor
+    QWidget.setStyleSheet = set_style_sheet
+    log.info(f"Theme: {theme}, accent {accent}")
 
 
 # Global hotkeys: they work while FaderDeck is in the background, through
@@ -1008,8 +1091,8 @@ class Wordmark(QWidget):
                 # on x + y, and the run is long enough to cover the word.
                 run = (advance + (bottom - top)) / 2
                 gradient = QLinearGradient(x, top, x + run, top + run)
-                gradient.setColorAt(0.0, QColor(LOGO_GRADIENT[0]))
-                gradient.setColorAt(1.0, QColor(LOGO_GRADIENT[1]))
+                gradient.setColorAt(0.0, _PlainColor(LOGO_GRADIENT[0]))
+                gradient.setColorAt(1.0, _PlainColor(LOGO_GRADIENT[1]))
                 painter.setPen(QPen(QBrush(gradient), 1))
             else:
                 painter.setPen(QColor("#e6edf3"))
@@ -4542,6 +4625,17 @@ class SettingsDialog(QDialog):
             self.channel_names[key] = edit
         self.add_note("Leave a field empty to keep the built-in name.")
 
+        self.add_heading("APPEARANCE")
+        self.theme = QComboBox()
+        self.theme.addItems(THEMES)
+        self.theme.setCurrentText(current["theme"])
+        self.form.addRow("Theme", self.theme)
+        self.accent = QComboBox()
+        self.accent.addItems(ACCENTS)
+        self.accent.setCurrentText(current["theme_accent"])
+        self.form.addRow("Accent colour", self.accent)
+        self.add_note("Used after FaderDeck is restarted.")
+
         self.add_heading("WINDOW")
         self.close_to_tray = QCheckBox(
             "Keep running in the system tray when the window is closed"
@@ -4731,6 +4825,8 @@ class SettingsDialog(QDialog):
     def values(self):
         values = {
             "mic_strip": int(self.mic_input.currentData()),
+            "theme": self.theme.currentText(),
+            "theme_accent": self.accent.currentText(),
             "close_to_tray": self.close_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
             "api_enabled": self.api_enabled.isChecked(),
@@ -6288,6 +6384,7 @@ class MainWindow(QMainWindow):
             mic_strip = 0
         return {
             "mic_strip": mic_strip,
+            **theme_settings(settings),
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
             "api_enabled": setting_bool(settings, "api_enabled", False),
@@ -6720,6 +6817,9 @@ def main(arguments=()):
     # With a tray icon the program lives on while its window is hidden.
     app.setQuitOnLastWindowClosed(False)
 
+    migrate_settings()  # the theme is read before the window does this
+    chosen = theme_settings(app_settings())
+    install_theme(chosen["theme"], chosen["theme_accent"])
     window = MainWindow()
 
     if not app_icon.isNull():
