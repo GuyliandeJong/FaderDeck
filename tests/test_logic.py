@@ -151,31 +151,65 @@ class SingleInstanceTest(unittest.TestCase):
 
 
 class ThemeTest(unittest.TestCase):
+    def theme(self, **parts):
+        return main.clean_theme(parts)
+
     def test_the_default_theme_changes_nothing(self):
-        self.assertEqual(main.theme_color("#0d1117"), "#0d1117")
-        self.assertIs(main.QColor, main._PlainColor)
+        for code in ("#0d1117", "#58a6ff", "#35c8ff", "#e6edf3"):
+            self.assertEqual(main.theme_color(code), code)
 
     def test_light_theme_swaps_dark_and_pale_but_keeps_the_hue(self):
-        background = main.QColor(main.theme_color("#0d1117", light=True))
-        text = main.QColor(main.theme_color("#e6edf3", light=True))
-        self.assertGreater(background.lightnessF(), 0.8)
-        self.assertLess(text.lightnessF(), 0.2)
-        red = main.QColor(main.theme_color("#ff514b", light=True))
-        self.assertAlmostEqual(red.hslHueF(), main.QColor("#ff514b").hslHueF(), 2)
+        light = self.theme(light=True)
+        colour = main._PlainColor
+        self.assertGreater(colour(main.theme_color("#0d1117", light)).lightnessF(), 0.8)
+        self.assertLess(colour(main.theme_color("#e6edf3", light)).lightnessF(), 0.2)
+        self.assertAlmostEqual(
+            colour(main.theme_color("#ff514b", light)).hslHueF(),
+            colour("#ff514b").hslHueF(), 2)
 
     def test_accent_replaces_blue_only(self):
-        green = main.ACCENTS["Green"]
+        green = self.theme(accent="#22cc66")
+        colour = main._PlainColor
         self.assertAlmostEqual(
-            main.QColor(main.theme_color("#58a6ff", accent_hue=green)).hslHueF(),
-            green, 2)
-        self.assertEqual(main.theme_color("#ff514b", accent_hue=green), "#ff514b")
+            colour(main.theme_color("#58a6ff", green)).hslHueF(),
+            colour("#22cc66").hslHueF(), 2)
+        self.assertEqual(main.theme_color("#ff514b", green), "#ff514b")
 
-    def test_unknown_stored_theme_falls_back(self):
+    def test_channel_colour_is_used_as_chosen_and_tints_its_frame(self):
+        theme = self.theme(light=True, channels={"Game": "#00aa00"})
+        game = main.STRIP_COLORS["Game"]
+        colour = main._PlainColor
+        self.assertEqual(main.theme_color(game["accent"], theme), "#00aa00")
+        self.assertAlmostEqual(
+            colour(main.theme_color(game["border"], theme)).hslHueF(),
+            colour("#00aa00").hslHueF(), 2)
+        chat = main.STRIP_COLORS["Chat"]["accent"]
+        self.assertEqual(
+            main.theme_color(chat, self.theme(channels={"Game": "#00aa00"})), chat)
+
+    def test_stored_theme_is_cleaned(self):
         class Stored:
+            def __init__(self, text):
+                self.text = text
+
             def value(self, key, default=None):
-                return "Neon"
-        self.assertEqual(main.theme_settings(Stored()),
-                         {"theme": "Dark", "theme_accent": "Blue"})
+                return self.text
+
+        self.assertEqual(main.theme_settings(Stored("not json")),
+                         main.clean_theme({}))
+        stored = Stored(
+            '{"light": 1, "accent": "red", "channels": {"Game": "#AA0000", "X": "#000000"}}')
+        self.assertEqual(main.theme_settings(stored), {
+            "name": "Dark", "light": False, "accent": "",
+            "channels": {"Game": "#aa0000"}})
+        self.assertEqual(main.saved_themes(Stored('{"Dark": {}, "Mine": {"light": true}}')),
+                         {"Mine": main.clean_theme({"light": True}, "Mine")})
+
+    def test_built_in_themes_are_valid(self):
+        for name, value in main.BUILTIN_THEMES.items():
+            clean = main.clean_theme(value, name)
+            for key, wanted in value.items():
+                self.assertEqual(clean[key], wanted)
 
 
 if __name__ == "__main__":

@@ -381,11 +381,11 @@ class MainWindowTest(unittest.TestCase):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
         self.assertEqual(set(dialog.hotkey_edits), {a.key for a in main.HOTKEYS})
         self.assertEqual(dialog.tabs.tabText(0), "General")
-        self.assertEqual(dialog.tabs.tabText(1), "Hotkeys")
+        self.assertEqual(dialog.tabs.tabText(2), "Hotkeys")
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
-                          "theme", "theme_accent",
+                          "theme", "themes",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
@@ -399,6 +399,25 @@ class MainWindowTest(unittest.TestCase):
         settings.setValue("channel_name_game", "")
         self.window.refresh_channel_names()
         self.assertEqual(self.window.strips["Game"].name_label.text(), "Game")
+
+    def test_theme_changes_live_and_cancel_puts_it_back(self):
+        button = self.window.settings_button
+        dark = button.styleSheet()
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        dialog.theme.setCurrentText("Light")
+        dialog.on_theme_chosen()
+        self.assertNotEqual(button.styleSheet(), dark)
+        self.assertTrue(dialog.light.isChecked())
+        dialog.channel_colors["Game"].set_color("#00aa00")
+        dialog.on_theme_edited()
+        self.assertEqual(dialog.theme.currentText(), main.CUSTOM_THEME)
+        self.assertIn("#00aa00", self.window.strips["Game"].name_label.styleSheet())
+        dialog.themes["Mine"] = main.clean_theme(dialog.theme_value(), "Mine")
+        dialog.show_theme(dialog.themes["Mine"])
+        self.assertEqual(dialog.values()["theme"]["name"], "Mine")
+        self.assertTrue(dialog.delete_theme_button.isEnabled())
+        dialog.reject()
+        self.assertEqual(button.styleSheet(), dark)
 
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())

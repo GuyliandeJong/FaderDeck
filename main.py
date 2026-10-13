@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialogButtonBox,
     QFormLayout,
+    QColorDialog,
     QInputDialog,
     QKeySequenceEdit,
     QMessageBox,
@@ -506,23 +507,56 @@ def channel_label(name, settings=None):
     return custom[:CHANNEL_NAME_MAX] or name
 
 
-# Themes. Every colour in this file is written for the dark theme. Another
-# theme is a translation of those colours, applied where they reach Qt: in
-# style sheets and in QColor("#rrggbb"). The default theme translates nothing.
-THEMES = ("Dark", "Light")
-# Accent name -> hue (0-1) that replaces the dark theme's blue.
-ACCENTS = {
-    "Blue": None,
-    "Teal": 0.49,
-    "Green": 0.38,
-    "Orange": 0.08,
-    "Pink": 0.92,
-    "Purple": 0.75,
+# Themes. Every colour in this file is written for the dark theme. A theme
+# is a translation of those colours, applied where they reach Qt: in style
+# sheets, in QColor("#rrggbb") and in the drawn icons. The default theme
+# translates nothing.
+DEFAULT_THEME = {"name": "Dark", "light": False, "accent": "", "channels": {}}
+# accent: replaces the hue of the dark theme's blues, backgrounds included.
+# channels: the colour of a mixer channel (a key of STRIP_COLORS).
+BUILTIN_THEMES = {
+    "Dark": {},
+    "Light": {"light": True},
+    # The logo's blue-to-purple gradient, spread over the four channels.
+    "FaderDeck": {
+        "accent": "#5a7dff",
+        "channels": {
+            "Mic": "#2aa8ff",
+            "Game": "#4a90ff",
+            "Chat": "#6b75ff",
+            "Media": "#8a5cff",
+        },
+    },
 }
-BLUE_HUES = (0.52, 0.66)  # the dark theme's blues, backgrounds included
+CUSTOM_THEME = "Custom"
+BLUE_HUES = (0.52, 0.66)
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 _PlainColor = QColor
 _plain_set_style_sheet = QWidget.setStyleSheet
+_theme = dict(DEFAULT_THEME)
+_color_cache = {}
+
+
+def clean_theme(value, name=None):
+    """A complete theme from stored or typed data; bad parts are dropped."""
+    value = value if isinstance(value, dict) else {}
+
+    def colour(text):
+        text = str(text or "").lower()
+        return text if _HEX_COLOR.fullmatch(text) else ""
+
+    channels = value.get("channels")
+    channels = channels if isinstance(channels, dict) else {}
+    return {
+        "name": str(name or value.get("name") or DEFAULT_THEME["name"])[:40],
+        "light": value.get("light") is True,
+        "accent": colour(value.get("accent")),
+        "channels": {
+            channel: colour(channels[channel])
+            for channel in STRIP_COLORS
+            if colour(channels.get(channel))
+        },
+    }
 
 
 def light_lightness(lightness):
@@ -532,61 +566,143 @@ def light_lightness(lightness):
     return 1.0 - lightness
 
 
-def theme_color(code, light=False, accent_hue=None):
+def theme_color(code, theme=DEFAULT_THEME):
     """Translate one "#rrggbb" colour of the dark theme."""
+    code = code.lower()
     hue, saturation, lightness, _alpha = _PlainColor(code).getHslF()
-    if accent_hue is not None and BLUE_HUES[0] <= hue <= BLUE_HUES[1]:
-        hue = accent_hue
-    if light:
+    changed = False
+    for channel, picked in theme["channels"].items():
+        defaults = STRIP_COLORS[channel]
+        if code == defaults["accent"]:
+            return picked  # exactly what the user chose, in any theme
+        if code in (defaults["border"], defaults["header"]):
+            picked_hue, picked_saturation, _l, _a = _PlainColor(picked).getHslF()
+            hue = picked_hue
+            saturation = min(saturation, picked_saturation)
+            changed = True
+            break
+    else:
+        if theme["accent"] and BLUE_HUES[0] <= hue <= BLUE_HUES[1]:
+            hue = _PlainColor(theme["accent"]).getHslF()[0]
+            changed = True
+    if theme["light"]:
         lightness = min(1.0, max(0.0, light_lightness(lightness)))
+        changed = True
+    if not changed:
+        return code
     return _PlainColor.fromHslF(max(hue, 0.0), saturation, lightness).name()
 
 
 def translate_colors(text):
-    """The colours in a style sheet or drawing, in the chosen theme."""
-    return text  # replaced by install_theme
+    """The colours in a style sheet or drawing, in the current theme."""
+
+    def translate(match):
+        code = match.group(0)
+        if code not in _color_cache:
+            _color_cache[code] = theme_color(code, _theme)
+        return _color_cache[code]
+
+    return _HEX_COLOR.sub(translate, text)
+
+
+class QColor(_PlainColor):
+    """QColor that reads "#rrggbb" as a colour of the dark theme."""
+
+    def __init__(self, *args):
+        if len(args) == 1 and isinstance(args[0], str):
+            args = (translate_colors(args[0]),)
+        super().__init__(*args)
+
+
+def _set_style_sheet(widget, text):
+    # Kept on the widget so apply_theme can translate it again.
+    widget.setProperty("themeSource", text)
+    _plain_set_style_sheet(widget, translate_colors(text))
+
+
+QWidget.setStyleSheet = _set_style_sheet
+
+
+def set_mono_icon(widget, name, size):
+    """Show a drawn icon on a button or label; follows theme changes."""
+    widget.setProperty("themeIcon", f"{name}|{size}")
+    icon = mono_icon(name, size)
+    if isinstance(widget, QLabel):
+        widget.setPixmap(icon.pixmap(size, size))
+    else:
+        widget.setIcon(icon)
+
+
+def apply_theme(theme):
+    """Switch to a theme now, restyling every widget that exists."""
+    _theme.clear()
+    _theme.update(clean_theme(theme))
+    _color_cache.clear()
+    if QApplication.instance() is None:
+        return
+    for widget in QApplication.allWidgets():
+        source = widget.property("themeSource")
+        if source:
+            _plain_set_style_sheet(widget, translate_colors(source))
+        icon = widget.property("themeIcon")
+        if icon:
+            name, size = icon.split("|")
+            set_mono_icon(widget, name, int(size))
+        widget.update()
+
+
+def _stored_json(settings, key):
+    try:
+        return json.loads(settings.value(key, "") or "null")
+    except (TypeError, ValueError):
+        return None
 
 
 def theme_settings(settings):
-    """The stored theme and accent; anything unknown is the default."""
-    theme = str(settings.value("theme", "") or "")
-    accent = str(settings.value("theme_accent", "") or "")
+    """The stored theme; anything unreadable is the default."""
+    return clean_theme(_stored_json(settings, "theme"))
+
+
+def saved_themes(settings):
+    """The user's own themes, by name."""
+    stored = _stored_json(settings, "themes")
+    stored = stored if isinstance(stored, dict) else {}
     return {
-        "theme": theme if theme in THEMES else THEMES[0],
-        "theme_accent": accent if accent in ACCENTS else "Blue",
+        str(name)[:40]: clean_theme(value, name)
+        for name, value in stored.items()
+        if str(name).strip() and name not in BUILTIN_THEMES
     }
 
 
-def install_theme(theme, accent):
-    """Translate every colour from here on. Call before any widget exists."""
-    light = theme == "Light"
-    accent_hue = ACCENTS.get(accent)
-    if not light and accent_hue is None:
-        return
-    cache = {}
+class ColorButton(QPushButton):
+    """A swatch that opens a colour picker. color is "" until one is chosen."""
 
-    def translate(match):
-        code = match.group(0).lower()
-        if code not in cache:
-            cache[code] = theme_color(code, light, accent_hue)
-        return cache[code]
+    changed = Signal()
 
-    def translate_colors(text):
-        return _HEX_COLOR.sub(translate, text)
+    def __init__(self, default):
+        super().__init__()
+        self.default = default
+        self.color = ""
+        self.setFixedSize(64, 24)
+        self.clicked.connect(self.pick)
+        self.set_color("")
 
-    class ThemedColor(_PlainColor):
-        def __init__(self, *args):
-            if len(args) == 1 and isinstance(args[0], str):
-                args = (translate_colors(args[0]),)
-            super().__init__(*args)
+    def set_color(self, color):
+        self.color = color
+        # Not translated: the swatch shows the colour itself.
+        _plain_set_style_sheet(
+            self,
+            f"QPushButton {{ background: {color or self.default}; "
+            "border: 1px solid #8ba0b5; border-radius: 4px; }",
+        )
 
-    def set_style_sheet(widget, text):
-        _plain_set_style_sheet(widget, translate_colors(text))
-
-    globals()["translate_colors"] = translate_colors
-    globals()["QColor"] = ThemedColor
-    QWidget.setStyleSheet = set_style_sheet
-    log.info(f"Theme: {theme}, accent {accent}")
+    def pick(self):
+        chosen = QColorDialog.getColor(
+            _PlainColor(self.color or self.default), self, "Choose a colour"
+        )
+        if chosen.isValid():
+            self.set_color(chosen.name())
+            self.changed.emit()
 
 
 # Global hotkeys: they work while FaderDeck is in the background, through
@@ -1375,7 +1491,7 @@ class MicLevelBar(QWidget):
 
     def add_marker(self, label, color, getter):
         """Mark a threshold; getter returns its current value in dB."""
-        self._markers.append((label, QColor(color), getter))
+        self._markers.append((label, color, getter))
 
     def set_level(self, level):
         self._target = max(self.MIN_DB, min(0.0, float(level)))
@@ -1427,7 +1543,7 @@ class MicLevelBar(QWidget):
         markers = []
         for label, color, getter in self._markers:
             try:
-                markers.append((float(getter()), label, color))
+                markers.append((float(getter()), label, QColor(color)))
             except Exception:
                 continue
         markers.sort(key=lambda marker: marker[0])
@@ -2357,9 +2473,7 @@ class StripWidget(QWidget):
         strip_header_layout.addStretch(1)
         icon_label = QLabel()
         icon_label.setFixedSize(24, 24)
-        icon_label.setPixmap(
-            mono_icon(source_icons.get(name, "mic"), 22).pixmap(22, 22)
-        )
+        set_mono_icon(icon_label, source_icons.get(name, "mic"), 22)
         icon_label.setStyleSheet(
             "background: transparent; border: none;"
         )
@@ -3814,8 +3928,8 @@ class ApplicationRow(QWidget):
             self.hide_requested.emit(self.hide_key, ALL_CHANNELS, hide)
 
     def _show_mute_icon(self, muted):
-        self.mute_button.setIcon(
-            mono_icon("speaker_off" if muted else "speaker", 16)
+        set_mono_icon(
+            self.mute_button, "speaker_off" if muted else "speaker", 16
         )
 
     def on_volume_changed(self, value):
@@ -4581,7 +4695,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("FaderDeck — Settings")
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
-        self.setMinimumSize(500, 520)
+        self.setMinimumSize(560, 520)
         self.setStyleSheet(
             "QLabel#settingsNote { color: #8ba0b5; font-size: 11px; }"
             "QLabel#settingsHeading { color: #8ba0b5; font-size: 11px; "
@@ -4625,17 +4739,6 @@ class SettingsDialog(QDialog):
             self.channel_names[key] = edit
         self.add_note("Leave a field empty to keep the built-in name.")
 
-        self.add_heading("APPEARANCE")
-        self.theme = QComboBox()
-        self.theme.addItems(THEMES)
-        self.theme.setCurrentText(current["theme"])
-        self.form.addRow("Theme", self.theme)
-        self.accent = QComboBox()
-        self.accent.addItems(ACCENTS)
-        self.accent.setCurrentText(current["theme_accent"])
-        self.form.addRow("Accent colour", self.accent)
-        self.add_note("Used after FaderDeck is restarted.")
-
         self.add_heading("WINDOW")
         self.close_to_tray = QCheckBox(
             "Keep running in the system tray when the window is closed"
@@ -4650,6 +4753,43 @@ class SettingsDialog(QDialog):
             "Right-click it to mute the microphone or quit. "
             "Holding Shift while closing the window quits at once."
         )
+
+        # ---- Appearance ----
+        self.form = self.add_tab("Appearance")
+        self.original_theme = current["theme"]
+        self.themes = dict(current["themes"])
+        self.theme = QComboBox()
+        self.theme.activated.connect(self.on_theme_chosen)
+        self.form.addRow("Theme", self.theme)
+        self.light = QCheckBox("Light background")
+        self.light.toggled.connect(self.on_theme_edited)
+        self.form.addRow(self.light)
+        self.accent = ColorButton("#58a6ff")
+        self.accent.changed.connect(self.on_theme_edited)
+        self.form.addRow("Accent colour", self.accent)
+        self.add_heading("CHANNEL COLOURS")
+        self.channel_colors = {}
+        for channel, colors in STRIP_COLORS.items():
+            button = ColorButton(colors["accent"])
+            button.changed.connect(self.on_theme_edited)
+            self.form.addRow(channel_label(channel), button)
+            self.channel_colors[channel] = button
+        save_theme = QPushButton("SAVE AS...")
+        save_theme.setToolTip("Keep these colours as a theme of your own")
+        save_theme.clicked.connect(self.save_theme)
+        self.delete_theme_button = QPushButton("DELETE")
+        self.delete_theme_button.clicked.connect(self.delete_theme)
+        theme_row = QHBoxLayout()
+        for button in (save_theme, self.delete_theme_button):
+            button.setStyleSheet("QPushButton { padding: 4px 10px; }")
+            theme_row.addWidget(button)
+        theme_row.addStretch(1)
+        self.form.addRow(theme_row)
+        self.add_note(
+            "Changes show at once. Cancel puts the colours back. The accent "
+            "replaces every blue in the window."
+        )
+        self.show_theme(self.original_theme)
 
         # ---- Hotkeys ----
         self.form = self.add_tab("Hotkeys", scrolling=True)
@@ -4792,6 +4932,77 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         self.form.addRow(note)
 
+    # Appearance.
+
+    def all_themes(self):
+        themes = {
+            name: clean_theme(value, name) for name, value in BUILTIN_THEMES.items()
+        }
+        themes.update(self.themes)
+        return themes
+
+    def theme_value(self):
+        """The theme as the controls show it."""
+        theme = clean_theme({
+            "light": self.light.isChecked(),
+            "accent": self.accent.color,
+            "channels": {
+                channel: button.color
+                for channel, button in self.channel_colors.items()
+            },
+        }, CUSTOM_THEME)
+        for name, known in self.all_themes().items():
+            if {**known, "name": ""} == {**theme, "name": ""}:
+                theme["name"] = name
+        return theme
+
+    def show_theme(self, theme):
+        """Put a theme in the controls and name it in the list."""
+        self.light.blockSignals(True)
+        self.light.setChecked(theme["light"])
+        self.light.blockSignals(False)
+        self.accent.set_color(theme["accent"])
+        for channel, button in self.channel_colors.items():
+            button.set_color(theme["channels"].get(channel, ""))
+        name = self.theme_value()["name"]
+        self.theme.clear()
+        self.theme.addItems(self.all_themes())
+        if name == CUSTOM_THEME:
+            self.theme.addItem(CUSTOM_THEME)
+        self.theme.setCurrentText(name)
+        self.delete_theme_button.setEnabled(name in self.themes)
+
+    def on_theme_chosen(self):
+        theme = self.all_themes().get(self.theme.currentText())
+        if theme is not None:
+            self.show_theme(theme)
+            apply_theme(theme)
+
+    def on_theme_edited(self):
+        theme = self.theme_value()
+        self.show_theme(theme)
+        apply_theme(theme)
+
+    def save_theme(self):
+        name, accepted = QInputDialog.getText(self, "FaderDeck", "Theme name:")
+        name = name.strip()[:40]
+        if not accepted or not name:
+            return
+        if name in BUILTIN_THEMES or name == CUSTOM_THEME:
+            self.error_label.setVisible(True)
+            self.error_label.setText(f"{name} is a built-in name; choose another.")
+            return
+        self.themes[name] = clean_theme(self.theme_value(), name)
+        self.show_theme(self.themes[name])
+
+    def delete_theme(self):
+        self.themes.pop(self.theme.currentText(), None)
+        self.show_theme(self.theme_value())
+
+    def reject(self):
+        apply_theme(self.original_theme)
+        super().reject()
+
     def hotkey_texts(self):
         return {
             key: edit.keySequence().toString(
@@ -4825,8 +5036,8 @@ class SettingsDialog(QDialog):
     def values(self):
         values = {
             "mic_strip": int(self.mic_input.currentData()),
-            "theme": self.theme.currentText(),
-            "theme_accent": self.accent.currentText(),
+            "theme": self.theme_value(),
+            "themes": dict(self.themes),
             "close_to_tray": self.close_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
             "api_enabled": self.api_enabled.isChecked(),
@@ -5113,7 +5324,7 @@ class MainWindow(QMainWindow):
 
         self.settings_button = QPushButton()
         self.settings_button.setFixedSize(32, 26)
-        self.settings_button.setIcon(mono_icon("settings", 18))
+        set_mono_icon(self.settings_button, "settings", 18)
         self.settings_button.setIconSize(QSize(18, 18))
         self.settings_button.setToolTip("Settings")
         self.settings_button.setStyleSheet(
@@ -5126,7 +5337,7 @@ class MainWindow(QMainWindow):
         self.compact_button = QPushButton()
         self.compact_button.setCheckable(True)
         self.compact_button.setFixedSize(32, 26)
-        self.compact_button.setIcon(mono_icon("compact", 18))
+        set_mono_icon(self.compact_button, "compact", 18)
         self.compact_button.setIconSize(QSize(18, 18))
         self.compact_button.setToolTip(
             "Compact view: faders, meters and mute only"
@@ -6384,7 +6595,8 @@ class MainWindow(QMainWindow):
             mic_strip = 0
         return {
             "mic_strip": mic_strip,
-            **theme_settings(settings),
+            "theme": theme_settings(settings),
+            "themes": saved_themes(settings),
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
             "api_enabled": setting_bool(settings, "api_enabled", False),
@@ -6422,8 +6634,11 @@ class MainWindow(QMainWindow):
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
         for key, value in values.items():
+            if key in ("theme", "themes"):
+                value = json.dumps(value)
             self.window_settings.setValue(key, value)
         self.window_settings.sync()
+        apply_theme(values["theme"])
         self.refresh_channel_names()
 
         problem = self.restart_api()
@@ -6818,8 +7033,7 @@ def main(arguments=()):
     app.setQuitOnLastWindowClosed(False)
 
     migrate_settings()  # the theme is read before the window does this
-    chosen = theme_settings(app_settings())
-    install_theme(chosen["theme"], chosen["theme_accent"])
+    apply_theme(theme_settings(app_settings()))
     window = MainWindow()
 
     if not app_icon.isNull():
