@@ -26,7 +26,7 @@ Dependencies are listed in `requirements.txt`.
 
 Project:
 
-`C:\Users\Dutchie_\Documents\Projects\VMStreamer`
+`C:\Users\Dutchie_\Documents\Projects\FaderDeck`
 
 ## VoiceMeeter
 
@@ -201,6 +201,7 @@ Potential areas:
 - system tray
 - OBS/Stream Deck
 - local API/Home Assistant
+- Android app to remote-control FaderDeck from a tablet or phone
 - themes/DPI improvements
 - installer
 - automatic updates

@@ -305,8 +305,9 @@ Next, roughly in this order:
 1. A Windows installer, and a signed EXE so Windows does not warn about it
 2. Your own names for the Game, Chat and Media channels
 3. Support for VoiceMeeter Banana and the standard edition
-
-Not planned for now: light mode and custom themes, automatic updates.
+4. Light mode and custom themes
+5. Automatic updates
+6. An Android app to control FaderDeck from a tablet or phone on your own network
 
 ## Support
 

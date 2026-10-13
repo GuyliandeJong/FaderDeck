@@ -12,7 +12,7 @@ Current release: `v1.0.2` (published/latest)
 
 - Windows
 - Python 3.14.6
-- Project: `C:\Users\Dutchie_\Documents\Projects\VMStreamer`
+- Project: `C:\Users\Dutchie_\Documents\Projects\FaderDeck`
 - Virtual environment: `.venv`
 - PySide6 6.11.2
 - voicemeeter-api 2.7.2
@@ -415,6 +415,7 @@ Potential roadmap:
 - start with Windows/minimized
 - OBS / Stream Deck integration
 - local API / Home Assistant integration
+- Android app to remote-control FaderDeck from a tablet or phone
 - themes and DPI improvements
 - Windows installer
 - automatic updates
