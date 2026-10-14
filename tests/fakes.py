@@ -17,6 +17,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="faderdeck-tests-")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import shiboken6
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 import main
@@ -227,6 +229,11 @@ class Sandbox:
 
     @staticmethod
     def close(window):
+        if not shiboken6.isValid(window):
+            return  # the test closed it already
         window._quitting = True
         window.close()
+        # Gone, not just hidden: later tests then restyle fewer widgets.
+        window.deleteLater()
         pump()
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)

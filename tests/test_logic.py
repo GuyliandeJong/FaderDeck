@@ -205,6 +205,12 @@ class ThemeTest(unittest.TestCase):
         self.assertEqual(main.saved_themes(Stored('{"Dark": {}, "Mine": {"light": true}}')),
                          {"Mine": main.clean_theme({"light": True}, "Mine")})
 
+    def test_channel_colours_are_used_by_their_channel_only(self):
+        source = open(main.__file__, encoding="utf-8").read().lower()
+        for colors in main.STRIP_COLORS.values():
+            for code in colors.values():
+                self.assertEqual(source.count(code), 1, code)
+
     def test_built_in_themes_are_valid(self):
         for name, value in main.BUILTIN_THEMES.items():
             clean = main.clean_theme(value, name)

@@ -620,6 +620,9 @@ def _set_style_sheet(widget, text):
     _plain_set_style_sheet(widget, translate_colors(text))
 
 
+# shortcut: patches Qt for the whole program instead of a styled() helper at
+# each of the 65 call sites; switch to the helper if a widget ever needs a
+# style sheet that the theme must not translate.
 QWidget.setStyleSheet = _set_style_sheet
 
 
@@ -1150,6 +1153,12 @@ def route_name(vm, output):
         return text, f"{output} — {label} ({kind})"
     return output, f"{output} ({kind} {output[1]})"
 
+
+# A theme recolours a channel by its colour values, so no other part of the
+# window may use them. These look the same but are one step off.
+PANEL_BORDER = "#24566c"
+ALERT_BORDER = "#69353d"
+COMPRESSOR_MARK = "#35c8fe"
 
 STRIP_COLORS = {
     "Mic": {"accent": "#35c8ff", "border": "#24566b", "header": "#102b38"},
@@ -5383,7 +5392,7 @@ class MainWindow(QMainWindow):
         self.offline_banner.setObjectName("offlineBanner")
         self.offline_banner.setStyleSheet(
             "QWidget#offlineBanner { background: #2b1516; "
-            "border: 1px solid #69353c; border-radius: 6px; }"
+            f"border: 1px solid {ALERT_BORDER}; border-radius: 6px; }}"
         )
         banner_layout = QHBoxLayout(self.offline_banner)
         banner_layout.setContentsMargins(10, 5, 6, 5)
@@ -5421,7 +5430,8 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Fixed,
         )
         self.processing_toggle.setStyleSheet(
-            "QToolButton { background: #18232e; border: 1px solid #24566b; "
+            "QToolButton { background: #18232e; "
+            f"border: 1px solid {PANEL_BORDER}; "
             "border-radius: 6px; padding: 8px; font-size: 15px; "
             "font-weight: bold; text-align: left; }"
             "QToolButton:hover { background: #1d2b38; }"
@@ -5446,7 +5456,7 @@ class MainWindow(QMainWindow):
         self.processing_panel.setObjectName("processingPanel")
         self.processing_panel.setStyleSheet(
             "QWidget#processingPanel { background: #101820; "
-            "border: 1px solid #24566b; border-radius: 8px; }"
+            f"border: 1px solid {PANEL_BORDER}; border-radius: 8px; }}"
         )
         self.processing_panel_layout = QVBoxLayout(self.processing_panel)
         self.processing_panel_layout.setContentsMargins(5, 5, 5, 5)
@@ -5501,7 +5511,7 @@ class MainWindow(QMainWindow):
         self.profile_panel.setObjectName("profilePanel")
         self.profile_panel.setStyleSheet(
             "QWidget#profilePanel { background: #101820; "
-            "border: 1px solid #24566b; border-radius: 8px; }"
+            f"border: 1px solid {PANEL_BORDER}; border-radius: 8px; }}"
         )
         profile_layout = QVBoxLayout(self.profile_panel)
         profile_layout.setContentsMargins(6, 5, 6, 6)
@@ -6310,7 +6320,7 @@ class MainWindow(QMainWindow):
         """Show the gate and compressor thresholds on the Mic input bar."""
         for label, color, control in (
             ("Gate", "#f5b83d", self.gate_control),
-            ("Comp", "#35c8ff", self.compressor_control),
+            ("Comp", COMPRESSOR_MARK, self.compressor_control),
         ):
             slider = control.controls["threshold"]["slider"]
             scale = control.controls["threshold"]["scale"]
