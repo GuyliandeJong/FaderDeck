@@ -4,15 +4,20 @@ import atexit
 import concurrent.futures
 import ctypes
 import ctypes.wintypes
+import hashlib
 import hmac
 import json
 import logging
 import os
 import re
 import secrets
+import shutil
 import signal
 import socket
+import subprocess
+import tempfile
 import time
+import urllib.request
 import warnings
 import threading
 from collections import namedtuple
@@ -51,6 +56,7 @@ from PySide6.QtWidgets import (
     QPushButton,
 
     QProgressBar,
+    QProgressDialog,
     QScrollArea,
     QSpinBox,
 
@@ -713,6 +719,154 @@ class ColorButton(QPushButton):
             self.changed.emit()
 
 
+# Updates. FaderDeck asks GitHub for its latest release. An update is that
+# release's installer, checked against the SHA-256 that GitHub publishes for
+# it before it runs.
+APP_VERSION = "1.7.0"
+UPDATE_URL = (
+    "https://api.github.com/repos/GuyliandeJong/FaderDeck/releases/latest"
+)
+INSTALLER_ASSET = "FaderDeck-Setup.exe"
+INSTALLER_OPTIONS = ("/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
+
+Update = namedtuple("Update", "version url size sha256 page")
+
+
+def version_tuple(text):
+    """(1, 6, 0) for "v1.6.0"; () when the text is not a version."""
+    match = re.fullmatch(r"v?(\d+)\.(\d+)(?:\.(\d+))?", str(text or "").strip())
+    if not match:
+        return ()
+    return tuple(int(part or 0) for part in match.groups())
+
+
+def available_update(release, current=APP_VERSION):
+    """The installer of a release newer than `current`, or None.
+
+    `release` is GitHub's answer for the latest release. Without an
+    installer, or without a SHA-256 to check it against, there is no update.
+    """
+    if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+        return None
+    version = version_tuple(release.get("tag_name"))
+    if not version or version <= version_tuple(current):
+        return None
+    for asset in release.get("assets") or ():
+        if not isinstance(asset, dict) or asset.get("name") != INSTALLER_ASSET:
+            continue
+        url = str(asset.get("browser_download_url") or "")
+        digest = str(asset.get("digest") or "").lower()
+        if (
+            urlsplit(url).scheme != "https"
+            or urlsplit(url).hostname != "github.com"
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+        ):
+            return None
+        return Update(
+            ".".join(str(part) for part in version),
+            url,
+            int(asset.get("size") or 0),
+            digest.split(":", 1)[1],
+            str(release.get("html_url") or ""),
+        )
+    return None
+
+
+def _open_url(url, timeout):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": f"FaderDeck/{APP_VERSION}",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
+def fetch_latest_release():
+    with _open_url(UPDATE_URL, 10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def download_update(update, progress=lambda done, total: True):
+    """Download the installer and check it. Returns its path.
+
+    `progress` is called as the file comes in; returning False stops it.
+    """
+    folder = tempfile.mkdtemp(prefix="faderdeck-update-")
+    path = os.path.join(folder, INSTALLER_ASSET)
+    digest = hashlib.sha256()
+    done = 0
+    try:
+        with _open_url(update.url, 30) as response, open(path, "wb") as handle:
+            while chunk := response.read(256 * 1024):
+                handle.write(chunk)
+                digest.update(chunk)
+                done += len(chunk)
+                if not progress(done, update.size):
+                    raise InterruptedError("The download was cancelled.")
+        if digest.hexdigest() != update.sha256:
+            raise ValueError(
+                "The download does not match the release, so it was not "
+                "installed. Try again later."
+            )
+    except BaseException:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    return path
+
+
+class UpdateChecker(QObject):
+    """Checks for and downloads updates on a background thread."""
+
+    found = Signal(object)  # Update
+    latest = Signal()
+    failed = Signal(str)
+    progressed = Signal(int, int)
+    downloaded = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.busy = False
+        self.cancelled = False
+
+    def _run(self, work):
+        if self.busy:
+            return
+        self.busy = True
+
+        def run():
+            try:
+                work()
+            except Exception as e:
+                log.warning(f"Update failed: {type(e).__name__}: {e}")
+                self.failed.emit(str(e) or type(e).__name__)
+            finally:
+                self.busy = False
+
+        threading.Thread(target=run, name="FaderDeckUpdate", daemon=True).start()
+
+    def check(self):
+        def work():
+            update = available_update(fetch_latest_release())
+            if update is None:
+                self.latest.emit()
+            else:
+                log.info(f"Update available: {update.version}")
+                self.found.emit(update)
+
+        self._run(work)
+
+    def download(self, update):
+        self.cancelled = False
+
+        def progress(done, total):
+            self.progressed.emit(done, total)
+            return not self.cancelled
+
+        self._run(lambda: self.downloaded.emit(download_update(update, progress)))
+
+
 # Global hotkeys: they work while FaderDeck is in the background, through
 # Win32 RegisterHotKey. A registered combination is taken away from every
 # other program for as long as FaderDeck runs.
@@ -801,7 +955,8 @@ def parse_hotkey(text):
 # hotkey and would fight the first over the mixer. Starting it again asks the
 # running one to show its window, which may be hidden in the tray.
 # The packaged program and a run from source use different names, so the
-# installed FaderDeck does not block development.
+# installed FaderDeck does not block development. installer/faderdeck.iss
+# checks the packaged name to see whether FaderDeck runs; change both.
 SINGLE_INSTANCE_NAME = (
     "FaderDeck.SingleInstance"
     if getattr(sys, "frozen", False)
@@ -4818,6 +4973,20 @@ class SettingsDialog(QDialog):
             "Holding Shift while closing the window quits at once."
         )
 
+        self.add_heading("UPDATES")
+        self.check_updates = QCheckBox("Check for updates when FaderDeck starts")
+        self.check_updates.setChecked(current["check_updates"])
+        self.form.addRow(self.check_updates)
+        check_now = QPushButton("CHECK NOW")
+        check_now.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        check_now.clicked.connect(
+            lambda: self.parent().check_for_updates(quiet=False)
+        )
+        update_row = QHBoxLayout()
+        update_row.addWidget(QLabel(f"Version {APP_VERSION}"), 1)
+        update_row.addWidget(check_now)
+        self.form.addRow(update_row)
+
     def _build_appearance_tab(self, current):
         """Theme, accent and channel colours, and saved themes."""
         self.form = self.add_tab("Appearance")
@@ -5093,6 +5262,7 @@ class SettingsDialog(QDialog):
             "themes": dict(self.themes),
             "close_to_tray": self.close_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
+            "check_updates": self.check_updates.isChecked(),
             "api_enabled": self.api_enabled.isChecked(),
             "api_port": self.api_port.value(),
             "api_token": self.api_token.text(),
@@ -5683,6 +5853,103 @@ class MainWindow(QMainWindow):
         self.connection_timer.timeout.connect(self.check_connection)
         self.connection_timer.start()
 
+        self.updater = UpdateChecker(self)
+        self.updater.found.connect(self.on_update_found)
+        self.updater.latest.connect(self.on_update_latest)
+        self.updater.failed.connect(self.on_update_failed)
+        self.updater.progressed.connect(self.on_update_progress)
+        self.updater.downloaded.connect(self.on_update_downloaded)
+        self._update_quiet = True
+        self._update_dialog = None
+        self._pending_update = None
+        if self.tray is not None:
+            self.tray.messageClicked.connect(self.offer_update)
+        # Only the installed program updates itself; a run from source
+        # can still check by hand in Settings.
+        if getattr(sys, "frozen", False) and setting_bool(
+            self.window_settings, "check_updates", True
+        ):
+            QTimer.singleShot(5000, lambda: self.check_for_updates(quiet=True))
+
+
+    # Updates.
+
+    def check_for_updates(self, quiet=False):
+        """Ask GitHub for a newer release. Quiet: only speak when there is one."""
+        self._update_quiet = quiet
+        self.updater.check()
+
+    def on_update_found(self, update):
+        self._pending_update = update
+        if self.isVisible():
+            self.offer_update()
+        elif self.tray is not None:
+            self.tray.showMessage(
+                "FaderDeck",
+                f"FaderDeck {update.version} is available. Click to install.",
+                self.tray.icon(),
+                8000,
+            )
+
+    def on_update_latest(self):
+        if not self._update_quiet:
+            QMessageBox.information(
+                self, "FaderDeck", f"FaderDeck {APP_VERSION} is the latest version."
+            )
+
+    def on_update_failed(self, problem):
+        if self._update_dialog is not None:
+            self._update_dialog.close()
+            self._update_dialog = None
+        if not self._update_quiet:
+            QMessageBox.warning(
+                self, "FaderDeck", f"The update did not work: {problem}"
+            )
+
+    def offer_update(self):
+        update = self._pending_update
+        if update is None:
+            return
+        self.show_from_tray()
+        box = QMessageBox(self)
+        box.setWindowTitle("FaderDeck")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(
+            f"FaderDeck {update.version} is available; you have {APP_VERSION}."
+            f"<br><a href=\"{update.page}\">What is new</a>"
+        )
+        box.setInformativeText(
+            "FaderDeck closes while it updates and starts again afterwards."
+        )
+        install = box.addButton("Install now", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is not install:
+            return
+        self._update_quiet = False
+        self._update_dialog = QProgressDialog(
+            "Downloading the update...", "Cancel", 0, 100, self
+        )
+        self._update_dialog.setWindowTitle("FaderDeck")
+        self._update_dialog.canceled.connect(self.cancel_update)
+        self._update_dialog.show()
+        self.updater.download(update)
+
+    def cancel_update(self):
+        self.updater.cancelled = True
+
+    def on_update_progress(self, done, total):
+        if self._update_dialog is not None and total > 0:
+            self._update_dialog.setValue(min(100, done * 100 // total))
+
+    def on_update_downloaded(self, path):
+        """Start the installer, then quit so it can replace this program."""
+        if self._update_dialog is not None:
+            self._update_dialog.close()
+            self._update_dialog = None
+        log.info(f"Starting the installer: {path}")
+        subprocess.Popen([path, *INSTALLER_OPTIONS], close_fds=True)
+        self.quit_application()
 
     def connect_vm(self):
         """Log in to VoiceMeeter and start the event and level threads.
@@ -6626,6 +6893,7 @@ class MainWindow(QMainWindow):
             "themes": saved_themes(settings),
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
+            "check_updates": setting_bool(settings, "check_updates", True),
             "api_enabled": setting_bool(settings, "api_enabled", False),
             "api_port": self.api_port_setting(),
             "api_token": str(settings.value("api_token", "") or ""),

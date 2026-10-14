@@ -385,7 +385,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
-                          "theme", "themes",
+                          "theme", "themes", "check_updates",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
@@ -418,6 +418,21 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(dialog.delete_theme_button.isEnabled())
         dialog.reject()
         self.assertEqual(button.styleSheet(), dark)
+
+    def test_downloaded_update_starts_the_installer_and_quits(self):
+        started = []
+        saved = main.subprocess.Popen
+        main.subprocess.Popen = lambda args, **kwargs: started.append(args)
+        try:
+            self.window.on_update_downloaded(r"C:\temp\FaderDeck-Setup.exe")
+        finally:
+            main.subprocess.Popen = saved
+        self.assertEqual(started, [[r"C:\temp\FaderDeck-Setup.exe",
+                                    *main.INSTALLER_OPTIONS]])
+        self.assertTrue(self.window._quitting)
+
+    def test_updates_are_not_checked_when_running_from_source(self):
+        self.assertFalse(self.window.updater.busy)
 
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())

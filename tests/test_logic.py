@@ -1,5 +1,6 @@
 """Pure logic: no window, no mixer."""
 
+import os
 import unittest
 
 from fakes import main
@@ -205,7 +206,8 @@ class ThemeTest(unittest.TestCase):
                          {"Mine": main.clean_theme({"light": True}, "Mine")})
 
     def test_channel_colours_are_used_by_their_channel_only(self):
-        source = open(main.__file__, encoding="utf-8").read().lower()
+        with open(main.__file__, encoding="utf-8") as handle:
+            source = handle.read().lower()
         for colors in main.STRIP_COLORS.values():
             for code in colors.values():
                 self.assertEqual(source.count(code), 1, code)
@@ -215,6 +217,77 @@ class ThemeTest(unittest.TestCase):
             clean = main.clean_theme(value, name)
             for key, wanted in value.items():
                 self.assertEqual(clean[key], wanted)
+
+
+class UpdateTest(unittest.TestCase):
+    DIGEST = "sha256:" + "ab" * 32
+
+    def release(self, tag="v9.0.0", name=None, digest=DIGEST, **extra):
+        return {
+            "tag_name": tag,
+            "html_url": "https://github.com/GuyliandeJong/FaderDeck/releases/tag/" + tag,
+            "assets": [{
+                "name": name or main.INSTALLER_ASSET,
+                "browser_download_url":
+                    "https://github.com/GuyliandeJong/FaderDeck/releases/download/"
+                    + tag + "/" + main.INSTALLER_ASSET,
+                "size": 1000,
+                "digest": digest,
+            }],
+            **extra,
+        }
+
+    def test_versions(self):
+        self.assertEqual(main.version_tuple("v1.6.0"), (1, 6, 0))
+        self.assertEqual(main.version_tuple("1.7"), (1, 7, 0))
+        self.assertEqual(main.version_tuple("v1.6.0-beta"), ())
+        self.assertLess(main.version_tuple("v1.9.0"), main.version_tuple("v1.10.0"))
+
+    def test_a_newer_release_with_an_installer_is_an_update(self):
+        update = main.available_update(self.release(), current="1.6.0")
+        self.assertEqual(update.version, "9.0.0")
+        self.assertEqual(update.sha256, "ab" * 32)
+
+    def test_no_update_without_a_reason_to_trust_it(self):
+        for release in (
+            self.release(tag="v1.6.0"),                 # not newer
+            self.release(name="FaderDeck.exe"),         # no installer
+            self.release(digest=""),                    # nothing to check it with
+            self.release(digest="md5:abc"),
+            self.release(prerelease=True),
+            {"assets": "nonsense"},
+            None,
+        ):
+            with self.subTest(release=release):
+                self.assertIsNone(main.available_update(release, current="1.6.0"))
+        other_host = self.release()
+        other_host["assets"][0]["browser_download_url"] = "https://example.com/x.exe"
+        self.assertIsNone(main.available_update(other_host, current="1.6.0"))
+
+    def test_download_is_checked_against_the_digest(self):
+        import hashlib, io
+        from unittest import mock
+        data = b"installer" * 1000
+
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        good = main.Update("9.0.0", "https://github.com/x", len(data),
+                           hashlib.sha256(data).hexdigest(), "")
+        with mock.patch.object(main, "_open_url", lambda url, timeout: Response(data)):
+            path = main.download_update(good)
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(), data)
+            main.shutil.rmtree(os.path.dirname(path))
+            bad = good._replace(sha256="00" * 32)
+            with self.assertRaises(ValueError):
+                main.download_update(bad)
+            with self.assertRaises(InterruptedError):
+                main.download_update(good, lambda done, total: False)
 
 
 if __name__ == "__main__":
