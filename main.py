@@ -3905,7 +3905,9 @@ class ApplicationAudioWorker(QObject):
                             continue
 
                         app_name = name.lower()
-                        if app_name in OWN_EXECUTABLES:
+                        # This program, also when it runs as python.exe:
+                        # the mute sound opens an audio session of its own.
+                        if app_name in OWN_EXECUTABLES or process.pid == os.getpid():
                             continue
                         if getattr(session, "State", 1) == 2:
                             continue
