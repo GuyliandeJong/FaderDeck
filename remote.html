@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#0d1117">
 <link rel="manifest" href="/remote/manifest.webmanifest">
 <link rel="icon" href="/remote/icon-192.png">
@@ -12,32 +12,70 @@
 :root { --bg: #0d1117; --card: #111923; --line: #30363d; --text: #e6edf3; --muted: #8ba0b5;
         --blue: #58a6ff; --red: #f85149; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-body { margin: 0; background: var(--bg); color: var(--text);
-       font: 15px/1.4 "Segoe UI", system-ui, sans-serif; user-select: none; }
-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
-header img { width: 30px; height: 30px; border-radius: 7px; }
-header b { font-size: 19px; } header b span { color: #8a5cff; font-weight: 400; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+       font: 15px/1.3 "Segoe UI", system-ui, sans-serif; user-select: none; -webkit-user-select: none;
+       display: flex; flex-direction: column; height: 100dvh;
+       padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                env(safe-area-inset-bottom) env(safe-area-inset-left); }
+header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex: none; }
+header img { width: 28px; height: 28px; border-radius: 7px; }
+header b { font-size: 18px; } header b span { color: #8a5cff; font-weight: 400; }
 #status { margin-left: auto; font-size: 13px; color: var(--muted); }
 #status.ok { color: #3fb950; }
-main { padding: 0 12px 24px; display: grid; gap: 10px;
-       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-.card h2 { margin: 0 0 8px; font-size: 16px; display: flex; justify-content: space-between; }
-.card h2 small { color: var(--muted); font-weight: 400; }
-input[type=range] { width: 100%; height: 36px; accent-color: var(--accent, var(--blue)); }
-.row { display: flex; gap: 8px; margin-top: 8px; }
-button { flex: 1; min-height: 46px; border-radius: 9px; border: 1px solid var(--line);
-         background: #18232e; color: var(--text); font: 600 14px "Segoe UI", system-ui, sans-serif; }
-button.on { border-color: var(--accent, var(--blue)); color: var(--accent, var(--blue)); background: #16202b; }
+
+#mixer { flex: 1; min-height: 0; display: flex; gap: 8px; padding: 0 10px; }
+.strip { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;
+         background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.strip h2 { margin: 0; font-size: 16px; text-align: center; color: var(--accent);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip .db { text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fader { flex: 1; min-height: 120px; position: relative; touch-action: none; cursor: pointer; }
+.fader .track { position: absolute; left: 50%; top: 14px; bottom: 14px; width: 8px;
+                transform: translateX(-50%); border-radius: 4px; background: #30363d; }
+.fader .fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 4px; background: var(--accent); }
+.fader .thumb { position: absolute; left: 50%; width: min(70%, 64px); height: 28px;
+                transform: translate(-50%, 50%); border-radius: 8px; background: var(--accent);
+                box-shadow: 0 0 0 3px rgba(0,0,0,.35); }
+.fader .thumb::after { content: ""; position: absolute; left: 18%; right: 18%; top: 50%;
+                       height: 2px; margin-top: -1px; background: rgba(0,0,0,.45); }
+.fader .tick { position: absolute; left: 0; width: 22%; border-top: 1px solid #3b4652;
+               font-size: 10px; color: var(--muted); padding-left: 2px; line-height: 0; }
+.fader .tick span { position: relative; top: -7px; }
+.buttons { display: grid; gap: 6px; }
+button { min-height: 44px; border-radius: 9px; border: 1px solid var(--line); background: #18232e;
+         color: var(--text); font: 600 13px "Segoe UI", system-ui, sans-serif; padding: 0 4px; }
+button.on { border-color: var(--accent); color: var(--accent); background: #16202b; }
 button.mute.on { border-color: var(--red); color: #fff; background: #54262c; }
-button:disabled { opacity: .4; }
-select { flex: 2; min-height: 46px; border-radius: 9px; border: 1px solid var(--line);
-         background: #18232e; color: var(--text); font-size: 15px; padding: 0 8px; }
-#pair { max-width: 360px; margin: 40px auto; text-align: center; padding: 0 16px; }
+button:disabled { opacity: .35; }
+
+footer { flex: none; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px; }
+footer .group { display: flex; gap: 8px; align-items: center; flex: 1 1 300px; min-width: 0; }
+footer .mic { flex: 0 1 auto; --accent: #35c8ff; }
+footer label { color: var(--muted); font-size: 13px; white-space: nowrap; }
+footer select { flex: 1; min-width: 0; min-height: 44px; border-radius: 9px; border: 1px solid var(--line);
+                background: #18232e; color: var(--text); font-size: 15px; padding: 0 8px; }
+footer button { flex: none; padding: 0 18px; }
+#profileState { color: var(--muted); font-size: 12px; min-width: 52px; }
+
+#pair { max-width: 360px; margin: 40px auto; text-align: center; padding: 0 16px; overflow: auto; }
 #pair input { width: 100%; font-size: 30px; letter-spacing: 8px; text-align: center; padding: 10px;
               border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
 #pair p { color: var(--muted); }
+#pair button { width: 100%; margin-top: 10px; }
 #error { color: var(--red); min-height: 20px; }
+[hidden] { display: none !important; }
+/* A phone held sideways: every pixel of height goes to the faders. */
+@media (max-height: 500px) {
+  header { padding: 4px 10px; } header img { width: 22px; height: 22px; } header b { font-size: 15px; }
+  #mixer { gap: 6px; padding: 0 6px; }
+  .strip { padding: 6px; gap: 4px; }
+  .strip h2 { font-size: 14px; } .strip .db { font-size: 13px; }
+  .fader { min-height: 80px; } .fader .track { top: 10px; bottom: 10px; }
+  .fader .thumb { height: 22px; }
+  button { min-height: 36px; } footer select { min-height: 36px; }
+  footer { padding: 6px; gap: 6px; }
+}
 </style>
 </head>
 <body>
@@ -47,14 +85,28 @@ select { flex: 2; min-height: 46px; border-radius: 9px; border: 1px solid var(--
   <h2>Pair this device</h2>
   <p>In FaderDeck on your PC, open Settings, Remote control, and press PAIR A DEVICE. Type the code it shows.</p>
   <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
-  <div class="row"><button id="pairButton">PAIR</button></div>
+  <button id="pairButton">PAIR</button>
   <p id="error"></p>
 </section>
 
 <main id="mixer" hidden></main>
+<footer id="footer" hidden>
+  <div class="group mic">
+    <label>Mic</label>
+    <button id="listen">LISTEN</button>
+    <button id="stream">OFF STREAM</button>
+  </div>
+  <div class="group">
+    <label for="profiles">Profile</label>
+    <select id="profiles"></select>
+    <button id="load">LOAD</button>
+    <span id="profileState"></span>
+  </div>
+</footer>
 
 <script>
 const COLORS = {Mic: "#35c8ff", Game: "#ff626b", Chat: "#a68aff", Media: "#24d6a0"};
+const MIN_DB = -60, MAX_DB = 12;
 let token = localStorage.getItem("faderdeckToken") || "";
 let dragging = null;
 let built = false;
@@ -69,7 +121,8 @@ async function call(method, path) {
 
 function forget() {
   token = ""; localStorage.removeItem("faderdeckToken");
-  $("mixer").hidden = true; $("pair").hidden = false; $("status").textContent = "Not paired";
+  $("mixer").hidden = $("footer").hidden = true; $("pair").hidden = false;
+  $("status").textContent = "Not paired"; $("status").className = "";
 }
 
 async function pair() {
@@ -85,50 +138,76 @@ async function pair() {
 $("pairButton").onclick = pair;
 $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") pair(); });
 
-function card(name, label) {
-  const color = COLORS[name] || "#58a6ff";
-  const box = document.createElement("section");
-  box.className = "card"; box.style.setProperty("--accent", color);
-  box.innerHTML = `<h2><span style="color:${color}"></span><small></small></h2>
-    <input type="range" min="-60" max="12" step="0.5">
-    <div class="row"><button class="mute">MUTE</button></div>`;
-  box.querySelector("h2 span").textContent = label;
-  const slider = box.querySelector("input");
-  let timer = null;
-  slider.addEventListener("pointerdown", () => dragging = name);
-  slider.addEventListener("pointerup", () => dragging = null);
-  slider.addEventListener("input", () => {
-    box.querySelector("small").textContent = format(slider.value);
-    clearTimeout(timer);
-    timer = setTimeout(() => call("POST", `gain/${name.toLowerCase()}?db=${slider.value}`), 80);
-  });
-  box.querySelector(".mute").onclick = () =>
-    call("POST", `mute/${name.toLowerCase()}?state=toggle`).then(refresh);
-  if (name === "Mic") {
-    const extra = document.createElement("div");
-    extra.className = "row";
-    extra.innerHTML = `<button id="listen">LISTEN</button><button id="stream">OFF STREAM</button>`;
-    box.appendChild(extra);
-    extra.querySelector("#listen").onclick = () => call("POST", "listen?state=toggle").then(refresh);
-    extra.querySelector("#stream").onclick = () => call("POST", "stream-mute?state=toggle").then(refresh);
+function format(db) { db = Number(db); return (db > 0 ? "+" : "") + db.toFixed(1) + " dB"; }
+const share = (db) => (db - MIN_DB) / (MAX_DB - MIN_DB);  // 0 at the bottom, 1 at the top
+
+// A vertical fader: drag anywhere on it, double-tap for 0 dB.
+function fader(strip, name) {
+  const box = strip.querySelector(".fader");
+  const track = box.querySelector(".track"), fill = box.querySelector(".fill"), thumb = box.querySelector(".thumb");
+  for (const db of [12, 0, -12, -24, -36, -48, -60]) {
+    const tick = document.createElement("div");
+    tick.className = "tick"; tick.innerHTML = `<span>${db > 0 ? "+" + db : db}</span>`;
+    box.appendChild(tick);
   }
-  return box;
+  const ticks = [...box.querySelectorAll(".tick")];
+  let value = 0, sendTimer = null, lastTap = 0;
+
+  function place(db) {
+    value = Math.max(MIN_DB, Math.min(MAX_DB, db));
+    const top = track.offsetTop, height = track.offsetHeight;
+    fill.style.height = share(value) * 100 + "%";
+    thumb.style.top = (top + height * (1 - share(value))) + "px";
+    [12, 0, -12, -24, -36, -48, -60].forEach((mark, i) =>
+      ticks[i].style.top = (top + height * (1 - share(mark))) + "px");
+    strip.querySelector(".db").textContent = format(value);
+  }
+  function send() {
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(() => call("POST", `gain/${name.toLowerCase()}?db=${value.toFixed(1)}`), 60);
+  }
+  function fromPointer(event) {
+    const rect = track.getBoundingClientRect();
+    const ratio = 1 - (event.clientY - rect.top) / rect.height;
+    place(Math.round((MIN_DB + ratio * (MAX_DB - MIN_DB)) * 2) / 2);  // 0.5 dB steps
+    send();
+  }
+  box.addEventListener("pointerdown", (event) => {
+    const now = Date.now();
+    if (now - lastTap < 300) { place(0); send(); lastTap = 0; return; }
+    lastTap = now;
+    dragging = name; box.setPointerCapture(event.pointerId); fromPointer(event);
+  });
+  box.addEventListener("pointermove", (event) => { if (dragging === name) fromPointer(event); });
+  const release = () => { if (dragging === name) { dragging = null; send(); } };
+  box.addEventListener("pointerup", release);
+  box.addEventListener("pointercancel", release);
+  new ResizeObserver(() => place(value)).observe(box);
+  return place;
 }
 
-function format(db) { db = Number(db); return (db > 0 ? "+" : "") + db.toFixed(1) + " dB"; }
+function strip(name, label) {
+  const element = document.createElement("section");
+  element.className = "strip"; element.dataset.channel = name;
+  element.style.setProperty("--accent", COLORS[name] || "#58a6ff");
+  element.innerHTML = `<h2></h2><div class="db"></div>
+    <div class="fader"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div>
+    <div class="buttons"><button class="mute">MUTE</button></div>`;
+  element.querySelector("h2").textContent = label;
+  element.place = fader(element, name);
+  element.querySelector(".mute").onclick = () =>
+    call("POST", `mute/${name.toLowerCase()}?state=toggle`).then(refresh);
+  return element;
+}
 
 function build(state) {
   const main = $("mixer"); main.innerHTML = "";
   for (const name of Object.keys(state.channels)) {
-    const box = card(name, (state.names || {})[name] || name);
-    box.dataset.channel = name; main.appendChild(box);
+    main.appendChild(strip(name, (state.names || {})[name] || name));
   }
-  const profiles = document.createElement("section");
-  profiles.className = "card";
-  profiles.innerHTML = `<h2>Setup profile<small id="profileState"></small></h2>
-    <div class="row"><select id="profiles"></select><button id="load">LOAD</button></div>`;
-  main.appendChild(profiles);
-  profiles.querySelector("#load").onclick = () => {
+  $("listen").onclick = () => call("POST", "listen?state=toggle").then(refresh);
+  $("stream").onclick = () => call("POST", "stream-mute?state=toggle").then(refresh);
+  $("load").onclick = () => {
     const name = $("profiles").value;
     if (name) call("POST", "profile/" + encodeURIComponent(name)).then(refresh);
   };
@@ -140,26 +219,20 @@ async function refresh() {
   try {
     const state = await call("GET", "state");
     if (!built) build(state);
-    $("mixer").hidden = false;
+    $("mixer").hidden = $("footer").hidden = false;
     $("status").textContent = state.connected ? "Connected" : "VoiceMeeter is not running";
     $("status").className = state.connected ? "ok" : "";
-    for (const box of document.querySelectorAll(".card[data-channel]")) {
-      const name = box.dataset.channel, channel = state.channels[name];
+    for (const element of document.querySelectorAll(".strip")) {
+      const name = element.dataset.channel, channel = state.channels[name];
       if (!channel) continue;
-      box.querySelector(".mute").classList.toggle("on", channel.mute);
-      if (dragging !== name) {
-        box.querySelector("input").value = channel.gain;
-        box.querySelector("small").textContent = format(channel.gain);
-      }
+      element.querySelector(".mute").classList.toggle("on", channel.mute);
+      if (dragging !== name) element.place(channel.gain);
     }
-    if ($("listen")) {
-      $("listen").classList.toggle("on", !!state.listen);
-      $("stream").classList.toggle("on", !!state.stream_mute);
-      $("stream").disabled = state.stream_mute === null;
-    }
+    $("listen").classList.toggle("on", !!state.listen);
+    $("stream").classList.toggle("on", !!state.stream_mute);
+    $("stream").disabled = state.stream_mute === null;
     const list = await call("GET", "profiles");
-    const select = $("profiles");
-    const names = list.profiles.join("\n");
+    const select = $("profiles"), names = list.profiles.join("\n");
     if (select.dataset.names !== names) {
       select.dataset.names = names; select.innerHTML = "";
       for (const name of list.profiles) select.add(new Option(name, name));
@@ -172,7 +245,7 @@ async function refresh() {
 }
 
 refresh();
-setInterval(() => { if (token && !document.hidden) refresh(); }, 1500);
+setInterval(() => { if (token && !document.hidden && !dragging) refresh(); }, 1500);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 </script>
 </body>
