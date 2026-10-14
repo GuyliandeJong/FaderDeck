@@ -4738,7 +4738,27 @@ class SettingsDialog(QDialog):
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
 
-        # ---- General ----
+        self._build_general_tab(current, vm)
+        self._build_appearance_tab(current)
+        self._build_hotkeys_tab(current)
+        self._build_remote_tab(current)
+
+        self.error_label = QLabel("")
+        self.error_label.setStyleSheet("color: #f85149;")
+        self.error_label.setWordWrap(True)
+        self.error_label.setVisible(False)
+        layout.addWidget(self.error_label)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _build_general_tab(self, current, vm):
+        """Microphone input, channel names and window behaviour."""
         self.form = self.add_tab("General")
         self.add_heading("MIXER")
         self.mic_input = QComboBox()
@@ -4776,7 +4796,8 @@ class SettingsDialog(QDialog):
             "Holding Shift while closing the window quits at once."
         )
 
-        # ---- Appearance ----
+    def _build_appearance_tab(self, current):
+        """Theme, accent and channel colours, and saved themes."""
         self.form = self.add_tab("Appearance")
         self.original_theme = current["theme"]
         self.themes = dict(current["themes"])
@@ -4813,7 +4834,8 @@ class SettingsDialog(QDialog):
         )
         self.show_theme(self.original_theme)
 
-        # ---- Hotkeys ----
+    def _build_hotkeys_tab(self, current):
+        """One field per global hotkey, grouped."""
         self.form = self.add_tab("Hotkeys", scrolling=True)
         self.add_note(
             "Click a field and press the keys. Hotkeys work while FaderDeck "
@@ -4836,7 +4858,8 @@ class SettingsDialog(QDialog):
             self.form.addRow(label, edit)
             self.hotkey_edits[action.key] = edit
 
-        # ---- Remote control ----
+    def _build_remote_tab(self, current):
+        """The local API: on or off, port, token and examples."""
         self.form = self.add_tab("Remote control")
         self.add_note(
             "Lets other programs on this computer control FaderDeck: a "
@@ -4892,20 +4915,6 @@ class SettingsDialog(QDialog):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.form.addRow(example)
-
-        self.error_label = QLabel("")
-        self.error_label.setStyleSheet("color: #f85149;")
-        self.error_label.setWordWrap(True)
-        self.error_label.setVisible(False)
-        layout.addWidget(self.error_label)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
 
     def add_tab(self, title, scrolling=False):
         """Add a page and return its form layout."""
