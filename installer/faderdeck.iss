@@ -56,6 +56,19 @@ Type: files; Name: "{userstartup}\VMStreamer.lnk"
 Filename: "{app}\FaderDeck.exe"; Description: "Start FaderDeck"; Flags: nowait postinstall
 
 [Code]
+function SetEnvironmentVariable(Name, Value: String): Boolean;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+function InitializeSetup(): Boolean;
+begin
+  { Setup is started by FaderDeck when it updates, and FaderDeck is a
+    one-file PyInstaller program: its environment points at the folder it
+    unpacked itself to, which is gone once it has quit. This makes every
+    FaderDeck that Setup starts ignore that and unpack itself afresh. }
+  SetEnvironmentVariable('PYINSTALLER_RESET_ENVIRONMENT', '1');
+  Result := True;
+end;
+
 function FaderDeckIsRunning(): Boolean;
 begin
   { The packaged FaderDeck holds this mutex for as long as it runs

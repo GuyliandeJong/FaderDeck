@@ -433,13 +433,15 @@ class MainWindowTest(unittest.TestCase):
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []
         saved = main.subprocess.Popen
-        main.subprocess.Popen = lambda args, **kwargs: started.append(args)
+        main.subprocess.Popen = lambda args, **kwargs: started.append((args, kwargs["env"]))
         try:
             self.window.on_update_downloaded(r"C:\temp\FaderDeck-Setup.exe")
         finally:
             main.subprocess.Popen = saved
-        self.assertEqual(started, [[r"C:\temp\FaderDeck-Setup.exe",
-                                    *main.INSTALLER_OPTIONS]])
+        (arguments, environment), = started
+        self.assertEqual(arguments, [r"C:\temp\FaderDeck-Setup.exe",
+                                     *main.INSTALLER_OPTIONS])
+        self.assertEqual(environment["PYINSTALLER_RESET_ENVIRONMENT"], "1")
         self.assertTrue(self.window._quitting)
 
     def test_updates_are_not_checked_when_running_from_source(self):

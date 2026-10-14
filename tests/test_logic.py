@@ -280,6 +280,16 @@ class UpdateTest(unittest.TestCase):
         other_host["assets"][0]["browser_download_url"] = "https://example.com/x.exe"
         self.assertIsNone(main.available_update(other_host, current="1.6.0"))
 
+    def test_installer_does_not_inherit_the_unpacked_folder(self):
+        environment = main.installer_environment({
+            "PATH": r"C:\Windows",
+            "_PYI_APPLICATION_HOME_DIR": r"C:\Temp\_MEI123",
+            "_PYI_PARENT_PROCESS_LEVEL": "1",
+            "_MEIPASS2": r"C:\Temp\_MEI123",
+        })
+        self.assertEqual(environment, {
+            "PATH": r"C:\Windows", "PYINSTALLER_RESET_ENVIRONMENT": "1"})
+
     def test_download_is_checked_against_the_digest(self):
         import hashlib, io
         from unittest import mock

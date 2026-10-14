@@ -725,7 +725,7 @@ class ColorButton(QPushButton):
 # Updates. FaderDeck asks GitHub for its latest release. An update is that
 # release's installer, checked against the SHA-256 that GitHub publishes for
 # it before it runs.
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 UPDATE_URL = (
     "https://api.github.com/repos/GuyliandeJong/FaderDeck/releases/latest"
 )
@@ -791,6 +791,34 @@ def fetch_latest_release():
         return json.loads(response.read().decode("utf-8"))
 
 
+def installer_environment(environment=None):
+    """The environment to start the installer with.
+
+    A one-file PyInstaller program records its unpacked folder in its
+    environment. The installer, and the FaderDeck it starts, would inherit
+    that, and the new FaderDeck would look for its files in the folder this
+    one deletes when it quits ("Failed to load Python DLL").
+    """
+    environment = dict(os.environ if environment is None else environment)
+    for key in list(environment):
+        if key.upper().startswith("_PYI_") or key.upper() == "_MEIPASS2":
+            del environment[key]
+    environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return environment
+
+
+def remove_old_downloads():
+    """Delete installers left from earlier updates."""
+    folder = tempfile.gettempdir()
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for name in names:
+        if name.startswith("faderdeck-update-"):
+            shutil.rmtree(os.path.join(folder, name), ignore_errors=True)
+
+
 def download_update(update, progress=lambda done, total: True):
     """Download the installer and check it. Returns its path.
 
@@ -851,6 +879,7 @@ class UpdateChecker(QObject):
 
     def check(self):
         def work():
+            remove_old_downloads()
             update = available_update(fetch_latest_release())
             if update is None:
                 self.latest.emit()
@@ -6026,7 +6055,9 @@ class MainWindow(QMainWindow):
             self._update_dialog.close()
             self._update_dialog = None
         log.info(f"Starting the installer: {path}")
-        subprocess.Popen([path, *INSTALLER_OPTIONS], close_fds=True)
+        subprocess.Popen(
+            [path, *INSTALLER_OPTIONS], close_fds=True, env=installer_environment()
+        )
         self.quit_application()
 
     def connect_vm(self):
