@@ -508,7 +508,16 @@ class MainWindowTest(unittest.TestCase):
         self.window.window_settings.setValue("listen_bus", "A2")
         self.window.toggle_mic_listen()
         self.assertTrue(mic.route_buttons["A2"].isChecked())
-        self.assertTrue(self.window.listen_button.isChecked())
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        self.assertTrue(dialog.monitor_button.isChecked())
+        dialog.toggle_monitor(False)
+        self.assertFalse(mic.route_buttons["A2"].isChecked())
+        dialog.listen_bus.setCurrentIndex(dialog.listen_bus.findData("A3"))
+        dialog.toggle_monitor(True)
+        self.assertTrue(mic.route_buttons["A3"].isChecked(), "the output chosen in the window")
+        self.window.set_mic_route("A3", False)
+        self.window.toggle_mic_listen()
+        self.assertTrue(mic.route_buttons["A2"].isChecked())
         self.assertEqual(self.window.handle_api_call("POST", ["monitor"], {"state": "off"}),
                          (200, {"monitor": False}))
         self.assertFalse(mic.route_buttons["A2"].isChecked())
@@ -543,6 +552,20 @@ class MainWindowTest(unittest.TestCase):
 
     def test_updates_are_not_checked_when_running_from_source(self):
         self.assertFalse(self.window.updater.busy)
+
+    def test_settings_tabs_fit_without_scrolling_except_hotkeys(self):
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        dialog.show()
+        main.QApplication.processEvents()
+        for index in range(dialog.tabs.count()):
+            page = dialog.tabs.widget(index)
+            if not isinstance(page, main.QScrollArea) or dialog.tabs.tabText(index) == "Hotkeys":
+                continue
+            dialog.tabs.setCurrentIndex(index)
+            main.QApplication.processEvents()
+            self.assertLessEqual(page.widget().sizeHint().height(), page.viewport().height(),
+                                 dialog.tabs.tabText(index))
+        dialog.close()
 
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())

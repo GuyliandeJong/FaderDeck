@@ -69,7 +69,7 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 - **Monitor**: hear your own microphone on your headphones
 - **Mute stream**: mute your microphone for the stream only, while voice chat still hears you
 
-Monitor and Mute stream are buttons under Mic Processing, and are also in the tray menu, the hotkeys and the remote control. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
+Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu, the hotkeys and the remote control. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
 
 ### Global Hotkeys
 

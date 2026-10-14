@@ -5391,6 +5391,27 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        self.fit_tabs()
+
+    def fit_tabs(self):
+        """Open tall enough that every tab but Hotkeys shows without scrolling."""
+        tallest = 0
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == "Hotkeys":
+                continue  # a long list; it scrolls
+            page = self.tabs.widget(index)
+            content = page.widget() if isinstance(page, QScrollArea) else page
+            tallest = max(tallest, content.sizeHint().height())
+        around = (
+            self.tabs.tabBar().sizeHint().height()
+            + self.sizeHint().height() - self.tabs.sizeHint().height()
+            + 24  # the tab frame
+        )
+        wanted = tallest + around
+        screen = self.screen()
+        if screen is not None:
+            wanted = min(wanted, screen.availableGeometry().height() - 60)
+        self.resize(max(self.width(), 560), max(wanted, self.minimumHeight()))
 
     def _build_general_tab(self, current, vm):
         """A Microphone tab (input, listening, stream, chime) and a General
@@ -5404,6 +5425,13 @@ class SettingsDialog(QDialog):
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note("The VoiceMeeter input your microphone is on.")
         self.listen_bus = QComboBox()
+        self.monitor_button = QPushButton("MONITOR")
+        self.monitor_button.setCheckable(True)
+        self.monitor_button.setStyleSheet(
+            "QPushButton { padding: 4px 12px; }"
+            + outline_toggle_style(TOGGLE_COLORS["solo"])
+        )
+        self.monitor_button.clicked.connect(self.toggle_monitor)
         self.stream_bus = QComboBox()
         self.stream_bus.addItem("Not set", "")
         for output in ("A1", "A2", "A3", "B1", "B2", "B3"):
@@ -5417,12 +5445,19 @@ class SettingsDialog(QDialog):
         self.stream_bus.setCurrentIndex(
             max(0, self.stream_bus.findData(current["stream_bus"]))
         )
-        self.add_heading("LISTENING AND STREAM")
-        self.form.addRow("You monitor on", self.listen_bus)
+        monitor_row = QHBoxLayout()
+        monitor_row.addWidget(self.listen_bus, 1)
+        monitor_row.addWidget(self.monitor_button)
+        self.form.addRow("Monitor on", monitor_row)
         self.add_note(
-            "MONITOR sends your microphone here, so you hear yourself. "
-            "VoiceMeeter adds a little delay."
+            "MONITOR sends your microphone to this output so you hear "
+            "yourself; press it again to stop. It works at once, and there "
+            "is a hotkey for it under Hotkeys. VoiceMeeter adds a little delay."
         )
+        self.listen_bus.currentIndexChanged.connect(self.update_monitor_button)
+        self.update_monitor_button()
+
+        self.add_heading("STREAM")
         self.form.addRow("Your stream hears", self.stream_bus)
         self.add_note(
             "MUTE STREAM takes your microphone off this output. It only "
@@ -5730,6 +5765,26 @@ class SettingsDialog(QDialog):
         self.forget_requested = True
         self.update_remote_count()
         self.remote_count.setText("All paired devices are forgotten when you press OK.")
+
+    def monitor_route(self):
+        """The Mic strip's routing button for the chosen monitor output."""
+        window = self.parent()
+        mic = getattr(window, "strips", {}).get("Mic")
+        if mic is None:
+            return None
+        return mic.route_buttons.get(self.listen_bus.currentData())
+
+    def update_monitor_button(self):
+        route = self.monitor_route()
+        connected = bool(getattr(self.parent(), "connected", False))
+        self.monitor_button.setEnabled(route is not None and connected)
+        self.monitor_button.setChecked(bool(route is not None and route.isChecked()))
+
+    def toggle_monitor(self, checked):
+        """Monitor at once, on the output chosen here (even before OK)."""
+        output = self.listen_bus.currentData()
+        self.parent().set_mic_route(output, checked)
+        self.update_monitor_button()
 
     def update_chime_hint(self):
         """Say whether the chosen device keeps the chime off the stream."""
@@ -6380,26 +6435,22 @@ class MainWindow(QMainWindow):
         )
         self.processing_panel_layout.addWidget(self.processing_summary)
 
-        # Quick routing of the microphone, named for what it is for.
-        self.listen_button = QPushButton("MONITOR")
+        # Mute for the stream only. MONITOR lives in Settings, Microphone,
+        # and on a hotkey.
         self.stream_mute_button = QPushButton("MUTE STREAM")
         # The microphone icon says what is muted: your voice, not the stream.
         set_mono_icon(self.stream_mute_button, "mic", 14)
-        shortcut_row = QHBoxLayout()
-        shortcut_row.setSpacing(4)
-        for button, handler, style in (
-            (self.listen_button, self.toggle_mic_listen,
-             outline_toggle_style(TOGGLE_COLORS["solo"])),
-            (self.stream_mute_button, self.toggle_stream_mute,
-             "QPushButton:checked { background: #54262c; "
-             "border-color: #a8434f; color: #ffffff; }"),
-        ):
-            button.setCheckable(True)
-            button.setFixedHeight(26)
-            button.setStyleSheet("QPushButton { padding: 2px 6px; }" + style)
-            button.clicked.connect(lambda _checked, h=handler: h())
-            shortcut_row.addWidget(button)
-        self.processing_panel_layout.addLayout(shortcut_row)
+        self.stream_mute_button.setCheckable(True)
+        self.stream_mute_button.setFixedHeight(26)
+        self.stream_mute_button.setStyleSheet(
+            "QPushButton { padding: 2px 6px; }"
+            "QPushButton:checked { background: #54262c; "
+            "border-color: #a8434f; color: #ffffff; }"
+        )
+        self.stream_mute_button.clicked.connect(
+            lambda _checked: self.toggle_stream_mute()
+        )
+        self.processing_panel_layout.addWidget(self.stream_mute_button)
 
         self._build_profile_panel()
 
@@ -8059,16 +8110,9 @@ class MainWindow(QMainWindow):
         self.set_mic_route(self.stream_bus_setting(), stream_muted)
 
     def sync_mic_shortcuts(self):
-        if not hasattr(self, "listen_button"):
+        if not hasattr(self, "stream_mute_button"):
             return
-        listening, stream_muted = self.mic_shortcut_state()
-        listen_bus = self.listen_bus_setting()
-        self.listen_button.setChecked(listening)
-        self.listen_button.setEnabled(self.connected)
-        self.listen_button.setToolTip(
-            f"Monitor: hear your own microphone on {listen_bus}. Change the "
-            "output under Settings, Microphone."
-        )
+        _listening, stream_muted = self.mic_shortcut_state()
         self.stream_mute_button.setChecked(bool(stream_muted))
         self.stream_mute_button.setEnabled(
             self.connected and stream_muted is not None
