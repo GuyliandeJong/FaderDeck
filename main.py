@@ -2479,6 +2479,20 @@ class StripWidget(QWidget):
         layout.setSpacing(1)
 
 
+        self._build_header(
+            accent, border, header_color, layout, name, strip_index
+        )
+        layout.addSpacing(8)
+        self._build_fader(accent, layout, name)
+        self._build_buttons(accent, layout)
+        self._build_routing(accent, layout)
+
+        self.sync_from_voicemeeter()
+
+    def _build_header(
+        self, accent, border, header_color, layout, name, strip_index
+    ):
+        """The coloured card header: icon, channel name and its source."""
         # Two-line source header, following VoiceMeeter's input cards.
         source_names = {
             "Mic": f"Stereo Input {strip_index + 1}",
@@ -2532,9 +2546,9 @@ class StripWidget(QWidget):
         self.strip_header = strip_header
         self.source_label = source_label
         self.compact = False
-        layout.addSpacing(8)
 
-
+    def _build_fader(self, accent, layout, name):
+        """Input meters, the fader with its scale, and the gain readout."""
         # Input level meters. They are placed relative to the fader (see
         # MicFaderArea) so they can never push the fader off center.
         self.vu_meters = [VUMeter("L"), VUMeter("R")]
@@ -2614,7 +2628,8 @@ class StripWidget(QWidget):
             self.gain_label
         )
 
-
+    def _build_buttons(self, accent, layout):
+        """MUTE, SOLO and MONO."""
         # Buttons
 
         button_layout = QHBoxLayout()
@@ -2678,6 +2693,8 @@ class StripWidget(QWidget):
 
         layout.addSpacing(8)
 
+    def _build_routing(self, accent, layout):
+        """The A1-B3 routing buttons."""
         routing_title = QLabel("ROUTING")
         routing_title.setFixedHeight(ROUTING_LABEL_HEIGHT)
         routing_title.setStyleSheet(SMALL_HEADING_STYLE)
@@ -2695,11 +2712,6 @@ class StripWidget(QWidget):
                     routing_layout, output, row, column, accent
                 )
         layout.addLayout(routing_layout)
-
-
-        # Initial synchronization
-
-        self.sync_from_voicemeeter()
 
     def _add_route_button(self, layout, output, row, column, accent):
         text, tooltip = route_name(self.vm, output)
