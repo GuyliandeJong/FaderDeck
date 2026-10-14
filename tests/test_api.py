@@ -92,6 +92,96 @@ class ApiLogicTest(unittest.TestCase):
         self.assertFalse(self.window.current_settings()["api_enabled"])
 
 
+class PhoneRemoteTest(unittest.TestCase):
+    """The phone remote, on the loopback interface so no firewall asks."""
+
+    def setUp(self):
+        self.sandbox = Sandbox()
+        self.sandbox.__enter__()
+        self.addCleanup(self.sandbox.__exit__)
+        self.window = self.sandbox.window()
+        self.addCleanup(self.sandbox.close, self.window)
+        self.remote = self.window.phone_remote
+        self.remote.start(0, [], host="127.0.0.1")
+        self.addCleanup(self.remote.stop)
+
+    def request(self, method, path, token=None, body=None, headers=None):
+        url = f"http://127.0.0.1:{self.remote.port}{path}"
+        data = json.dumps(body).encode() if body is not None else (b"" if method == "POST" else None)
+        request = urllib.request.Request(url, method=method, data=data)
+        if token:
+            request.add_header(main.API_TOKEN_HEADER, token)
+        for key, value in (headers or {}).items():
+            request.add_header(key, value)
+        result = {}
+
+        def send():
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    result["status"], result["type"] = response.status, response.headers["Content-Type"]
+                    result["body"] = response.read()
+            except urllib.error.HTTPError as error:
+                with error:
+                    result["status"], result["type"] = error.code, error.headers["Content-Type"]
+                    result["body"] = error.read()
+            except Exception as error:      # noqa: BLE001 - reported below
+                result["error"] = error
+
+        thread = threading.Thread(target=send)
+        thread.start()
+        while thread.is_alive():
+            pump(0.01)
+        thread.join()
+        self.assertNotIn("error", result, result.get("error"))
+        return result
+
+    def pair(self, code):
+        result = self.request("POST", "/remote/pair", body={"code": code})
+        return result["status"], json.loads(result["body"])
+
+    def test_the_page_and_icons_need_no_token(self):
+        page = self.request("GET", "/remote")
+        self.assertEqual(page["status"], 200)
+        self.assertIn(b"FaderDeck", page["body"])
+        self.assertTrue(page["type"].startswith("text/html"))
+        icon = self.request("GET", "/remote/icon-192.png")
+        self.assertEqual(icon["body"][:4], b"\x89PNG")
+
+    def test_unpaired_devices_are_refused(self):
+        result = self.request("GET", "/remote/api/state", token="made-up")
+        self.assertEqual(result["status"], 401)
+
+    def test_pairing_gives_a_token_that_works_once_per_code(self):
+        self.assertEqual(self.pair("123456")[0], 403)  # no code was shown
+        code = self.remote.new_code()
+        status, body = self.pair(code)
+        self.assertEqual(status, 200)
+        token = body["token"]
+        self.assertEqual(self.pair(code)[0], 403, "a code pairs one device")
+        state = self.request("GET", "/remote/api/state", token=token)
+        self.assertEqual(state["status"], 200)
+        self.assertIn("Mic", json.loads(state["body"])["names"])
+        mute = self.request("POST", "/remote/api/mute/mic?state=on", token=token)
+        self.assertEqual(json.loads(mute["body"]), {"channel": "Mic", "mute": True})
+        stored = json.loads(self.window.window_settings.value("remote_devices"))
+        self.assertEqual(stored, [main.token_hash(token)])
+        self.assertNotIn(token, self.window.window_settings.value("remote_devices"))
+
+    def test_guessing_ends_the_code(self):
+        code = self.remote.new_code()
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(main.REMOTE_PAIR_TRIES):
+            self.assertEqual(self.pair(wrong)[0], 403)
+        self.assertEqual(self.pair(code)[0], 403, "too many guesses")
+
+    def test_other_sites_cannot_use_a_paired_token(self):
+        code = self.remote.new_code()
+        token = self.pair(code)[1]["token"]
+        result = self.request("POST", "/remote/api/mute/mic", token=token,
+                              headers={"Origin": "http://evil.example"})
+        self.assertEqual(result["status"], 403)
+
+
 class ApiServerTest(unittest.TestCase):
     """The real server on the loopback interface."""
 

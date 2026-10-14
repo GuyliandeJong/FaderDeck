@@ -7,6 +7,7 @@ import ctypes
 import ctypes.wintypes
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -27,8 +28,8 @@ from logging.handlers import RotatingFileHandler
 from urllib.parse import parse_qs, unquote, urlsplit
 
 
-from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
-from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QFontMetricsF, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QBuffer, QIODevice, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
+from PySide6.QtGui import QBrush, QColor, QDrag, QImage, QFont, QFontMetricsF, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
 
 from PySide6.QtSvg import QSvgRenderer
 
@@ -1391,6 +1392,220 @@ class LocalApi(QObject):
             return call.future.result(timeout=3.0)
         except Exception:
             return 503, {"error": "FaderDeck did not answer in time."}
+
+
+# The phone and tablet remote: a web page that FaderDeck serves on the home
+# network, separate from the local API above, which stays on 127.0.0.1. A
+# device pairs once with a short code shown in Settings and then sends its
+# own token with every request. Only the hash of a token is kept.
+REMOTE_DEFAULT_PORT = 8766
+REMOTE_PAGE = "remote.html"
+REMOTE_PAIR_SECONDS = 120
+REMOTE_PAIR_TRIES = 5
+
+
+def lan_address():
+    """This PC's address on the home network, or an empty string."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 1))  # sends nothing
+            return probe.getsockname()[0]
+    except OSError:
+        return ""
+
+
+def token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def remote_manifest():
+    return json.dumps({
+        "name": "FaderDeck",
+        "short_name": "FaderDeck",
+        "start_url": "/remote",
+        "display": "standalone",
+        "background_color": "#0d1117",
+        "theme_color": "#0d1117",
+        "icons": [
+            {"src": "/remote/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/remote/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }).encode("utf-8")
+
+
+def logo_png(size):
+    """The logo as PNG bytes. Call on the GUI thread."""
+    image = QImage(size, size, QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    QSvgRenderer(QByteArray(LOGO_SVG.encode("utf-8"))).render(
+        painter, QRectF(0, 0, size, size)
+    )
+    painter.end()
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    buffer.close()
+    return bytes(data)
+
+
+class PhoneRemote(QObject):
+    """Serves the remote page and its requests to devices on the home network.
+
+    Like LocalApi, requests are answered on the GUI thread through
+    call_requested; a newly paired device is announced through paired.
+    """
+
+    call_requested = Signal(object)
+    paired = Signal(str)  # the hash of a new device token
+
+    def __init__(self, files, parent=None):
+        super().__init__(parent)
+        self.files = files  # path -> (content type, bytes)
+        self.server = None
+        self.thread = None
+        self.port = 0
+        self.devices = set()
+        self.lock = threading.Lock()
+        self.code = ""
+        self.code_until = 0.0
+        self.tries = 0
+
+    def start(self, port, devices, host="0.0.0.0"):
+        """Start listening on every network. Raises OSError on a busy port."""
+        self.stop()
+        remote = self
+
+        class Handler(BaseHTTPRequestHandler):
+            server_version = "FaderDeck"
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                remote.serve(self, "GET")
+
+            def do_POST(self):
+                remote.serve(self, "POST")
+
+        self.server = ApiServer((host, int(port)), Handler)
+        self.port = self.server.server_address[1]
+        with self.lock:
+            self.devices = set(devices)
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            kwargs={"poll_interval": 0.1},
+            name="FaderDeck-PhoneRemote",
+            daemon=True,
+        )
+        self.thread.start()
+
+    def stop(self):
+        server, thread = self.server, self.thread
+        self.server = self.thread = None
+        self.port = 0
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if thread is not None:
+            thread.join(timeout=1.0)
+
+    def new_code(self):
+        """A fresh six-digit pairing code, valid for a short while."""
+        with self.lock:
+            self.code = f"{secrets.randbelow(10 ** 6):06d}"
+            self.code_until = time.monotonic() + REMOTE_PAIR_SECONDS
+            self.tries = 0
+            return self.code
+
+    def pair(self, code):
+        """A new device token for the right code, or None."""
+        with self.lock:
+            if not self.code or time.monotonic() > self.code_until:
+                return None
+            self.tries += 1
+            right = hmac.compare_digest(str(code).encode(), self.code.encode())
+            if not right:
+                if self.tries >= REMOTE_PAIR_TRIES:
+                    self.code = ""  # too many guesses: ask for a new code
+                return None
+            self.code = ""  # one device per code
+            token = secrets.token_urlsafe(24)
+            self.devices.add(token_hash(token))
+        self.paired.emit(token_hash(token))
+        return token
+
+    def serve(self, handler, method):
+        try:
+            length = int(handler.headers.get("Content-Length") or 0)
+            body = handler.rfile.read(min(length, 65536)) if length else b""
+            status, content_type, data = self.answer(handler, method, body)
+        except Exception as e:
+            log.error(f"Phone remote request failed: {type(e).__name__}: {e}")
+            status, content_type, data = 500, "application/json", b'{"error": "Internal error."}'
+        handler.send_response(status)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.end_headers()
+        handler.wfile.write(data)
+
+    @staticmethod
+    def json_answer(status, body):
+        return status, "application/json; charset=utf-8", json.dumps(body).encode("utf-8")
+
+    def answer(self, handler, method, body):
+        client = ipaddress.ip_address(handler.client_address[0])
+        if not (client.is_private or client.is_loopback):
+            return self.json_answer(403, {"error": "Only devices on your own network."})
+        url = urlsplit(handler.path)
+        path = url.path.rstrip("/") or "/"
+
+        if method == "GET" and path in ("/", "/remote") or path in self.files:
+            name = "/remote" if path == "/" else path
+            if method != "GET" or name not in self.files:
+                return self.json_answer(404, {"error": "Unknown address."})
+            content_type, data = self.files[name]
+            return 200, content_type, data
+
+        # A page on another site must not drive the mixer from this browser.
+        origin = handler.headers.get("Origin")
+        if origin and urlsplit(origin).netloc != handler.headers.get("Host"):
+            return self.json_answer(403, {"error": "Requests from other sites are not accepted."})
+
+        if path == "/remote/pair" and method == "POST":
+            try:
+                code = str(json.loads(body or b"{}").get("code", "")).strip()
+            except (ValueError, AttributeError):
+                code = ""
+            token = self.pair(code)
+            if token is None:
+                return self.json_answer(403, {
+                    "error": "That code is wrong or has run out. Press PAIR A "
+                    "DEVICE in FaderDeck for a new one."})
+            log.info(f"Phone remote: paired a device at {client}")
+            return self.json_answer(200, {"token": token})
+
+        supplied = handler.headers.get(API_TOKEN_HEADER, "")
+        with self.lock:
+            known = bool(supplied) and token_hash(supplied) in self.devices
+        if not known:
+            return self.json_answer(401, {"error": "This device is not paired."})
+
+        parts = [unquote(part) for part in path.split("/") if part]
+        if parts[:2] != ["remote", "api"]:
+            return self.json_answer(404, {"error": "Unknown address."})
+        params = {key: values[-1] for key, values in parse_qs(url.query).items()}
+        call = ApiCall(method, parts[2:], params)
+        self.call_requested.emit(call)
+        try:
+            status, answer = call.future.result(timeout=3.0)
+        except Exception:
+            status, answer = 503, {"error": "FaderDeck did not answer in time."}
+        return self.json_answer(status, answer)
 
 
 class HotkeyFilter(QAbstractNativeEventFilter):
@@ -5431,6 +5646,74 @@ class SettingsDialog(QDialog):
         )
         self.form.addRow(example)
 
+        self.add_heading("PHONE AND TABLET")
+        self.add_note(
+            "Control FaderDeck from a phone or tablet on your home network. "
+            "Open the address below in its browser, pair it once, then use "
+            "'Add to home screen' to keep it as an app."
+        )
+        self.remote_enabled = QCheckBox("Allow phones and tablets on my home network")
+        self.remote_enabled.setChecked(current["remote_enabled"])
+        self.form.addRow(self.remote_enabled)
+        self.remote_port = QSpinBox()
+        self.remote_port.setRange(1024, 65535)
+        self.remote_port.setValue(current["remote_port"])
+        self.form.addRow("Port", self.remote_port)
+        address = lan_address()
+        self.remote_address = QLineEdit(
+            f"http://{address}:{current['remote_port']}/remote" if address
+            else "No home network found"
+        )
+        self.remote_address.setReadOnly(True)
+        self.form.addRow("Address", self.remote_address)
+        pair_button = QPushButton("PAIR A DEVICE")
+        pair_button.clicked.connect(self.show_pairing_code)
+        forget_button = QPushButton("FORGET PAIRED DEVICES")
+        forget_button.clicked.connect(self.forget_devices)
+        self.remote_devices = list(current["remote_devices"])
+        remote_row = QHBoxLayout()
+        for button in (pair_button, forget_button):
+            button.setStyleSheet("QPushButton { padding: 4px 10px; }")
+            remote_row.addWidget(button)
+        remote_row.addStretch(1)
+        self.form.addRow(remote_row)
+        self.remote_count = QLabel()
+        self.remote_count.setObjectName("settingsNote")
+        self.form.addRow(self.remote_count)
+        self.update_remote_count()
+        self.add_note(
+            "Windows may ask whether FaderDeck may use your network: allow "
+            "private networks. Anyone with a paired device on your network "
+            "can control the mixer; forget them when in doubt."
+        )
+
+    def update_remote_count(self):
+        count = len(self.remote_devices)
+        self.remote_count.setText(
+            "No devices paired yet." if not count
+            else f"{count} device{'s' if count != 1 else ''} paired."
+        )
+
+    def show_pairing_code(self):
+        remote = getattr(self.parent(), "phone_remote", None)
+        if remote is None or remote.server is None:
+            QMessageBox.information(
+                self, "FaderDeck",
+                "Switch on 'Allow phones and tablets', press OK, and open "
+                "Settings again to pair a device.",
+            )
+            return
+        code = remote.new_code()
+        QMessageBox.information(
+            self, "FaderDeck — Pair a device",
+            f"Type this code on your phone or tablet:\n\n{code[:3]} {code[3:]}\n\n"
+            f"It works once, for {REMOTE_PAIR_SECONDS // 60} minutes.",
+        )
+
+    def forget_devices(self):
+        self.remote_devices = []
+        self.update_remote_count()
+
     def update_chime_hint(self):
         """Say whether the chosen device keeps the chime off the stream."""
         on = self.mute_sound.isChecked()
@@ -5623,6 +5906,9 @@ class SettingsDialog(QDialog):
             "api_enabled": self.api_enabled.isChecked(),
             "api_port": self.api_port.value(),
             "api_token": self.api_token.text(),
+            "remote_enabled": self.remote_enabled.isChecked(),
+            "remote_port": self.remote_port.value(),
+            "remote_devices": list(self.remote_devices),
         }
         values.update(self.hotkey_texts())
         values.update(
@@ -6221,6 +6507,10 @@ class MainWindow(QMainWindow):
         self.local_api = LocalApi(self)
         self.local_api.call_requested.connect(self.on_api_call)
         self.restart_api()
+        self.phone_remote = PhoneRemote(self.remote_files())
+        self.phone_remote.call_requested.connect(self.on_api_call)
+        self.phone_remote.paired.connect(self.on_device_paired)
+        self.restart_phone_remote()
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         if self.register_hotkeys() and self.tray is not None:
@@ -7302,6 +7592,9 @@ class MainWindow(QMainWindow):
             "mute_sound_device": str(settings.value("mute_sound_device", "") or ""),
             "api_enabled": setting_bool(settings, "api_enabled", False),
             "api_port": self.api_port_setting(),
+            "remote_enabled": setting_bool(settings, "remote_enabled", False),
+            "remote_port": self.remote_port_setting(),
+            "remote_devices": self.remote_devices_setting(),
             "api_token": str(settings.value("api_token", "") or ""),
             **{
                 key: str(settings.value(key, "") or "")
@@ -7360,7 +7653,7 @@ class MainWindow(QMainWindow):
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
         for key, value in values.items():
-            if key in ("theme", "themes"):
+            if key in ("theme", "themes", "remote_devices"):
                 value = json.dumps(value)
             self.window_settings.setValue(key, value)
         self.window_settings.sync()
@@ -7369,7 +7662,7 @@ class MainWindow(QMainWindow):
         self.sync_tray()
         self.refresh_channel_names()
 
-        problem = self.restart_api()
+        problem = self.restart_api() or self.restart_phone_remote()
         if problem:
             QMessageBox.warning(self, "FaderDeck", problem)
 
@@ -7413,6 +7706,68 @@ class MainWindow(QMainWindow):
         log.info(f"Local API listening on 127.0.0.1:{self.local_api.port}")
         return ""
 
+    # Phone and tablet remote.
+
+    def remote_port_setting(self):
+        try:
+            port = int(self.window_settings.value("remote_port", REMOTE_DEFAULT_PORT))
+        except (TypeError, ValueError):
+            port = REMOTE_DEFAULT_PORT
+        return port if 1024 <= port <= 65535 else REMOTE_DEFAULT_PORT
+
+    def remote_devices_setting(self):
+        """Hashes of the paired devices' tokens."""
+        try:
+            stored = json.loads(self.window_settings.value("remote_devices", "") or "[]")
+        except (TypeError, ValueError):
+            stored = []
+        if not isinstance(stored, list):
+            return []
+        return [h for h in stored if isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h)]
+
+    def remote_files(self):
+        """What the remote serves without a token: its page and icons."""
+        try:
+            with open(resource_path(REMOTE_PAGE), "rb") as handle:
+                page = handle.read()
+        except OSError as e:
+            log.warning(f"Phone remote page not found: {e}")
+            page = b"<h1>FaderDeck</h1><p>The remote page is missing.</p>"
+        return {
+            "/remote": ("text/html; charset=utf-8", page),
+            "/remote/manifest.webmanifest": ("application/manifest+json", remote_manifest()),
+            "/remote/icon-192.png": ("image/png", logo_png(192)),
+            "/remote/icon-512.png": ("image/png", logo_png(512)),
+        }
+
+    def on_device_paired(self, device_hash):
+        devices = self.remote_devices_setting()
+        if device_hash not in devices:
+            devices.append(device_hash)
+        self.window_settings.setValue("remote_devices", json.dumps(devices))
+        self.window_settings.sync()
+
+    def restart_phone_remote(self):
+        """Start or stop the phone remote to match the settings.
+
+        Returns a message when it should run but cannot, else an empty string.
+        """
+        self.phone_remote.stop()
+        current = self.current_settings()
+        if not current["remote_enabled"]:
+            return ""
+        try:
+            self.phone_remote.start(current["remote_port"], current["remote_devices"])
+        except OSError as e:
+            log.warning(f"Phone remote could not start: {e}")
+            return (
+                f"The phone remote could not start on port {current['remote_port']}. "
+                "Another program is probably using it; choose a different port "
+                "in Settings, Remote control."
+            )
+        log.info(f"Phone remote listening on port {self.phone_remote.port}")
+        return ""
+
     def on_api_call(self, call):
         """Answer a request from the local API. Runs on the GUI thread."""
         try:
@@ -7427,6 +7782,7 @@ class MainWindow(QMainWindow):
         listening, stream_muted = self.mic_shortcut_state()
         return {
             "connected": self.connected,
+            "names": {name: channel_label(name, self.window_settings) for name in self.strips},
             "listen": listening,
             "stream_mute": stream_muted,
             "profile": self.active_profile,
@@ -7802,6 +8158,7 @@ class MainWindow(QMainWindow):
             self.connection_timer.stop()
         self.unregister_hotkeys()
         self.local_api.stop()
+        self.phone_remote.stop()
 
         if self.vm is not None and self.vm_observer is not None:
             try:

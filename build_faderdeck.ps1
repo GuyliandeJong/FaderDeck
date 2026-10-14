@@ -48,6 +48,7 @@ try {
         --name FaderDeck `
         --icon $icon `
         --add-data "$icon;." `
+        --add-data "$(Join-Path $projectDir 'remote.html');." `
         --collect-all pycaw `
         --collect-all comtypes `
         --collect-all voicemeeterlib `
