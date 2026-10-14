@@ -7754,6 +7754,11 @@ class MainWindow(QMainWindow):
         except OSError as e:
             log.warning(f"Phone remote page not found: {e}")
             page = b"<h1>FaderDeck</h1><p>The remote page is missing.</p>"
+        # The page reloads itself when FaderDeck serves a different one, so
+        # a phone that stayed open picks up an update.
+        version = hashlib.sha256(page).hexdigest()[:12]
+        self.remote_page_version = version
+        page = page.replace(b"{{PAGE_VERSION}}", version.encode("ascii"))
         return {
             "/remote": ("text/html; charset=utf-8", page),
             "/remote/manifest.webmanifest": ("application/manifest+json", remote_manifest()),
@@ -7813,6 +7818,7 @@ class MainWindow(QMainWindow):
         listening, stream_muted = self.mic_shortcut_state()
         return {
             "connected": self.connected,
+            "page": getattr(self, "remote_page_version", ""),
             "names": {name: channel_label(name, self.window_settings) for name in self.strips},
             "listen": listening,
             "stream_mute": stream_muted,

@@ -147,6 +147,12 @@ class PhoneRemoteTest(unittest.TestCase):
         icon = self.request("GET", "/remote/icon-192.png")
         self.assertEqual(icon["body"][:4], b"\x89PNG")
 
+    def test_the_page_knows_its_version_so_it_can_reload(self):
+        page = self.request("GET", "/remote")["body"].decode()
+        version = self.window.remote_page_version
+        self.assertIn(f'PAGE_VERSION = "{version}"', page)
+        self.assertEqual(self.window.api_state()["page"], version)
+
     def test_unpaired_devices_are_refused(self):
         result = self.request("GET", "/remote/api/state", token="made-up")
         self.assertEqual(result["status"], 401)

@@ -107,6 +107,7 @@ footer button { flex: none; padding: 0 18px; }
 <script>
 const COLORS = {Mic: "#35c8ff", Game: "#ff626b", Chat: "#a68aff", Media: "#24d6a0"};
 const MIN_DB = -60, MAX_DB = 12;
+const PAGE_VERSION = "{{PAGE_VERSION}}";
 let token = localStorage.getItem("faderdeckToken") || "";
 let dragging = null;
 let built = false;
@@ -218,6 +219,7 @@ async function refresh() {
   if (!token) { forget(); return; }
   try {
     const state = await call("GET", "state");
+    if (state.page && state.page !== PAGE_VERSION) { location.reload(); return; }
     if (!built) build(state);
     $("mixer").hidden = $("footer").hidden = false;
     $("status").textContent = state.connected ? "Connected" : "VoiceMeeter is not running";
