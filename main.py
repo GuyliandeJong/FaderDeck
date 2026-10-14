@@ -974,7 +974,7 @@ class _WaveFormat(ctypes.Structure):
 
 class _WaveHeader(ctypes.Structure):
     _fields_ = [
-        ("lpData", ctypes.c_char_p),
+        ("lpData", ctypes.c_void_p),
         ("dwBufferLength", ctypes.wintypes.DWORD),
         ("dwBytesRecorded", ctypes.wintypes.DWORD),
         ("dwUser", ctypes.c_size_t),
@@ -1031,6 +1031,17 @@ def sound_devices():
     return names
 
 
+def wave_header(data):
+    """A buffer holding the samples, and a waveOut header pointing at it.
+
+    Keep the buffer alive until the sound has played.
+    """
+    buffer = ctypes.create_string_buffer(data, len(data))
+    # The raw address: a c_char_p here would point at a copy, and the
+    # device would play that instead (silence).
+    return buffer, _WaveHeader(ctypes.addressof(buffer), len(data))
+
+
 def play_samples(data, device=""):
     """Play mono 16-bit samples on a device, by name, without waiting.
 
@@ -1047,8 +1058,7 @@ def play_samples(data, device=""):
                              ctypes.byref(sound_format), 0, 0, 0):
             log.debug(f"Could not open {device or 'the default device'} for a sound")
             return
-        buffer = ctypes.create_string_buffer(data, len(data))
-        header = _WaveHeader(ctypes.cast(buffer, ctypes.c_char_p), len(data))
+        buffer, header = wave_header(data)
         size = ctypes.sizeof(header)
         try:
             winmm.waveOutPrepareHeader(handle, ctypes.byref(header), size)
@@ -5282,7 +5292,8 @@ class SettingsDialog(QDialog):
         taken = getattr(self.parent(), "refused_hotkeys", {})
         if taken:
             warning = QLabel(
-                "Another program already uses "
+                "Another program, or another FaderDeck that is running, "
+                "already uses "
                 + ", ".join(f"{text} ({label})" for text, label in taken.values())
                 + ". Pick another combination, or close that program."
             )
@@ -6106,7 +6117,7 @@ class MainWindow(QMainWindow):
             taken = ", ".join(text for text, _label in self.refused_hotkeys.values())
             self.tray.showMessage(
                 "FaderDeck",
-                f"Another program already uses {taken}. "
+                f"Another program, or another running FaderDeck, already uses {taken}. "
                 "Pick another combination under Settings, Hotkeys.",
                 self.tray.icon(),
                 8000,

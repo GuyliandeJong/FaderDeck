@@ -226,6 +226,13 @@ class ThemeTest(unittest.TestCase):
 
 
 class MuteSoundTest(unittest.TestCase):
+    def test_wave_header_points_at_the_samples(self):
+        import ctypes
+        data = main.chime_samples((523, 784))
+        buffer, header = main.wave_header(data)
+        self.assertEqual(header.dwBufferLength, len(data))
+        self.assertEqual(ctypes.string_at(header.lpData, len(data)), data)
+
     def test_chime_is_short_and_fades_out(self):
         import array
         samples = array.array("h", main.chime_samples(
