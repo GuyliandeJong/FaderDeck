@@ -1137,8 +1137,8 @@ def _hotkey_actions():
     for hotkey_id, key, label, action in (
         (21, "hotkey_mic_push_to_talk", "Push to talk", "push_to_talk"),
         (22, "hotkey_mic_hold_mute", "Hold to mute", "hold_mute"),
-        (23, "hotkey_mic_listen", "Listen to my microphone", "listen"),
-        (24, "hotkey_mic_stream_mute", "Mute for stream only", "stream_mute"),
+        (23, "hotkey_mic_listen", "Monitor (hear yourself)", "listen"),
+        (24, "hotkey_mic_stream_mute", "Mute stream", "stream_mute"),
     ):
         actions.append(HotkeyAction(
             hotkey_id, key, "MICROPHONE", label, "", False, action, "Mic",
@@ -5418,14 +5418,14 @@ class SettingsDialog(QDialog):
             max(0, self.stream_bus.findData(current["stream_bus"]))
         )
         self.add_heading("LISTENING AND STREAM")
-        self.form.addRow("You listen on", self.listen_bus)
+        self.form.addRow("You monitor on", self.listen_bus)
         self.add_note(
-            "LISTEN sends your microphone here, so you hear yourself. "
+            "MONITOR sends your microphone here, so you hear yourself. "
             "VoiceMeeter adds a little delay."
         )
         self.form.addRow("Your stream hears", self.stream_bus)
         self.add_note(
-            "OFF STREAM takes your microphone off this output. It only "
+            "MUTE STREAM takes your microphone off this output. It only "
             "keeps you in voice chat when your stream software has an "
             "output of its own: in OBS, use VoiceMeeter Out B2 for the "
             "microphone, and keep B1 for Discord."
@@ -5638,7 +5638,7 @@ class SettingsDialog(QDialog):
             "POST  /api/gain/game?step=-1          (or db=-6)\n"
             "POST  /api/profile/Streaming\n"
             "POST  /api/profile?step=next          (next, previous)\n"
-            "POST  /api/listen?state=toggle        (on, off, toggle)\n"
+            "POST  /api/monitor?state=toggle       (on, off, toggle)\n"
             "POST  /api/stream-mute?state=toggle   (on, off, toggle)\n\n"
             "Channels: mic, game, chat, media."
         )
@@ -6381,20 +6381,22 @@ class MainWindow(QMainWindow):
         self.processing_panel_layout.addWidget(self.processing_summary)
 
         # Quick routing of the microphone, named for what it is for.
-        self.listen_button = QPushButton("LISTEN")
-        self.stream_mute_button = QPushButton("OFF STREAM")
+        self.listen_button = QPushButton("MONITOR")
+        self.stream_mute_button = QPushButton("MUTE STREAM")
+        # The microphone icon says what is muted: your voice, not the stream.
+        set_mono_icon(self.stream_mute_button, "mic", 14)
         shortcut_row = QHBoxLayout()
         shortcut_row.setSpacing(4)
-        for button, handler in (
-            (self.listen_button, self.toggle_mic_listen),
-            (self.stream_mute_button, self.toggle_stream_mute),
+        for button, handler, style in (
+            (self.listen_button, self.toggle_mic_listen,
+             outline_toggle_style(TOGGLE_COLORS["solo"])),
+            (self.stream_mute_button, self.toggle_stream_mute,
+             "QPushButton:checked { background: #54262c; "
+             "border-color: #a8434f; color: #ffffff; }"),
         ):
             button.setCheckable(True)
             button.setFixedHeight(26)
-            button.setStyleSheet(
-                "QPushButton { padding: 2px 6px; }"
-                + outline_toggle_style(TOGGLE_COLORS["solo"])
-            )
+            button.setStyleSheet("QPushButton { padding: 2px 6px; }" + style)
             button.clicked.connect(lambda _checked, h=handler: h())
             shortcut_row.addWidget(button)
         self.processing_panel_layout.addLayout(shortcut_row)
@@ -7514,10 +7516,10 @@ class MainWindow(QMainWindow):
         self.tray_mute_action = menu.addAction("Mute microphone")
         self.tray_mute_action.setCheckable(True)
         self.tray_mute_action.triggered.connect(self.toggle_mic_mute)
-        self.tray_listen_action = menu.addAction("Listen to my microphone")
+        self.tray_listen_action = menu.addAction("Monitor microphone")
         self.tray_listen_action.setCheckable(True)
         self.tray_listen_action.triggered.connect(self.toggle_mic_listen)
-        self.tray_stream_action = menu.addAction("Mute for stream only")
+        self.tray_stream_action = menu.addAction("Mute stream (voice chat still hears you)")
         self.tray_stream_action.setCheckable(True)
         self.tray_stream_action.triggered.connect(self.toggle_stream_mute)
         menu.addSeparator()
@@ -7820,7 +7822,7 @@ class MainWindow(QMainWindow):
             "connected": self.connected,
             "page": getattr(self, "remote_page_version", ""),
             "names": {name: channel_label(name, self.window_settings) for name in self.strips},
-            "listen": listening,
+            "monitor": listening,
             "stream_mute": stream_muted,
             "profile": self.active_profile,
             "profile_changed": self.profile_is_changed(),
@@ -7882,15 +7884,15 @@ class MainWindow(QMainWindow):
                 return 400, {"error": "db and step must be numbers."}
             return 200, {"channel": name, "gain": strip.fader.value() / 100}
 
-        if parts in (["listen"], ["stream-mute"]):
+        if parts in (["monitor"], ["stream-mute"]):
             wanted = params.get("state", "toggle").casefold()
             if wanted not in ("on", "off", "toggle"):
                 return 400, {"error": "state must be on, off or toggle."}
             listening, stream_muted = self.mic_shortcut_state()
-            if parts == ["listen"]:
+            if parts == ["monitor"]:
                 if wanted == "toggle" or (wanted == "on") != listening:
                     self.toggle_mic_listen()
-                return 200, {"listen": self.mic_shortcut_state()[0]}
+                return 200, {"monitor": self.mic_shortcut_state()[0]}
             if stream_muted is None:
                 return 409, {"error": "Choose the output your stream hears in Settings first."}
             if wanted == "toggle" or (wanted == "on") != stream_muted:
@@ -8064,8 +8066,8 @@ class MainWindow(QMainWindow):
         self.listen_button.setChecked(listening)
         self.listen_button.setEnabled(self.connected)
         self.listen_button.setToolTip(
-            f"Hear your microphone on {listen_bus}. Change the output under "
-            "Settings, General."
+            f"Monitor: hear your own microphone on {listen_bus}. Change the "
+            "output under Settings, Microphone."
         )
         self.stream_mute_button.setChecked(bool(stream_muted))
         self.stream_mute_button.setEnabled(
@@ -8073,13 +8075,14 @@ class MainWindow(QMainWindow):
         )
         if stream_muted is None:
             self.stream_mute_button.setToolTip(
-                "Choose the output your stream hears under Settings, "
-                "General to use this."
+                "Mute your microphone for the stream only; voice chat still "
+                "hears you. Choose the output your stream hears under "
+                "Settings, Microphone to use this."
             )
         else:
             self.stream_mute_button.setToolTip(
-                "Take your microphone off "
-                f"{self.stream_bus_setting()}, the output your stream hears."
+                "Mute your microphone for the stream only; voice chat still "
+                f"hears you. (Takes it off {self.stream_bus_setting()}.)"
             )
 
     def step_strip_gain(self, name, decibels):

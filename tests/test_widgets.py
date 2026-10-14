@@ -509,8 +509,8 @@ class MainWindowTest(unittest.TestCase):
         self.window.toggle_mic_listen()
         self.assertTrue(mic.route_buttons["A2"].isChecked())
         self.assertTrue(self.window.listen_button.isChecked())
-        self.assertEqual(self.window.handle_api_call("POST", ["listen"], {"state": "off"}),
-                         (200, {"listen": False}))
+        self.assertEqual(self.window.handle_api_call("POST", ["monitor"], {"state": "off"}),
+                         (200, {"monitor": False}))
         self.assertFalse(mic.route_buttons["A2"].isChecked())
 
     def test_stream_mute_needs_the_stream_output_and_takes_the_mic_off_it(self):

@@ -66,10 +66,10 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 
 - **Push to talk**: hold a hotkey to talk; let go and the microphone is muted again
 - **Hold to mute**: hold a hotkey to cough or sneeze without being heard
-- **Listen**: hear your own microphone on your headphones
-- **Off stream**: take your microphone off the stream while staying in voice chat
+- **Monitor**: hear your own microphone on your headphones
+- **Mute stream**: mute your microphone for the stream only, while voice chat still hears you
 
-Listen and Off stream are buttons under Mic Processing, and are also in the tray menu, the hotkeys and the remote control. Choose under Settings, Microphone which output you listen on and which one your stream hears. Off stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
+Monitor and Mute stream are buttons under Mic Processing, and are also in the tray menu, the hotkeys and the remote control. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
 
 ### Global Hotkeys
 
@@ -78,7 +78,7 @@ Hotkeys work while FaderDeck is in the background or hidden in the tray. Set the
 - Mute for every channel (the microphone's is Ctrl+Shift+M out of the box)
 - Louder and quieter for every channel, 1 dB per press
 - Next and previous setup profile
-- Push to talk, hold to mute, listen, and off stream
+- Push to talk, hold to mute, monitor, and mute stream
 
 ![Hotkey settings](screenshots/settings-hotkeys.png)
 
@@ -242,8 +242,8 @@ FaderDeck can be controlled by other programs on the same computer over HTTP. Sw
 | `POST /api/gain/game?step=-1` | move a fader by decibels, or set it with `db=-6` |
 | `POST /api/profile/Streaming` | load a setup profile |
 | `POST /api/profile?step=next` | load the `next` or `previous` profile |
-| `POST /api/listen?state=toggle` | hear your own microphone: `on`, `off` or `toggle` |
-| `POST /api/stream-mute?state=toggle` | take the microphone off the stream's output |
+| `POST /api/monitor?state=toggle` | hear your own microphone: `on`, `off` or `toggle` |
+| `POST /api/stream-mute?state=toggle` | mute the microphone for the stream only |
 
 Channels are `mic`, `game`, `chat` and `media`. Example:
 

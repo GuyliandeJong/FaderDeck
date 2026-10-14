@@ -46,7 +46,7 @@ header b { font-size: 18px; } header b span { color: #8a5cff; font-weight: 400; 
 button { min-height: 44px; border-radius: 9px; border: 1px solid var(--line); background: #18232e;
          color: var(--text); font: 600 13px "Segoe UI", system-ui, sans-serif; padding: 0 4px; }
 button.on { border-color: var(--accent); color: var(--accent); background: #16202b; }
-button.mute.on { border-color: var(--red); color: #fff; background: #54262c; }
+button.mute.on, button.streammute.on { border-color: var(--red); color: #fff; background: #54262c; }
 button:disabled { opacity: .35; }
 
 footer { flex: none; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px; }
@@ -93,8 +93,8 @@ footer button { flex: none; padding: 0 18px; }
 <footer id="footer" hidden>
   <div class="group mic">
     <label>Mic</label>
-    <button id="listen">LISTEN</button>
-    <button id="stream">OFF STREAM</button>
+    <button id="listen" title="Hear your own microphone">MONITOR</button>
+    <button id="stream" class="streammute" title="Mute your microphone for the stream only; voice chat still hears you"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><rect x="8.2" y="3.2" width="7.6" height="11.6" rx="3.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11.5v1.1a6.5 6.5 0 0 0 13 0v-1.1M12 19.1v2.1M8.5 21.2h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>MUTE STREAM</button>
   </div>
   <div class="group">
     <label for="profiles">Profile</label>
@@ -206,7 +206,7 @@ function build(state) {
   for (const name of Object.keys(state.channels)) {
     main.appendChild(strip(name, (state.names || {})[name] || name));
   }
-  $("listen").onclick = () => call("POST", "listen?state=toggle").then(refresh);
+  $("listen").onclick = () => call("POST", "monitor?state=toggle").then(refresh);
   $("stream").onclick = () => call("POST", "stream-mute?state=toggle").then(refresh);
   $("load").onclick = () => {
     const name = $("profiles").value;
@@ -230,7 +230,7 @@ async function refresh() {
       element.querySelector(".mute").classList.toggle("on", channel.mute);
       if (dragging !== name) element.place(channel.gain);
     }
-    $("listen").classList.toggle("on", !!state.listen);
+    $("listen").classList.toggle("on", !!state.monitor);
     $("stream").classList.toggle("on", !!state.stream_mute);
     $("stream").disabled = state.stream_mute === null;
     const list = await call("GET", "profiles");
