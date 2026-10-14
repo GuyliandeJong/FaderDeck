@@ -1137,7 +1137,6 @@ def _hotkey_actions():
     for hotkey_id, key, label, action in (
         (21, "hotkey_mic_push_to_talk", "Push to talk", "push_to_talk"),
         (22, "hotkey_mic_hold_mute", "Hold to mute", "hold_mute"),
-        (23, "hotkey_mic_listen", "Monitor (hear yourself)", "listen"),
         (24, "hotkey_mic_stream_mute", "Mute stream", "stream_mute"),
     ):
         actions.append(HotkeyAction(
@@ -3318,8 +3317,7 @@ class StripWidget(QWidget):
             "Mouse wheel: 0.5 dB, with Shift 0.1 dB. "
             "Arrow keys: 0.1 dB. Page Up/Down: 1 dB."
         )
-        # One labelled scale is enough; the other faders show ticks only.
-        self.fader.show_labels = name == "Mic"
+        self.fader.show_labels = True
 
         self.fader.setMinimumHeight(CHANNEL_FADER_MIN_HEIGHT)
         self.fader.setStyleSheet(
@@ -3492,7 +3490,7 @@ class StripWidget(QWidget):
         self.fader.setFixedWidth(
             COMPACT_FADER_WIDTH if compact else MixerFader.WIDTH
         )
-        self.fader.show_labels = not compact and self.name == "Mic"
+        self.fader.show_labels = not compact
         width = COMPACT_METER_WIDTH if compact else NORMAL_METER_WIDTH
         for meter in self.vu_meters:
             meter.setMinimumWidth(width)
@@ -5599,8 +5597,8 @@ class SettingsDialog(QDialog):
         self.form.addRow("Monitor on", monitor_row)
         self.add_note(
             "MONITOR sends your microphone to this output so you hear "
-            "yourself; press it again to stop. It works at once, and there "
-            "is a hotkey for it under Hotkeys. VoiceMeeter adds a little delay."
+            "yourself; press it again to stop. It works at once. VoiceMeeter "
+            "adds a little delay."
         )
         self.listen_bus.currentIndexChanged.connect(self.update_monitor_button)
         self.update_monitor_button()
@@ -8224,8 +8222,6 @@ class MainWindow(QMainWindow):
                 self.hold_mic_mute(action, muted=False)
             elif action.action == "hold_mute":
                 self.hold_mic_mute(action, muted=True)
-            elif action.action == "listen":
-                self.toggle_mic_listen()
             elif action.action == "stream_mute":
                 self.toggle_stream_mute()
 

@@ -69,7 +69,7 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 - **Monitor**: hear your own microphone on your headphones
 - **Mute stream**: mute your microphone for the stream only, while voice chat still hears you
 
-Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu, the hotkeys and the remote control. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
+Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
 
 ### Global Hotkeys
 
@@ -78,7 +78,7 @@ Hotkeys work while FaderDeck is in the background or hidden in the tray. Set the
 - Mute for every channel (the microphone's is Ctrl+Shift+M out of the box)
 - Louder and quieter for every channel, 1 dB per press
 - Next and previous setup profile
-- Push to talk, hold to mute, monitor, and mute stream
+- Push to talk, hold to mute, and mute stream
 
 ![Hotkey settings](screenshots/settings-hotkeys.png)
 

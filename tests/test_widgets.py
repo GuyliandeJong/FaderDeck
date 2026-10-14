@@ -682,8 +682,12 @@ class MainWindowTest(unittest.TestCase):
             (fader.wheel_step, fader.singleStep(), fader.pageStep()),
             (50, 10, 100),
         )
-        self.assertTrue(self.window.strips["Mic"].fader.show_labels)
+        # Every channel shows its dB numbers, except in compact view.
+        self.assertTrue(all(strip.fader.show_labels for strip in self.window.strips.values()))
+        self.window.set_compact(True)
         self.assertFalse(fader.show_labels)
+        self.window.set_compact(False)
+        self.assertTrue(fader.show_labels)
 
     def test_summary_and_tabs_show_the_processing_state(self):
         window = self.window
