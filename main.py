@@ -654,22 +654,28 @@ def apply_theme(theme):
         widget.update()
 
 
-def _stored_json(settings, key):
+def stored_dict(settings, key):
+    """A dict saved as JSON under a settings key; {} if missing or broken."""
     try:
-        return json.loads(settings.value(key, "") or "null")
+        value = json.loads(settings.value(key, "") or "null")
     except (TypeError, ValueError):
-        return None
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def store_dict(settings, key, value):
+    settings.setValue(key, json.dumps(value, sort_keys=True))
+    settings.sync()
 
 
 def theme_settings(settings):
     """The stored theme; anything unreadable is the default."""
-    return clean_theme(_stored_json(settings, "theme"))
+    return clean_theme(stored_dict(settings, "theme"))
 
 
 def saved_themes(settings):
     """The user's own themes, by name."""
-    stored = _stored_json(settings, "themes")
-    stored = stored if isinstance(stored, dict) else {}
+    stored = stored_dict(settings, "themes")
     return {
         str(name)[:40]: clean_theme(value, name)
         for name, value in stored.items()
@@ -5929,18 +5935,10 @@ class MainWindow(QMainWindow):
     # Mic Processing window hold the processing alone.
 
     def load_profiles(self):
-        raw = self.window_settings.value("mixer_profiles", "")
-        try:
-            profiles = json.loads(raw) if raw else {}
-        except (TypeError, ValueError):
-            profiles = {}
-        return profiles if isinstance(profiles, dict) else {}
+        return stored_dict(self.window_settings, "mixer_profiles")
 
     def store_profiles(self, profiles):
-        self.window_settings.setValue(
-            "mixer_profiles", json.dumps(profiles, sort_keys=True)
-        )
-        self.window_settings.sync()
+        store_dict(self.window_settings, "mixer_profiles", profiles)
 
     def save_profile(self, name):
         name = (name or "").strip()
@@ -6212,18 +6210,10 @@ class MainWindow(QMainWindow):
         }
 
     def load_presets(self):
-        raw = self.window_settings.value("processing_presets", "")
-        try:
-            presets = json.loads(raw) if raw else {}
-        except (TypeError, ValueError):
-            presets = {}
-        return presets if isinstance(presets, dict) else {}
+        return stored_dict(self.window_settings, "processing_presets")
 
     def store_presets(self, presets):
-        self.window_settings.setValue(
-            "processing_presets", json.dumps(presets, sort_keys=True)
-        )
-        self.window_settings.sync()
+        store_dict(self.window_settings, "processing_presets", presets)
 
     def save_preset(self, name):
         """Store the current values of all three blocks under a name."""
