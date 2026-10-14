@@ -19,6 +19,7 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 - Fader with a dB scale, and live level meters on every channel
 - Mute, Solo and Mono
 - Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter
+- Your own names for Game, Chat and Media (Settings, General), for example "Music" instead of "Media"
 - Reconnects by itself when VoiceMeeter is closed and started again
 - A draggable divider between the mixer and the lower panels
 
@@ -27,6 +28,19 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 A button in the header shrinks the window to the four channels with fader, meters, level and Mute. It fits in 520×300, remembers its own size and place, and FaderDeck starts in the view it was closed in. Hotkeys and profiles keep working.
 
 ![Compact view](screenshots/compact.png)
+
+### Themes and Colours
+
+Under Settings, Appearance you choose how FaderDeck looks, and every change shows at once; Cancel puts the old colours back.
+
+- Built-in themes: **Dark**, **Light**, and **FaderDeck**, which follows the logo's blue-to-purple gradient across the four channels
+- An accent colour that replaces the blue throughout the window
+- A colour of your own for each channel, to match your setup
+- **Save as** keeps your colours as a theme of your own, to switch back to later
+
+![FaderDeck theme](screenshots/themes.png)
+
+![Appearance settings](screenshots/settings-appearance.png)
 
 ### Setup Profiles
 
@@ -298,16 +312,14 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours.
 
 Next, roughly in this order:
 
 1. A Windows installer, and a signed EXE so Windows does not warn about it
-2. Your own names for the Game, Chat and Media channels
-3. Support for VoiceMeeter Banana and the standard edition
-4. Light mode and custom themes
-5. Automatic updates
-6. An Android app to control FaderDeck from a tablet or phone on your own network
+2. Support for VoiceMeeter Banana and the standard edition
+3. Automatic updates
+4. An Android app to control FaderDeck from a tablet or phone on your own network
 
 ## Support
 

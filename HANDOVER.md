@@ -184,6 +184,15 @@ The program was called VMStreamer up to v1.4.0 and FaderDeck from v1.5.0. VB-Aud
 
 The single-instance name changed with the rename, so an old VMStreamer and FaderDeck can run side by side and will then fight over the hotkeys. Quit the old one first.
 
+## Themes (v1.6.0)
+
+Every colour in `main.py` is written for the dark theme. A theme is a translation of those colours, applied where they reach Qt: `QWidget.setStyleSheet` (patched once at import), the module's own `QColor` subclass for `QColor("#rrggbb")`, and `translate_colors()` for the drawn icons. The default theme translates nothing.
+
+- Live switching: each widget keeps the style sheet it was given in the `themeSource` property; `apply_theme()` translates every one again. Icons shown with `set_mono_icon()` are redrawn the same way. A colour turned into a `QColor` once at build time and kept would not follow a switch: create it where it is painted.
+- A channel colour replaces that channel's three `STRIP_COLORS` values, so those values may appear nowhere else. A test checks this. `PANEL_BORDER`, `ALERT_BORDER` and `COMPRESSOR_MARK` exist for that reason: they look the same but are one step off.
+- Settings: `theme` holds the active theme as JSON and `themes` the user's saved ones. `clean_theme()` drops anything malformed.
+- Channel names (`channel_name_game` and so on) change only what is shown. The built-in names stay the keys for settings, profiles, hotkeys and the local API.
+
 ## Logo
 
 The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.
