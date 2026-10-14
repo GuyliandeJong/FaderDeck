@@ -5188,7 +5188,11 @@ class SettingsDialog(QDialog):
         for device in devices:
             self.sound_device.addItem(device, device)
         self.sound_device.setCurrentIndex(max(0, self.sound_device.findData(chosen)))
-        test_sound = QPushButton("TEST")
+        test_sound = QPushButton("PLAY CHIME")
+        test_sound.setToolTip(
+            "Play the mute sound on this device. It does not pass your "
+            "microphone through."
+        )
         test_sound.setStyleSheet("QPushButton { padding: 4px 10px; }")
         test_sound.clicked.connect(
             lambda: play_mute_sound(True, self.sound_device.currentData())
