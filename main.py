@@ -1132,6 +1132,16 @@ def _hotkey_actions():
             12 + index * 2, f"hotkey_{lower}_down", "VOLUME",
             f"{title} quieter", "", True, "gain", (strip, -HOTKEY_GAIN_STEP_DB),
         ))
+    # Push to talk and hold to mute last as long as the keys are held.
+    for hotkey_id, key, label, action in (
+        (21, "hotkey_mic_push_to_talk", "Push to talk", "push_to_talk"),
+        (22, "hotkey_mic_hold_mute", "Hold to mute", "hold_mute"),
+        (23, "hotkey_mic_listen", "Listen to my microphone", "listen"),
+        (24, "hotkey_mic_stream_mute", "Mute for stream only", "stream_mute"),
+    ):
+        actions.append(HotkeyAction(
+            hotkey_id, key, "MICROPHONE", label, "", False, action, "Mic",
+        ))
     actions.append(HotkeyAction(
         31, "hotkey_profile_next", "SETUP PROFILES",
         "Next profile", "", False, "profile", 1,
@@ -3225,7 +3235,7 @@ class StripWidget(QWidget):
 
         self.update_gain_label()
 
-    def on_mute_clicked(self, checked):
+    def on_mute_clicked(self, checked, chime=True):
         try:
             self.strip.mute = checked
         except Exception as e:
@@ -3236,7 +3246,7 @@ class StripWidget(QWidget):
             return
         # Every way of muting comes here: button, hotkey, tray, API, profile.
         settings = app_settings()
-        if self.name == "Mic" and setting_bool(settings, "mute_sound", True):
+        if chime and self.name == "Mic" and setting_bool(settings, "mute_sound", True):
             play_mute_sound(
                 checked, str(settings.value("mute_sound_device", "") or "")
             )
@@ -5164,15 +5174,43 @@ class SettingsDialog(QDialog):
         layout.addWidget(buttons)
 
     def _build_general_tab(self, current, vm):
-        """Microphone input, channel names and window behaviour."""
-        self.form = self.add_tab("General")
-        self.add_heading("MIXER")
+        """A Microphone tab (input, listening, stream, chime) and a General
+        tab (channel names, window, updates)."""
+        self.form = self.add_tab("Microphone", scrolling=True)
+        self.add_heading("INPUT")
         self.mic_input = QComboBox()
         for index in range(HARDWARE_INPUTS):
             self.mic_input.addItem(self.input_name(vm, index), index)
         self.mic_input.setCurrentIndex(current["mic_strip"])
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note("The VoiceMeeter input your microphone is on.")
+        self.listen_bus = QComboBox()
+        self.stream_bus = QComboBox()
+        self.stream_bus.addItem("Not set", "")
+        for output in ("A1", "A2", "A3", "B1", "B2", "B3"):
+            text, _tooltip = route_name(vm, output) if vm is not None else (output, "")
+            if output.startswith("A"):
+                self.listen_bus.addItem(text, output)
+            self.stream_bus.addItem(text, output)
+        self.listen_bus.setCurrentIndex(
+            max(0, self.listen_bus.findData(current["listen_bus"]))
+        )
+        self.stream_bus.setCurrentIndex(
+            max(0, self.stream_bus.findData(current["stream_bus"]))
+        )
+        self.add_heading("LISTENING AND STREAM")
+        self.form.addRow("You listen on", self.listen_bus)
+        self.add_note(
+            "LISTEN sends your microphone here, so you hear yourself. "
+            "VoiceMeeter adds a little delay."
+        )
+        self.form.addRow("Your stream hears", self.stream_bus)
+        self.add_note(
+            "OFF STREAM takes your microphone off this output. It only "
+            "keeps you in voice chat when your stream software has an "
+            "output of its own: in OBS, use VoiceMeeter Out B2 for the "
+            "microphone, and keep B1 for Discord."
+        )
 
         self.add_heading("MUTE CHIME")
         self.mute_sound = QCheckBox(
@@ -5216,6 +5254,8 @@ class SettingsDialog(QDialog):
         self.sound_device.currentIndexChanged.connect(self.update_chime_hint)
         self.update_chime_hint()
 
+        self.form = self.add_tab("General", scrolling=True)
+        self.tabs.tabBar().moveTab(1, 0)  # General first
         self.add_heading("CHANNEL NAMES")
         self.channel_names = {}
         for channel, key in CHANNEL_NAME_KEYS.items():
@@ -5378,7 +5418,9 @@ class SettingsDialog(QDialog):
             "POST  /api/mute/mic?state=toggle      (on, off, toggle)\n"
             "POST  /api/gain/game?step=-1          (or db=-6)\n"
             "POST  /api/profile/Streaming\n"
-            "POST  /api/profile?step=next          (next, previous)\n\n"
+            "POST  /api/profile?step=next          (next, previous)\n"
+            "POST  /api/listen?state=toggle        (on, off, toggle)\n"
+            "POST  /api/stream-mute?state=toggle   (on, off, toggle)\n\n"
             "Channels: mic, game, chat, media."
         )
         example.setStyleSheet(
@@ -5569,6 +5611,8 @@ class SettingsDialog(QDialog):
     def values(self):
         values = {
             "mic_strip": int(self.mic_input.currentData()),
+            "listen_bus": self.listen_bus.currentData(),
+            "stream_bus": self.stream_bus.currentData(),
             "theme": self.theme_value(),
             "themes": dict(self.themes),
             "close_to_tray": self.close_to_tray.isChecked(),
@@ -6033,6 +6077,25 @@ class MainWindow(QMainWindow):
         )
         self.processing_panel_layout.addWidget(self.processing_summary)
 
+        # Quick routing of the microphone, named for what it is for.
+        self.listen_button = QPushButton("LISTEN")
+        self.stream_mute_button = QPushButton("OFF STREAM")
+        shortcut_row = QHBoxLayout()
+        shortcut_row.setSpacing(4)
+        for button, handler in (
+            (self.listen_button, self.toggle_mic_listen),
+            (self.stream_mute_button, self.toggle_stream_mute),
+        ):
+            button.setCheckable(True)
+            button.setFixedHeight(26)
+            button.setStyleSheet(
+                "QPushButton { padding: 2px 6px; }"
+                + outline_toggle_style(TOGGLE_COLORS["solo"])
+            )
+            button.clicked.connect(lambda _checked, h=handler: h())
+            shortcut_row.addWidget(button)
+        self.processing_panel_layout.addLayout(shortcut_row)
+
         self._build_profile_panel()
 
         # The profile the mixer was last loaded from or saved to, and its
@@ -6148,6 +6211,10 @@ class MainWindow(QMainWindow):
         self.hotkey_filter = HotkeyFilter(
             self.on_hotkey, self.show_from_tray, self.quit_application
         )
+        self._held_key = None  # (virtual key, mute state before) while held
+        self._held_key_timer = QTimer(self)
+        self._held_key_timer.setInterval(20)
+        self._held_key_timer.timeout.connect(self.check_held_key)
         if setting_bool(self.window_settings, "compact_mode", False):
             self.set_compact(True, remember_geometry=False)
 
@@ -7140,6 +7207,12 @@ class MainWindow(QMainWindow):
         self.tray_mute_action = menu.addAction("Mute microphone")
         self.tray_mute_action.setCheckable(True)
         self.tray_mute_action.triggered.connect(self.toggle_mic_mute)
+        self.tray_listen_action = menu.addAction("Listen to my microphone")
+        self.tray_listen_action.setCheckable(True)
+        self.tray_listen_action.triggered.connect(self.toggle_mic_listen)
+        self.tray_stream_action = menu.addAction("Mute for stream only")
+        self.tray_stream_action.setCheckable(True)
+        self.tray_stream_action.triggered.connect(self.toggle_stream_mute)
         menu.addSeparator()
         menu.addAction("Quit").triggered.connect(self.quit_application)
 
@@ -7165,8 +7238,14 @@ class MainWindow(QMainWindow):
 
     def sync_tray(self):
         """Show the Mic mute state on the tray icon and in its menu."""
+        self.sync_mic_shortcuts()
         if self.tray is None:
             return
+        listening, stream_muted = self.mic_shortcut_state()
+        self.tray_listen_action.setChecked(listening)
+        self.tray_listen_action.setEnabled(self.connected)
+        self.tray_stream_action.setChecked(bool(stream_muted))
+        self.tray_stream_action.setEnabled(self.connected and stream_muted is not None)
         mic = self.strips.get("Mic")
         muted = bool(mic is not None and mic.mute_button.isChecked())
         self.tray_mute_action.setChecked(muted)
@@ -7212,6 +7291,8 @@ class MainWindow(QMainWindow):
             mic_strip = 0
         return {
             "mic_strip": mic_strip,
+            "listen_bus": self.listen_bus_setting(),
+            "stream_bus": self.stream_bus_setting(),
             "theme": theme_settings(settings),
             "themes": saved_themes(settings),
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
@@ -7285,6 +7366,7 @@ class MainWindow(QMainWindow):
         self.window_settings.sync()
         apply_theme(values["theme"])
         self.set_mic_input(values["mic_strip"])
+        self.sync_tray()
         self.refresh_channel_names()
 
         problem = self.restart_api()
@@ -7342,8 +7424,11 @@ class MainWindow(QMainWindow):
             call.future.set_result(result)
 
     def api_state(self):
+        listening, stream_muted = self.mic_shortcut_state()
         return {
             "connected": self.connected,
+            "listen": listening,
+            "stream_mute": stream_muted,
             "profile": self.active_profile,
             "profile_changed": self.profile_is_changed(),
             "channels": {
@@ -7403,6 +7488,21 @@ class MainWindow(QMainWindow):
             except ValueError:
                 return 400, {"error": "db and step must be numbers."}
             return 200, {"channel": name, "gain": strip.fader.value() / 100}
+
+        if parts in (["listen"], ["stream-mute"]):
+            wanted = params.get("state", "toggle").casefold()
+            if wanted not in ("on", "off", "toggle"):
+                return 400, {"error": "state must be on, off or toggle."}
+            listening, stream_muted = self.mic_shortcut_state()
+            if parts == ["listen"]:
+                if wanted == "toggle" or (wanted == "on") != listening:
+                    self.toggle_mic_listen()
+                return 200, {"listen": self.mic_shortcut_state()[0]}
+            if stream_muted is None:
+                return 409, {"error": "Choose the output your stream hears in Settings first."}
+            if wanted == "toggle" or (wanted == "on") != stream_muted:
+                self.toggle_stream_mute()
+            return 200, {"stream_mute": self.mic_shortcut_state()[1]}
 
         if parts and parts[0] == "profile" and len(parts) <= 2:
             if len(parts) == 2:
@@ -7469,6 +7569,125 @@ class MainWindow(QMainWindow):
                 self.step_strip_gain(*action.argument)
             elif action.action == "profile":
                 self.cycle_profile(action.argument)
+            elif action.action == "push_to_talk":
+                self.hold_mic_mute(action, muted=False)
+            elif action.action == "hold_mute":
+                self.hold_mic_mute(action, muted=True)
+            elif action.action == "listen":
+                self.toggle_mic_listen()
+            elif action.action == "stream_mute":
+                self.toggle_stream_mute()
+
+    # The microphone: held keys, listening and the stream.
+
+    def set_mic_mute(self, muted, chime=True):
+        mic = self.strips.get("Mic")
+        if mic is None or not self.connected:
+            return
+        if mic.mute_button.isChecked() != muted:
+            mic.mute_button.setChecked(muted)
+            mic.on_mute_clicked(muted, chime=chime)
+        self.sync_tray()
+
+    def hold_mic_mute(self, action, muted):
+        """Mute or unmute while the hotkey is held; put it back on release.
+
+        Windows only reports that a hotkey was pressed, so the key is
+        watched until it is let go. No chime: it would sound every time.
+        """
+        if self._held_key is not None or not self.connected:
+            return
+        parsed = parse_hotkey(self.current_settings()[action.key])
+        mic = self.strips.get("Mic")
+        if parsed is None or mic is None:
+            return
+        self._held_key = (parsed[1], mic.mute_button.isChecked())
+        self.set_mic_mute(muted, chime=False)
+        self._held_key_timer.start()
+
+    def check_held_key(self):
+        if self._held_key is None:
+            self._held_key_timer.stop()
+            return
+        virtual_key, before = self._held_key
+        if self.key_is_down(virtual_key):
+            return
+        self._held_key_timer.stop()
+        self._held_key = None
+        self.set_mic_mute(before, chime=False)
+
+    @staticmethod
+    def key_is_down(virtual_key):
+        return bool(ctypes.windll.user32.GetAsyncKeyState(virtual_key) & 0x8000)
+
+    def listen_bus_setting(self):
+        bus = str(self.window_settings.value("listen_bus", "A1") or "")
+        return bus if bus in ("A1", "A2", "A3") else "A1"
+
+    def stream_bus_setting(self):
+        bus = str(self.window_settings.value("stream_bus", "") or "")
+        return bus if bus in ROUTE_BUS else ""
+
+    def mic_shortcut_state(self):
+        """(listening, muted for the stream); the second is None when the
+        stream's output is not set."""
+        mic = self.strips.get("Mic")
+        if mic is None:
+            return False, None
+        listen = mic.route_buttons.get(self.listen_bus_setting())
+        stream = mic.route_buttons.get(self.stream_bus_setting())
+        return (
+            bool(listen is not None and listen.isChecked()),
+            None if stream is None else not stream.isChecked(),
+        )
+
+    def set_mic_route(self, output, on):
+        mic = self.strips.get("Mic")
+        button = None if mic is None else mic.route_buttons.get(output)
+        if button is None or not self.connected:
+            return
+        if button.isChecked() != on:
+            button.setChecked(on)
+            mic.on_route_clicked(output, on)
+        self.sync_tray()
+
+    def toggle_mic_listen(self):
+        listening, _stream = self.mic_shortcut_state()
+        self.set_mic_route(self.listen_bus_setting(), not listening)
+
+    def toggle_stream_mute(self):
+        _listening, stream_muted = self.mic_shortcut_state()
+        if stream_muted is None:
+            self.sync_tray()
+            return
+        # Muted for the stream means: not routed to the stream's output.
+        self.set_mic_route(self.stream_bus_setting(), stream_muted)
+
+    def sync_mic_shortcuts(self):
+        if not hasattr(self, "listen_button"):
+            return
+        listening, stream_muted = self.mic_shortcut_state()
+        listen_bus = self.listen_bus_setting()
+        self.listen_button.setChecked(listening)
+        self.listen_button.setEnabled(self.connected)
+        self.listen_button.setToolTip(
+            f"Hear your microphone on {listen_bus}. Change the output under "
+            "Settings, General."
+        )
+        self.stream_mute_button.setChecked(bool(stream_muted))
+        self.stream_mute_button.setEnabled(
+            self.connected and stream_muted is not None
+        )
+        if stream_muted is None:
+            self.stream_mute_button.setToolTip(
+                "Choose the output your stream hears under Settings, "
+                "General to use this."
+            )
+        else:
+            self.stream_mute_button.setToolTip(
+                "Take your microphone off "
+                f"{self.stream_bus_setting()}, the output your stream hears."
+            )
 
     def step_strip_gain(self, name, decibels):
         """Move a strip's fader, also while the window is hidden."""

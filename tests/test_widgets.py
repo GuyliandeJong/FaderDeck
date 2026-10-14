@@ -381,12 +381,13 @@ class MainWindowTest(unittest.TestCase):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
         self.assertEqual(set(dialog.hotkey_edits), {a.key for a in main.HOTKEYS})
         self.assertEqual(dialog.tabs.tabText(0), "General")
-        self.assertEqual(dialog.tabs.tabText(2), "Hotkeys")
+        self.assertEqual(dialog.tabs.tabText(1), "Microphone")
+        self.assertEqual(dialog.tabs.tabText(3), "Hotkeys")
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
                           "theme", "themes", "check_updates", "mute_sound",
-                          "mute_sound_device",
+                          "mute_sound_device", "listen_bus", "stream_bus",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
@@ -469,6 +470,61 @@ class MainWindowTest(unittest.TestCase):
             self.assertIs(control.target,
                           getattr(self.sandbox.vm.strip[2], control.ATTRIBUTE))
         self.assertEqual(main.STRIPS["Mic"], 2)
+
+    def hotkey_action(self, key):
+        return next(a for a in main.HOTKEYS if a.key == key)
+
+    def test_push_to_talk_unmutes_while_held_and_mutes_again(self):
+        mic = self.window.strips["Mic"]
+        self.window.set_mic_mute(True)
+        self.window.window_settings.setValue("hotkey_mic_push_to_talk", "Ctrl+Alt+T")
+        held = [True]
+        self.window.key_is_down = lambda key: held[0]
+        sounds = len(self.sandbox.mute_sounds)
+        self.window.on_hotkey(self.hotkey_action("hotkey_mic_push_to_talk").id)
+        self.assertFalse(mic.mute_button.isChecked())
+        self.window.check_held_key()
+        self.assertFalse(mic.mute_button.isChecked())  # still held
+        held[0] = False
+        self.window.check_held_key()
+        self.assertTrue(mic.mute_button.isChecked())
+        self.assertEqual(len(self.sandbox.mute_sounds), sounds)  # no chime
+
+    def test_hold_to_mute_puts_the_old_state_back(self):
+        mic = self.window.strips["Mic"]
+        self.window.set_mic_mute(False)
+        self.window.window_settings.setValue("hotkey_mic_hold_mute", "Ctrl+Alt+H")
+        held = [True]
+        self.window.key_is_down = lambda key: held[0]
+        self.window.on_hotkey(self.hotkey_action("hotkey_mic_hold_mute").id)
+        self.assertTrue(mic.mute_button.isChecked())
+        held[0] = False
+        self.window.check_held_key()
+        self.assertFalse(mic.mute_button.isChecked())
+
+    def test_listen_routes_the_mic_to_your_output(self):
+        mic = self.window.strips["Mic"]
+        self.window.window_settings.setValue("listen_bus", "A2")
+        self.window.toggle_mic_listen()
+        self.assertTrue(mic.route_buttons["A2"].isChecked())
+        self.assertTrue(self.window.listen_button.isChecked())
+        self.assertEqual(self.window.handle_api_call("POST", ["listen"], {"state": "off"}),
+                         (200, {"listen": False}))
+        self.assertFalse(mic.route_buttons["A2"].isChecked())
+
+    def test_stream_mute_needs_the_stream_output_and_takes_the_mic_off_it(self):
+        mic = self.window.strips["Mic"]
+        status, _answer = self.window.handle_api_call("POST", ["stream-mute"], {})
+        self.assertEqual(status, 409)
+        self.assertFalse(self.window.stream_mute_button.isEnabled())
+        self.window.window_settings.setValue("stream_bus", "B2")
+        self.window.set_mic_route("B2", True)
+        self.window.toggle_stream_mute()
+        self.assertFalse(mic.route_buttons["B2"].isChecked())
+        self.assertTrue(self.window.stream_mute_button.isChecked())
+        self.assertEqual(self.window.api_state()["stream_mute"], True)
+        self.window.toggle_stream_mute()
+        self.assertTrue(mic.route_buttons["B2"].isChecked())
 
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []
