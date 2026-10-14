@@ -192,6 +192,15 @@ class PhoneRemoteTest(unittest.TestCase):
         self.window.apply_settings(dialog.values())
         self.assertEqual(self.window.remote_devices_setting(), [])
 
+    def test_ok_keeps_a_running_remote_running(self):
+        self.window.register_hotkeys = lambda: []
+        self.window.window_settings.setValue("remote_enabled", True)
+        self.window.window_settings.setValue("remote_port", self.remote.port)
+        server = self.remote.server
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        self.window.apply_settings(dialog.values())
+        self.assertIs(self.remote.server, server)
+
     def test_other_sites_cannot_use_a_paired_token(self):
         code = self.remote.new_code()
         token = self.pair(code)[1]["token"]

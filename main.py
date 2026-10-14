@@ -1512,6 +1512,10 @@ class PhoneRemote(QObject):
         if thread is not None:
             thread.join(timeout=1.0)
 
+    def set_devices(self, devices):
+        with self.lock:
+            self.devices = set(devices)
+
     def new_code(self):
         """A fresh six-digit pairing code, valid for a short while."""
         with self.lock:
@@ -7768,9 +7772,19 @@ class MainWindow(QMainWindow):
         """Start or stop the phone remote to match the settings.
 
         Returns a message when it should run but cannot, else an empty string.
+        A remote that already runs as asked keeps running, so pressing OK in
+        Settings does not drop the connected phones.
         """
-        self.phone_remote.stop()
         current = self.current_settings()
+        remote = self.phone_remote
+        if (
+            current["remote_enabled"]
+            and remote.server is not None
+            and remote.port == current["remote_port"]
+        ):
+            remote.set_devices(current["remote_devices"])
+            return ""
+        remote.stop()
         if not current["remote_enabled"]:
             return ""
         try:
