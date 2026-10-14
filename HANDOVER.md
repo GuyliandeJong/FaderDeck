@@ -444,7 +444,7 @@ Potential roadmap:
 - start with Windows/minimized
 - OBS / Stream Deck integration
 - local API / Home Assistant integration
-- Android app to remote-control FaderDeck from a tablet or phone
+- phone and tablet remote (done in v1.10.0)
 - themes and DPI improvements
 - Windows installer
 - automatic updates

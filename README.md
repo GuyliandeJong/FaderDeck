@@ -71,6 +71,8 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 
 Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
 
+![Microphone settings](screenshots/settings-microphone.png)
+
 ### Global Hotkeys
 
 Hotkeys work while FaderDeck is in the background or hidden in the tray. Set them under Settings, Hotkeys.
@@ -350,12 +352,14 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote.
 
 Next, roughly in this order:
 
-1. Support for VoiceMeeter Banana and the standard edition
-2. An Android app to control FaderDeck from a tablet or phone on your own network
+1. A separate stream mix: other volumes for your viewers than for you
+2. A Stream Deck plugin
+3. Support for VoiceMeeter Banana and the standard edition
+4. MIDI controllers as physical faders
 
 Postponed: a signed EXE, so Windows does not warn about it. It needs a paid code-signing certificate.
 

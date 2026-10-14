@@ -201,7 +201,7 @@ Potential areas:
 - system tray
 - OBS/Stream Deck
 - local API/Home Assistant
-- Android app to remote-control FaderDeck from a tablet or phone
+- phone and tablet remote (done in v1.10.0, as a web page served by FaderDeck)
 - themes/DPI improvements
 - installer
 - automatic updates
