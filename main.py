@@ -1,5 +1,6 @@
 import sys
 import math
+import array
 import atexit
 import concurrent.futures
 import ctypes
@@ -19,6 +20,8 @@ import tempfile
 import time
 import urllib.request
 import warnings
+import wave
+import winsound
 import threading
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -865,6 +868,50 @@ class UpdateChecker(QObject):
             return not self.cancelled
 
         self._run(lambda: self.downloaded.emit(download_update(update, progress)))
+
+
+# Mute sounds: two short notes, falling when the microphone is muted and
+# rising when it is unmuted. They are written once as WAV files and Windows
+# plays them without waiting, on its default output device.
+MUTE_SOUND_NOTES = {True: (880, 587), False: (587, 880)}  # Hz, by muted
+_mute_sound_files = {}
+
+
+def write_tone(path, notes, note_ms=70, volume=0.25, rate=44100):
+    """Write a mono 16-bit WAV of the notes, one after the other."""
+    samples = array.array("h")
+    count = rate * note_ms // 1000
+    ramp = rate // 200  # 5 ms in and out, so the notes do not click
+    for frequency in notes:
+        for i in range(count):
+            fade = min(1.0, i / ramp, (count - i) / ramp)
+            samples.append(int(32767 * volume * fade * math.sin(
+                2 * math.pi * frequency * i / rate
+            )))
+    with wave.open(path, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(samples.tobytes())
+
+
+def play_mute_sound(muted):
+    try:
+        path = _mute_sound_files.get(muted)
+        if path is None:
+            folder = os.path.join(tempfile.gettempdir(), "FaderDeck")
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(
+                folder, "mic-muted.wav" if muted else "mic-unmuted.wav"
+            )
+            write_tone(path, MUTE_SOUND_NOTES[muted])
+            _mute_sound_files[muted] = path
+        winsound.PlaySound(
+            path,
+            winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+        )
+    except Exception as e:
+        log.debug(f"Could not play the mute sound: {e}")
 
 
 # Global hotkeys: they work while FaderDeck is in the background, through
@@ -3013,6 +3060,10 @@ class StripWidget(QWidget):
                 f"Failed to set {self.name} mute: "
                 f"{type(e).__name__}: {e}"
             )
+            return
+        # Every way of muting comes here: button, hotkey, tray, API, profile.
+        if self.name == "Mic" and setting_bool(app_settings(), "mute_sound", True):
+            play_mute_sound(checked)
 
     def on_solo_clicked(self, checked):
         try:
@@ -4947,6 +4998,12 @@ class SettingsDialog(QDialog):
             "The VoiceMeeter input your microphone is on. "
             "Used after FaderDeck is restarted."
         )
+        self.mute_sound = QCheckBox(
+            "Play a sound when the microphone is muted or unmuted"
+        )
+        self.mute_sound.setChecked(current["mute_sound"])
+        self.form.addRow(self.mute_sound)
+        self.add_note("It plays on the Windows default output device.")
 
         self.add_heading("CHANNEL NAMES")
         self.channel_names = {}
@@ -5263,6 +5320,7 @@ class SettingsDialog(QDialog):
             "close_to_tray": self.close_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
             "check_updates": self.check_updates.isChecked(),
+            "mute_sound": self.mute_sound.isChecked(),
             "api_enabled": self.api_enabled.isChecked(),
             "api_port": self.api_port.value(),
             "api_token": self.api_token.text(),
@@ -6894,6 +6952,7 @@ class MainWindow(QMainWindow):
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
             "start_minimized": setting_bool(settings, "start_minimized", False),
             "check_updates": setting_bool(settings, "check_updates", True),
+            "mute_sound": setting_bool(settings, "mute_sound", True),
             "api_enabled": setting_bool(settings, "api_enabled", False),
             "api_port": self.api_port_setting(),
             "api_token": str(settings.value("api_token", "") or ""),

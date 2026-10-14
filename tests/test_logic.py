@@ -219,6 +219,18 @@ class ThemeTest(unittest.TestCase):
                 self.assertEqual(clean[key], wanted)
 
 
+class MuteSoundTest(unittest.TestCase):
+    def test_tone_is_a_short_mono_wav(self):
+        import tempfile, wave
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "tone.wav")
+            main.write_tone(path, (587, 880), note_ms=70, rate=44100)
+            with wave.open(path) as handle:
+                self.assertEqual(handle.getnchannels(), 1)
+                self.assertEqual(handle.getsampwidth(), 2)
+                self.assertEqual(handle.getnframes(), 2 * 44100 * 70 // 1000)
+
+
 class UpdateTest(unittest.TestCase):
     DIGEST = "sha256:" + "ab" * 32
 

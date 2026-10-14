@@ -385,7 +385,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
-                          "theme", "themes", "check_updates",
+                          "theme", "themes", "check_updates", "mute_sound",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
@@ -418,6 +418,17 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(dialog.delete_theme_button.isEnabled())
         dialog.reject()
         self.assertEqual(button.styleSheet(), dark)
+
+    def test_muting_the_mic_plays_a_sound_unless_switched_off(self):
+        sounds = self.sandbox.mute_sounds
+        self.window.toggle_mic_mute()
+        self.window.toggle_mic_mute()
+        self.assertEqual(sounds, [True, False])
+        self.window.toggle_strip_mute("Game")
+        self.assertEqual(sounds, [True, False])
+        self.window.window_settings.setValue("mute_sound", False)
+        self.window.toggle_mic_mute()
+        self.assertEqual(sounds, [True, False])
 
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []

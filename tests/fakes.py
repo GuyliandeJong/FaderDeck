@@ -203,6 +203,8 @@ class Sandbox:
         self._patch("QSettings", FakeSettings)
         self._patch("PYCAW_AVAILABLE", False)
         self._patch("voicemeeter_is_running", lambda: self.running)
+        self.mute_sounds = []  # played instead of heard
+        self._patch("play_mute_sound", self.mute_sounds.append)
         self._saved_api = main.voicemeeterlib.api
         main.voicemeeterlib.api = lambda *args, **kwargs: self.vm
         self._saved_strips = dict(main.STRIPS)
