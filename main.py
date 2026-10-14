@@ -1945,7 +1945,8 @@ class ProcessingPanel(QWidget):
                 edit.setText(
                     self.format_actual(key, getattr(self.target, key))
                 )
-            except Exception:
+            except Exception as e:
+                log.debug(f"Could not read {key} back from the mixer: {e}")
                 pass
 
     def on_slider_changed(self, key, value):
@@ -2015,7 +2016,8 @@ class ProcessingPanel(QWidget):
                 self._bypassed = state
                 self.bypass_button.setChecked(True)
                 return
-        except Exception:
+        except Exception as e:
+            log.debug(f"Could not restore the bypassed {self.ATTRIBUTE}: {e}")
             pass
         self.settings.remove(self._bypass_setting())
 
@@ -2795,7 +2797,8 @@ class StripWidget(QWidget):
             try:
                 button.blockSignals(True)
                 button.setChecked(bool(getattr(self.strip, output)))
-            except Exception:
+            except Exception as e:
+                log.debug(f"Could not read {self.name} route {output}: {e}")
                 pass
             finally:
                 button.blockSignals(False)
@@ -3226,7 +3229,8 @@ class ApplicationAudioWorker(QObject):
                     result.append((session, meter))
                 except Exception:
                     continue
-        except Exception:
+        except Exception as e:
+            log.debug(f"Could not list the sessions of a device: {e}")
             return []
         return result
 
@@ -3676,7 +3680,8 @@ class ApplicationAudioWorker(QObject):
                     )
                     member["volume"] = volume
                     successful += 1
-                except Exception:
+                except Exception as e:
+                    log.warning(f"Could not set the volume of one session: {e}")
                     continue
 
             if successful:
@@ -3709,7 +3714,8 @@ class ApplicationAudioWorker(QObject):
                     )
                     member["muted"] = bool(muted)
                     successful += 1
-                except Exception:
+                except Exception as e:
+                    log.warning(f"Could not mute one session: {e}")
                     continue
 
             if successful:
@@ -5978,7 +5984,8 @@ class MainWindow(QMainWindow):
                     label: control.preset_state()
                     for label, control in blocks.items()
                 }
-            except Exception:
+            except Exception as e:
+                log.debug(f"Mic processing left out of the profile state: {e}")
                 pass
         return state
 
@@ -6185,7 +6192,8 @@ class MainWindow(QMainWindow):
                 continue
             try:
                 amount = float(control.target.knob)
-            except Exception:
+            except Exception as e:
+                log.debug(f"Could not read {label} amount: {e}")
                 continue
             if control._bypassed is not None:
                 state, mark = "bypassed", " · BYPASSED"
