@@ -386,6 +386,7 @@ class MainWindowTest(unittest.TestCase):
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
                           "theme", "themes", "check_updates", "mute_sound",
+                          "mute_sound_device",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
@@ -422,13 +423,34 @@ class MainWindowTest(unittest.TestCase):
     def test_muting_the_mic_plays_a_sound_unless_switched_off(self):
         sounds = self.sandbox.mute_sounds
         self.window.toggle_mic_mute()
+        self.window.window_settings.setValue("mute_sound_device", "Headphones")
         self.window.toggle_mic_mute()
-        self.assertEqual(sounds, [True, False])
+        self.assertEqual(sounds, [(True, ""), (False, "Headphones")])
         self.window.toggle_strip_mute("Game")
-        self.assertEqual(sounds, [True, False])
         self.window.window_settings.setValue("mute_sound", False)
         self.window.toggle_mic_mute()
-        self.assertEqual(sounds, [True, False])
+        self.assertEqual(len(sounds), 2)
+
+    def test_settings_window_names_hotkeys_another_program_holds(self):
+        self.window.refused_hotkeys = {
+            "hotkey_mic_mute": ("Ctrl+Alt+M", "Mute microphone")}
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        texts = [label.text() for label in dialog.findChildren(main.QLabel)]
+        self.assertTrue(any("Ctrl+Alt+M (Mute microphone)" in t for t in texts))
+        self.assertIn("f85149", dialog.hotkey_edits["hotkey_mic_mute"].styleSheet())
+        self.assertEqual(dialog.hotkey_edits["hotkey_game_mute"].styleSheet(), "")
+
+    def test_mic_input_changes_without_a_restart(self):
+        self.window.set_mic_input(2)
+        mic = self.window.strips["Mic"]
+        self.assertEqual(mic.strip_index, 2)
+        self.assertIs(mic.strip, self.sandbox.vm.strip[2])
+        self.assertEqual(mic.source_label.text(), "Stereo Input 3")
+        for control in self.window.processing_blocks().values():
+            self.assertEqual(control.strip_index, 2)
+            self.assertIs(control.target,
+                          getattr(self.sandbox.vm.strip[2], control.ATTRIBUTE))
+        self.assertEqual(main.STRIPS["Mic"], 2)
 
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []

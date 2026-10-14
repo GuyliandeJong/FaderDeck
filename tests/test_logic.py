@@ -226,16 +226,11 @@ class ThemeTest(unittest.TestCase):
 
 
 class MuteSoundTest(unittest.TestCase):
-    def test_chime_is_a_short_mono_wav_that_fades_out(self):
-        import array, tempfile, wave
-        with tempfile.TemporaryDirectory() as folder:
-            path = os.path.join(folder, "chime.wav")
-            main.write_chime(path, (660, 880), step_ms=70, decay_ms=60, rate=44100)
-            with wave.open(path) as handle:
-                self.assertEqual(handle.getnchannels(), 1)
-                self.assertEqual(handle.getsampwidth(), 2)
-                frames = handle.getnframes()
-                samples = array.array("h", handle.readframes(frames))
+    def test_chime_is_short_and_fades_out(self):
+        import array
+        samples = array.array("h", main.chime_samples(
+            (660, 880), step_ms=70, decay_ms=60, rate=44100))
+        frames = len(samples)
         self.assertEqual(frames, 44100 * 70 // 1000 + 44100 * 60 * 6 // 1000)
         self.assertLess(frames / 44100, 0.5)  # a short cue, not a jingle
         self.assertLess(max(abs(v) for v in samples[-200:]), 200)  # no click at the end

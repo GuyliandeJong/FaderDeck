@@ -26,7 +26,7 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 
 - Fader with a dB scale, and live level meters on every channel
 - Mute, Solo and Mono
-- A soft sound when the microphone is muted or unmuted, so you hear it without looking (can be switched off)
+- A soft sound when the microphone is muted or unmuted, so you hear it without looking. Choose the device it plays on, such as your headphones, so your stream does not pick it up; or switch it off
 - Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter
 - Your own names for Game, Chat and Media (Settings, General), for example "Music" instead of "Media"
 - Reconnects by itself when VoiceMeeter is closed and started again
@@ -72,7 +72,7 @@ Hotkeys work while FaderDeck is in the background or hidden in the tray. Set the
 
 ![Hotkey settings](screenshots/settings-hotkeys.png)
 
-A hotkey is taken from every other program while FaderDeck runs, so pick combinations you do not use elsewhere.
+A hotkey is taken from every other program while FaderDeck runs, so pick combinations you do not use elsewhere. When another program already has one, FaderDeck tells you at start and marks it in Settings, Hotkeys.
 
 ### System Tray
 
@@ -333,7 +333,8 @@ Next, roughly in this order:
 
 1. Support for VoiceMeeter Banana and the standard edition
 2. An Android app to control FaderDeck from a tablet or phone on your own network
-3. A signed EXE, so Windows does not warn about it (needs a code-signing certificate)
+
+Postponed: a signed EXE, so Windows does not warn about it. It needs a paid code-signing certificate.
 
 ## Support
 

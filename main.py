@@ -20,8 +20,6 @@ import tempfile
 import time
 import urllib.request
 import warnings
-import wave
-import winsound
 import threading
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -919,18 +917,20 @@ class UpdateChecker(QObject):
 # Mute sounds: two soft notes, falling when the microphone is muted and
 # rising when it is unmuted. Each note is a chime: a warm overtone, a natural
 # fade and a slight drop onto its pitch, rather than a flat beep. They are
-# written once as WAV files and Windows plays them without waiting, on its
-# default output device.
+# played through winmm's waveOut, which, unlike winsound, can play on a
+# chosen device: the user's headphones rather than something the stream
+# captures.
 MUTE_SOUND_NOTES = {True: (784, 523), False: (523, 784)}  # Hz, by muted
 MUTE_SOUND_SHAPE = {"step_ms": 85, "decay_ms": 110, "drop": 0.02, "overtone": 0.25}
-_mute_sound_files = {}
+SOUND_RATE = 44100
+_mute_sounds = {}
 
 
-def write_chime(
-    path, notes, step_ms=70, decay_ms=60, drop=0.06, overtone=0.12,
-    volume=0.35, rate=44100,
+def chime_samples(
+    notes, step_ms=70, decay_ms=60, drop=0.06, overtone=0.12,
+    volume=0.35, rate=SOUND_RATE,
 ):
-    """Write a mono 16-bit WAV of the notes, each starting step_ms apart.
+    """Mono 16-bit samples of the notes, each starting step_ms apart.
 
     decay_ms: how fast a note fades. drop: how far sharp a note starts
     (0.06 is 6 %). overtone: loudness of the octave above, for warmth.
@@ -951,33 +951,130 @@ def write_chime(
                 math.sin(phase) + overtone * math.sin(2 * phase)
             )
     peak = max(abs(value) for value in mix) or 1.0
-    samples = array.array(
+    return array.array(
         "h", (int(32767 * volume * value / peak) for value in mix)
-    )
-    with wave.open(path, "wb") as handle:
-        handle.setnchannels(1)
-        handle.setsampwidth(2)
-        handle.setframerate(rate)
-        handle.writeframes(samples.tobytes())
+    ).tobytes()
 
 
-def play_mute_sound(muted):
-    try:
-        path = _mute_sound_files.get(muted)
-        if path is None:
-            folder = os.path.join(tempfile.gettempdir(), "FaderDeck")
-            os.makedirs(folder, exist_ok=True)
-            path = os.path.join(
-                folder, "mic-muted.wav" if muted else "mic-unmuted.wav"
-            )
-            write_chime(path, MUTE_SOUND_NOTES[muted], **MUTE_SOUND_SHAPE)
-            _mute_sound_files[muted] = path
-        winsound.PlaySound(
-            path,
-            winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+WAVE_MAPPER = 0xFFFFFFFF  # waveOut's id for the Windows default device
+WHDR_DONE = 0x00000001
+
+
+class _WaveFormat(ctypes.Structure):
+    _fields_ = [
+        ("wFormatTag", ctypes.wintypes.WORD),
+        ("nChannels", ctypes.wintypes.WORD),
+        ("nSamplesPerSec", ctypes.wintypes.DWORD),
+        ("nAvgBytesPerSec", ctypes.wintypes.DWORD),
+        ("nBlockAlign", ctypes.wintypes.WORD),
+        ("wBitsPerSample", ctypes.wintypes.WORD),
+        ("cbSize", ctypes.wintypes.WORD),
+    ]
+
+
+class _WaveHeader(ctypes.Structure):
+    _fields_ = [
+        ("lpData", ctypes.c_char_p),
+        ("dwBufferLength", ctypes.wintypes.DWORD),
+        ("dwBytesRecorded", ctypes.wintypes.DWORD),
+        ("dwUser", ctypes.c_size_t),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("dwLoops", ctypes.wintypes.DWORD),
+        ("lpNext", ctypes.c_void_p),
+        ("reserved", ctypes.c_size_t),
+    ]
+
+
+class _WaveOutCaps(ctypes.Structure):
+    _fields_ = [
+        ("wMid", ctypes.wintypes.WORD),
+        ("wPid", ctypes.wintypes.WORD),
+        ("vDriverVersion", ctypes.c_uint),
+        ("szPname", ctypes.c_wchar * 32),
+        ("dwFormats", ctypes.wintypes.DWORD),
+        ("wChannels", ctypes.wintypes.WORD),
+        ("wReserved1", ctypes.wintypes.WORD),
+        ("dwSupport", ctypes.wintypes.DWORD),
+    ]
+
+
+def _winmm():
+    winmm = ctypes.WinDLL("winmm")
+    handle = ctypes.c_void_p
+    for name, argtypes in (
+        ("waveOutGetDevCapsW", (ctypes.c_size_t, ctypes.POINTER(_WaveOutCaps), ctypes.c_uint)),
+        ("waveOutOpen", (ctypes.POINTER(handle), ctypes.c_uint, ctypes.POINTER(_WaveFormat),
+                         ctypes.c_size_t, ctypes.c_size_t, ctypes.wintypes.DWORD)),
+        ("waveOutPrepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveOutWrite", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveOutUnprepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveOutClose", (handle,)),
+    ):
+        function = getattr(winmm, name)
+        function.argtypes = argtypes
+        function.restype = ctypes.c_uint
+    winmm.waveOutGetNumDevs.restype = ctypes.c_uint
+    return winmm
+
+
+def sound_devices():
+    """Names of the devices Windows can play a sound on.
+
+    waveOut keeps only the first 31 characters of a name.
+    """
+    winmm = _winmm()
+    names = []
+    for index in range(winmm.waveOutGetNumDevs()):
+        caps = _WaveOutCaps()
+        if winmm.waveOutGetDevCapsW(index, ctypes.byref(caps), ctypes.sizeof(caps)) == 0:
+            names.append(caps.szPname)
+    return names
+
+
+def play_samples(data, device=""):
+    """Play mono 16-bit samples on a device, by name, without waiting.
+
+    An empty or unknown name plays on the Windows default device.
+    """
+
+    def run():
+        winmm = _winmm()
+        names = sound_devices()
+        device_id = names.index(device) if device in names else WAVE_MAPPER
+        sound_format = _WaveFormat(1, 1, SOUND_RATE, SOUND_RATE * 2, 2, 16, 0)
+        handle = ctypes.c_void_p()
+        if winmm.waveOutOpen(ctypes.byref(handle), device_id,
+                             ctypes.byref(sound_format), 0, 0, 0):
+            log.debug(f"Could not open {device or 'the default device'} for a sound")
+            return
+        buffer = ctypes.create_string_buffer(data, len(data))
+        header = _WaveHeader(ctypes.cast(buffer, ctypes.c_char_p), len(data))
+        size = ctypes.sizeof(header)
+        try:
+            winmm.waveOutPrepareHeader(handle, ctypes.byref(header), size)
+            winmm.waveOutWrite(handle, ctypes.byref(header), size)
+            deadline = time.monotonic() + 5
+            while not header.dwFlags & WHDR_DONE and time.monotonic() < deadline:
+                time.sleep(0.02)
+            winmm.waveOutUnprepareHeader(handle, ctypes.byref(header), size)
+        finally:
+            winmm.waveOutClose(handle)
+
+    def guarded():
+        try:
+            run()
+        except Exception as e:
+            log.debug(f"Could not play a sound: {e}")
+
+    threading.Thread(target=guarded, name="FaderDeckSound", daemon=True).start()
+
+
+def play_mute_sound(muted, device=""):
+    if muted not in _mute_sounds:
+        _mute_sounds[muted] = chime_samples(
+            MUTE_SOUND_NOTES[muted], **MUTE_SOUND_SHAPE
         )
-    except Exception as e:
-        log.debug(f"Could not play the mute sound: {e}")
+    play_samples(_mute_sounds[muted], device)
 
 
 # Global hotkeys: they work while FaderDeck is in the background, through
@@ -3128,8 +3225,11 @@ class StripWidget(QWidget):
             )
             return
         # Every way of muting comes here: button, hotkey, tray, API, profile.
-        if self.name == "Mic" and setting_bool(app_settings(), "mute_sound", True):
-            play_mute_sound(checked)
+        settings = app_settings()
+        if self.name == "Mic" and setting_bool(settings, "mute_sound", True):
+            play_mute_sound(
+                checked, str(settings.value("mute_sound_device", "") or "")
+            )
 
     def on_solo_clicked(self, checked):
         try:
@@ -5060,16 +5160,37 @@ class SettingsDialog(QDialog):
             self.mic_input.addItem(self.input_name(vm, index), index)
         self.mic_input.setCurrentIndex(current["mic_strip"])
         self.form.addRow("Microphone input", self.mic_input)
-        self.add_note(
-            "The VoiceMeeter input your microphone is on. "
-            "Used after FaderDeck is restarted."
-        )
+        self.add_note("The VoiceMeeter input your microphone is on.")
         self.mute_sound = QCheckBox(
             "Play a sound when the microphone is muted or unmuted"
         )
         self.mute_sound.setChecked(current["mute_sound"])
         self.form.addRow(self.mute_sound)
-        self.add_note("It plays on the Windows default output device.")
+        self.sound_device = QComboBox()
+        self.sound_device.addItem("Windows default", "")
+        try:
+            devices = sound_devices()
+        except Exception:
+            devices = []
+        chosen = current["mute_sound_device"]
+        if chosen and chosen not in devices:
+            devices.append(chosen)  # not connected now; keep the choice
+        for device in devices:
+            self.sound_device.addItem(device, device)
+        self.sound_device.setCurrentIndex(max(0, self.sound_device.findData(chosen)))
+        test_sound = QPushButton("TEST")
+        test_sound.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        test_sound.clicked.connect(
+            lambda: play_mute_sound(True, self.sound_device.currentData())
+        )
+        sound_row = QHBoxLayout()
+        sound_row.addWidget(self.sound_device, 1)
+        sound_row.addWidget(test_sound)
+        self.form.addRow("Sound device", sound_row)
+        self.add_note(
+            "Pick a device your stream does not capture, such as your "
+            "headphones, so viewers do not hear it."
+        )
 
         self.add_heading("CHANNEL NAMES")
         self.channel_names = {}
@@ -5158,6 +5279,16 @@ class SettingsDialog(QDialog):
             "it off."
         )
         self.hotkey_edits = {}
+        taken = getattr(self.parent(), "refused_hotkeys", {})
+        if taken:
+            warning = QLabel(
+                "Another program already uses "
+                + ", ".join(f"{text} ({label})" for text, label in taken.values())
+                + ". Pick another combination, or close that program."
+            )
+            warning.setWordWrap(True)
+            warning.setStyleSheet("color: #f85149;")
+            self.form.addRow(warning)
         group = None
         for action in HOTKEYS:
             if action.group != group:
@@ -5169,6 +5300,9 @@ class SettingsDialog(QDialog):
             label = action.label
             for channel, key in CHANNEL_NAME_KEYS.items():
                 label = label.replace(channel, current[key] or channel)
+            if action.key in taken:
+                edit.setStyleSheet("QLineEdit { border: 1px solid #f85149; }")
+                edit.setToolTip("Another program already uses this combination.")
             self.form.addRow(label, edit)
             self.hotkey_edits[action.key] = edit
 
@@ -5387,6 +5521,7 @@ class SettingsDialog(QDialog):
             "start_minimized": self.start_minimized.isChecked(),
             "check_updates": self.check_updates.isChecked(),
             "mute_sound": self.mute_sound.isChecked(),
+            "mute_sound_device": self.sound_device.currentData(),
             "api_enabled": self.api_enabled.isChecked(),
             "api_port": self.api_port.value(),
             "api_token": self.api_token.text(),
@@ -5967,7 +6102,15 @@ class MainWindow(QMainWindow):
         self.restart_api()
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
-        self.register_hotkeys()
+        if self.register_hotkeys() and self.tray is not None:
+            taken = ", ".join(text for text, _label in self.refused_hotkeys.values())
+            self.tray.showMessage(
+                "FaderDeck",
+                f"Another program already uses {taken}. "
+                "Pick another combination under Settings, Hotkeys.",
+                self.tray.icon(),
+                8000,
+            )
 
         # Connect to VoiceMeeter, then keep watching: it can be closed and
         # started again while FaderDeck stays open.
@@ -7021,6 +7164,7 @@ class MainWindow(QMainWindow):
             "start_minimized": setting_bool(settings, "start_minimized", False),
             "check_updates": setting_bool(settings, "check_updates", True),
             "mute_sound": setting_bool(settings, "mute_sound", True),
+            "mute_sound_device": str(settings.value("mute_sound_device", "") or ""),
             "api_enabled": setting_bool(settings, "api_enabled", False),
             "api_port": self.api_port_setting(),
             "api_token": str(settings.value("api_token", "") or ""),
@@ -7053,6 +7197,31 @@ class MainWindow(QMainWindow):
             if title is not None:
                 title.setText(f"{label.upper()} APPS")
 
+    def set_mic_input(self, index):
+        """Move the Mic strip and its processing to another hardware input."""
+        previous = STRIPS["Mic"]
+        set_mic_strip(index)
+        index = STRIPS["Mic"]
+        if index == previous or self.vm is None:
+            return
+        mic = self.strips.get("Mic")
+        if mic is not None:
+            mic.strip_index = index
+            mic.strip = self.vm.strip[index]
+            mic.source_label.setText(f"Stereo Input {index + 1}")
+        for control in self.processing_blocks().values():
+            if control is not None:
+                # A bypass keeps values of the old input; do not restore them here.
+                control._clear_bypass()
+                control.strip_index = index
+                control.target = getattr(self.vm.strip[index], control.ATTRIBUTE)
+        if self.connected:
+            if mic is not None:
+                mic.sync_from_voicemeeter()
+            self.sync_processing_controls()
+            self.update_processing_summary()
+        log.info(f"Microphone input is now input {index + 1}")
+
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
         for key, value in values.items():
@@ -7061,6 +7230,7 @@ class MainWindow(QMainWindow):
             self.window_settings.setValue(key, value)
         self.window_settings.sync()
         apply_theme(values["theme"])
+        self.set_mic_input(values["mic_strip"])
         self.refresh_channel_names()
 
         problem = self.restart_api()
@@ -7208,6 +7378,7 @@ class MainWindow(QMainWindow):
         hwnd = int(self.winId())
         current = self.current_settings()
         refused = []
+        self.refused_hotkeys = {}  # settings key -> (combination, label)
         for action in HOTKEYS:
             user32.UnregisterHotKey(hwnd, action.id)
             text = current[action.key]
@@ -7223,6 +7394,7 @@ class MainWindow(QMainWindow):
             if not user32.RegisterHotKey(hwnd, action.id, modifiers, virtual_key):
                 log.warning(f"Could not register {text} for {action.label}")
                 refused.append(text)
+                self.refused_hotkeys[action.key] = (text, action.label)
         return refused
 
     def unregister_hotkeys(self):
