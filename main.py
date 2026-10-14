@@ -1157,6 +1157,21 @@ def route_name(vm, output):
     return output, f"{output} ({kind} {output[1]})"
 
 
+# Styles used in more than one place.
+SMALL_HEADING_STYLE = "color: #8ba0b5; font-size: 11px; font-weight: bold;"
+EYE_BUTTON_STYLE = (
+    "QPushButton { background: #18232e; border: 1px solid #314558; "
+    "border-radius: 6px; padding: 0 3px; color: #aebdca; "
+    "font-size: 11px; font-weight: bold; }"
+    "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
+)
+HEADER_BUTTON_STYLE = (
+    "QPushButton { background: #18232e; border: 1px solid #314558; "
+    "border-radius: 6px; padding: 0; }"
+    "QPushButton:hover { background: #243b52; }"
+    "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
+)
+
 # A theme recolours a channel by its colour values, so no other part of the
 # window may use them. These look the same but are one step off.
 PANEL_BORDER = "#24566c"
@@ -1719,7 +1734,7 @@ class ProcessingPanel(QWidget):
                 # Amount is VoiceMeeter's one-knob control; the rest fine-tune.
                 heading = QLabel("ADVANCED")
                 heading.setStyleSheet(
-                    "color: #8ba0b5; font-size: 11px; font-weight: bold; "
+                    SMALL_HEADING_STYLE + " "
                     "padding-top: 6px;"
                 )
                 grid.addWidget(heading, row, 0)
@@ -2665,9 +2680,7 @@ class StripWidget(QWidget):
 
         routing_title = QLabel("ROUTING")
         routing_title.setFixedHeight(ROUTING_LABEL_HEIGHT)
-        routing_title.setStyleSheet(
-            "color: #8ba0b5; font-size: 11px; font-weight: bold;"
-        )
+        routing_title.setStyleSheet(SMALL_HEADING_STYLE)
         layout.addWidget(routing_title)
         self.routing_title = routing_title
         layout.addSpacing(2)
@@ -4150,12 +4163,7 @@ class ApplicationControl(QWidget):
         self.hidden_button.setIconSize(QSize(20, 20))
         self.hidden_button.setToolTip("Show hidden applications")
         self.hidden_button.clicked.connect(self.toggle_hidden_visibility)
-        self.hidden_button.setStyleSheet(
-            "QPushButton { background: #18232e; border: 1px solid #314558; "
-            "border-radius: 6px; padding: 0 3px; color: #aebdca; "
-            "font-size: 11px; font-weight: bold; }"
-            "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
-        )
+        self.hidden_button.setStyleSheet(EYE_BUTTON_STYLE)
 
         toolbar.addWidget(self.status_label, 1)
         toolbar.addWidget(self.hidden_button)
@@ -4199,12 +4207,7 @@ class ApplicationControl(QWidget):
             bus_eye.setIcon(reference_eye_icon(18))
             bus_eye.setIconSize(QSize(18, 18))
             bus_eye.setToolTip(f"Show hidden applications on {bus}")
-            bus_eye.setStyleSheet(
-                "QPushButton { background: #18232e; border: 1px solid #314558; "
-                "border-radius: 6px; padding: 0 3px; color: #aebdca; "
-                "font-size: 11px; font-weight: bold; }"
-                "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
-            )
+            bus_eye.setStyleSheet(EYE_BUTTON_STYLE)
             bus_eye.clicked.connect(
                 lambda checked, b=bus: self.set_show_hidden(b, checked)
             )
@@ -5346,11 +5349,7 @@ class MainWindow(QMainWindow):
         set_mono_icon(self.settings_button, "settings", 18)
         self.settings_button.setIconSize(QSize(18, 18))
         self.settings_button.setToolTip("Settings")
-        self.settings_button.setStyleSheet(
-            "QPushButton { background: #18232e; border: 1px solid #314558; "
-            "border-radius: 6px; padding: 0; }"
-            "QPushButton:hover { background: #243b52; }"
-        )
+        self.settings_button.setStyleSheet(HEADER_BUTTON_STYLE)
         self.settings_button.clicked.connect(self.open_settings)
 
         self.compact_button = QPushButton()
@@ -5361,12 +5360,7 @@ class MainWindow(QMainWindow):
         self.compact_button.setToolTip(
             "Compact view: faders, meters and mute only"
         )
-        self.compact_button.setStyleSheet(
-            "QPushButton { background: #18232e; border: 1px solid #314558; "
-            "border-radius: 6px; padding: 0; }"
-            "QPushButton:hover { background: #243b52; }"
-            "QPushButton:checked { background: #243b52; border-color: #58a6ff; }"
-        )
+        self.compact_button.setStyleSheet(HEADER_BUTTON_STYLE)
         self.compact_button.clicked.connect(self.set_compact)
 
         header.addStretch()
@@ -5527,9 +5521,7 @@ class MainWindow(QMainWindow):
         profile_layout.setContentsMargins(6, 5, 6, 6)
         profile_layout.setSpacing(4)
         profile_title = QLabel("SETUP PROFILE")
-        profile_title.setStyleSheet(
-            "color: #8ba0b5; font-size: 11px; font-weight: bold;"
-        )
+        profile_title.setStyleSheet(SMALL_HEADING_STYLE)
         profile_title.setToolTip(
             "The whole setup under one name: gain, mute, solo, mono and "
             "routing of all four channels, and the mic processing. The "
@@ -5871,7 +5863,7 @@ class MainWindow(QMainWindow):
         level_row.setSpacing(8)
         level_title = QLabel("MIC INPUT")
         level_title.setStyleSheet(
-            "color: #8ba0b5; font-size: 11px; font-weight: bold; "
+            SMALL_HEADING_STYLE + " "
             "padding-bottom: 14px;"
         )
         self.mic_level_bar = MicLevelBar()
@@ -5883,9 +5875,7 @@ class MainWindow(QMainWindow):
         preset_row.setContentsMargins(4, 0, 4, 2)
         preset_row.setSpacing(6)
         preset_title = QLabel("VOICE PRESET")
-        preset_title.setStyleSheet(
-            "color: #8ba0b5; font-size: 11px; font-weight: bold;"
-        )
+        preset_title.setStyleSheet(SMALL_HEADING_STYLE)
         self.preset_list = QComboBox()
         self.preset_list.setToolTip(
             "Saved settings of the compressor, gate and denoiser together"
