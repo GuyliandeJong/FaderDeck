@@ -4162,6 +4162,12 @@ class ApplicationControl(QWidget):
             self.worker = None
             return
 
+        self._build_toolbar(layout)
+        self._build_columns(layout)
+        self._start_worker()
+
+    def _build_toolbar(self, layout):
+        """Status line, show-hidden and REFRESH."""
         toolbar = QHBoxLayout()
         self.status_label = QLabel("Scanning VoiceMeeter audio sessions...")
         self.status_label.setStyleSheet("color: #8b949e;")
@@ -4182,6 +4188,8 @@ class ApplicationControl(QWidget):
         toolbar.addWidget(refresh_button)
         layout.addLayout(toolbar)
 
+    def _build_columns(self, layout):
+        """One drop column per channel, with its title, eye button and list."""
         columns = QHBoxLayout()
         columns.setSpacing(4)
         self.bus_layouts = {}
@@ -4252,6 +4260,8 @@ class ApplicationControl(QWidget):
 
         layout.addLayout(columns, 1)
 
+    def _start_worker(self):
+        """Run the session worker on its own thread and connect it."""
         self.worker_thread = QThread(self)
         self.worker = ApplicationAudioWorker()
         self.worker.moveToThread(self.worker_thread)
