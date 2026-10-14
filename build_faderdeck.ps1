@@ -63,3 +63,24 @@ finally {
 }
 
 Write-Host "Built: $(Join-Path $projectDir 'dist\FaderDeck.exe')"
+
+# The installer, when Inno Setup 6 is installed. Its version is APP_VERSION.
+$iscc = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $iscc) {
+    Write-Host "Inno Setup 6 was not found, so no installer was built."
+    return
+}
+$match = Select-String -LiteralPath (Join-Path $projectDir "main.py") -Pattern '^APP_VERSION = "(.+)"'
+if (-not $match) {
+    throw "APP_VERSION was not found in main.py."
+}
+$version = $match.Matches[0].Groups[1].Value
+& $iscc /Q "/DAppVersion=$version" (Join-Path $projectDir "installer\faderdeck.iss")
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup failed to build the installer."
+}
+Write-Host "Built: $(Join-Path $projectDir 'dist\FaderDeck-Setup.exe') (version $version)"
