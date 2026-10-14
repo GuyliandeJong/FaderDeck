@@ -5673,9 +5673,7 @@ class MainWindow(QMainWindow):
             self.start_mic_level_worker()
 
             self.create_strips()
-            self.create_compressor()
-            self.create_gate()
-            self.create_denoiser()
+            self.create_processing_controls()
             self.create_applications()
 
             self.connected = True
@@ -5825,97 +5823,15 @@ class MainWindow(QMainWindow):
         if expanded:
             first_open = self.processing_dialog is None
             if first_open:
-                self.processing_dialog = QDialog(self)
-                self.processing_dialog.setWindowTitle("FaderDeck — Mic Processing")
-                self.processing_dialog.setWindowIcon(self.windowIcon())
-                self.processing_dialog.setModal(False)
-                self.processing_dialog.setWindowFlag(
-                    Qt.WindowType.WindowContextHelpButtonHint, False
-                )
-                self.processing_dialog.setMinimumSize(560, 540)
-                self.processing_dialog.resize(620, 560)
-
-                dialog_layout = QVBoxLayout(self.processing_dialog)
-                dialog_layout.setContentsMargins(8, 8, 8, 8)
-                dialog_layout.setSpacing(6)
-
-                level_row = QHBoxLayout()
-                level_row.setContentsMargins(4, 0, 4, 0)
-                level_row.setSpacing(8)
-                level_title = QLabel("MIC INPUT")
-                level_title.setStyleSheet(
-                    "color: #8ba0b5; font-size: 11px; font-weight: bold; "
-                    "padding-bottom: 14px;"
-                )
-                self.mic_level_bar = MicLevelBar()
-                level_row.addWidget(level_title)
-                level_row.addWidget(self.mic_level_bar, 1)
-                dialog_layout.addLayout(level_row)
-
-                preset_row = QHBoxLayout()
-                preset_row.setContentsMargins(4, 0, 4, 2)
-                preset_row.setSpacing(6)
-                preset_title = QLabel("VOICE PRESET")
-                preset_title.setStyleSheet(
-                    "color: #8ba0b5; font-size: 11px; font-weight: bold;"
-                )
-                self.preset_list = QComboBox()
-                self.preset_list.setToolTip(
-                    "Saved settings of the compressor, gate and denoiser together"
-                )
-                self.preset_load_button = QPushButton("LOAD")
-                self.preset_load_button.setToolTip(
-                    "Replace the compressor, gate and denoiser values with "
-                    "this preset. RESET brings back the values from when the "
-                    "window was opened."
-                )
-                self.preset_load_button.clicked.connect(self.on_preset_load)
-                save_button = QPushButton("SAVE AS…")
-                save_button.setToolTip("Save the current values as a preset")
-                save_button.clicked.connect(self.on_preset_save)
-                self.preset_delete_button = QPushButton("DELETE")
-                self.preset_delete_button.clicked.connect(self.on_preset_delete)
-                for button in (
-                    self.preset_load_button, save_button, self.preset_delete_button
-                ):
-                    button.setFixedHeight(26)
-                    button.setStyleSheet("QPushButton { padding: 2px 10px; }")
-                preset_row.addWidget(preset_title)
-                preset_row.addWidget(self.preset_list, 1)
-                preset_row.addWidget(self.preset_load_button)
-                preset_row.addWidget(save_button)
-                preset_row.addWidget(self.preset_delete_button)
-                dialog_layout.addLayout(preset_row)
-                preset_note = QLabel(
-                    "Compressor, gate and denoiser only. Setup profiles on "
-                    "the main screen hold everything."
-                )
-                preset_note.setStyleSheet(
-                    "color: #8ba0b5; font-size: 11px; padding: 0 4px 2px 4px;"
-                )
-                dialog_layout.addWidget(preset_note)
-                self.refresh_preset_list()
-
-                self.processing_tabs.setVisible(True)
-                dialog_layout.addWidget(self.processing_tabs, 1)
-
-                self.processing_dialog.finished.connect(
-                    self._processing_dialog_closed
-                )
+                self._build_processing_dialog()
 
             self.processing_tabs.setVisible(True)
 
             # The controls normally exist already (see connect_vm). They are
             # not kept in sync while the popup is closed, so refresh them now.
-            self.create_compressor()
-            self.create_gate()
-            self.create_denoiser()
+            self.create_processing_controls()
             self.sync_processing_controls()
-            for control in (
-                self.compressor_control,
-                self.gate_control,
-                self.denoiser_control,
-            ):
+            for control in self.processing_blocks().values():
                 control.take_snapshot()
 
             if first_open:
@@ -5933,6 +5849,86 @@ class MainWindow(QMainWindow):
         else:
             if self.processing_dialog is not None:
                 self.processing_dialog.close()
+
+    def _build_processing_dialog(self):
+        """The Mic Processing window, made the first time it opens."""
+        self.processing_dialog = QDialog(self)
+        self.processing_dialog.setWindowTitle("FaderDeck — Mic Processing")
+        self.processing_dialog.setWindowIcon(self.windowIcon())
+        self.processing_dialog.setModal(False)
+        self.processing_dialog.setWindowFlag(
+            Qt.WindowType.WindowContextHelpButtonHint, False
+        )
+        self.processing_dialog.setMinimumSize(560, 540)
+        self.processing_dialog.resize(620, 560)
+
+        dialog_layout = QVBoxLayout(self.processing_dialog)
+        dialog_layout.setContentsMargins(8, 8, 8, 8)
+        dialog_layout.setSpacing(6)
+
+        level_row = QHBoxLayout()
+        level_row.setContentsMargins(4, 0, 4, 0)
+        level_row.setSpacing(8)
+        level_title = QLabel("MIC INPUT")
+        level_title.setStyleSheet(
+            "color: #8ba0b5; font-size: 11px; font-weight: bold; "
+            "padding-bottom: 14px;"
+        )
+        self.mic_level_bar = MicLevelBar()
+        level_row.addWidget(level_title)
+        level_row.addWidget(self.mic_level_bar, 1)
+        dialog_layout.addLayout(level_row)
+
+        preset_row = QHBoxLayout()
+        preset_row.setContentsMargins(4, 0, 4, 2)
+        preset_row.setSpacing(6)
+        preset_title = QLabel("VOICE PRESET")
+        preset_title.setStyleSheet(
+            "color: #8ba0b5; font-size: 11px; font-weight: bold;"
+        )
+        self.preset_list = QComboBox()
+        self.preset_list.setToolTip(
+            "Saved settings of the compressor, gate and denoiser together"
+        )
+        self.preset_load_button = QPushButton("LOAD")
+        self.preset_load_button.setToolTip(
+            "Replace the compressor, gate and denoiser values with "
+            "this preset. RESET brings back the values from when the "
+            "window was opened."
+        )
+        self.preset_load_button.clicked.connect(self.on_preset_load)
+        save_button = QPushButton("SAVE AS…")
+        save_button.setToolTip("Save the current values as a preset")
+        save_button.clicked.connect(self.on_preset_save)
+        self.preset_delete_button = QPushButton("DELETE")
+        self.preset_delete_button.clicked.connect(self.on_preset_delete)
+        for button in (
+            self.preset_load_button, save_button, self.preset_delete_button
+        ):
+            button.setFixedHeight(26)
+            button.setStyleSheet("QPushButton { padding: 2px 10px; }")
+        preset_row.addWidget(preset_title)
+        preset_row.addWidget(self.preset_list, 1)
+        preset_row.addWidget(self.preset_load_button)
+        preset_row.addWidget(save_button)
+        preset_row.addWidget(self.preset_delete_button)
+        dialog_layout.addLayout(preset_row)
+        preset_note = QLabel(
+            "Compressor, gate and denoiser only. Setup profiles on "
+            "the main screen hold everything."
+        )
+        preset_note.setStyleSheet(
+            "color: #8ba0b5; font-size: 11px; padding: 0 4px 2px 4px;"
+        )
+        dialog_layout.addWidget(preset_note)
+        self.refresh_preset_list()
+
+        self.processing_tabs.setVisible(True)
+        dialog_layout.addWidget(self.processing_tabs, 1)
+
+        self.processing_dialog.finished.connect(
+            self._processing_dialog_closed
+        )
 
     # Mixer profiles: the state of all four strips and the mic processing
     # under a name, stored as JSON under "mixer_profiles". The presets in the
@@ -6363,26 +6359,16 @@ class MainWindow(QMainWindow):
         self.processing_toggle.setChecked(False)
         self.processing_toggle.blockSignals(False)
 
-    def create_compressor(self):
-        if self.compressor_control is not None:
-            return
-
-        self.compressor_control = CompressorControl(self.vm)
-        self.processing_tabs.addTab(self.compressor_control, "COMPRESSOR")
-
-    def create_gate(self):
-        if self.gate_control is not None:
-            return
-
-        self.gate_control = GateControl(self.vm)
-        self.processing_tabs.addTab(self.gate_control, "GATE")
-
-    def create_denoiser(self):
-        if self.denoiser_control is not None:
-            return
-
-        self.denoiser_control = DenoiserControl(self.vm)
-        self.processing_tabs.addTab(self.denoiser_control, "DENOISER")
+    def create_processing_controls(self):
+        """Make the compressor, gate and denoiser tabs, once each."""
+        for attribute, control_class, title in (
+            ("compressor_control", CompressorControl, "COMPRESSOR"),
+            ("gate_control", GateControl, "GATE"),
+            ("denoiser_control", DenoiserControl, "DENOISER"),
+        ):
+            if getattr(self, attribute) is None:
+                setattr(self, attribute, control_class(self.vm))
+                self.processing_tabs.addTab(getattr(self, attribute), title)
 
     def create_applications(self):
         if self.application_control is not None:
