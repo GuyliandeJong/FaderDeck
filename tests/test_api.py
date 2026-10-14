@@ -174,6 +174,24 @@ class PhoneRemoteTest(unittest.TestCase):
             self.assertEqual(self.pair(wrong)[0], 403)
         self.assertEqual(self.pair(code)[0], 403, "too many guesses")
 
+    def test_settings_keep_a_device_paired_while_open_and_forget_on_request(self):
+        # OK restarts the remote on every network; keep this one as it is.
+        self.window.restart_phone_remote = lambda: ""
+        # and do not touch the real hotkeys: a refusal would open a message box.
+        self.window.register_hotkeys = lambda: []
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        token = self.pair(self.remote.new_code())[1]["token"]
+        pump()
+        self.assertIn("1 device paired", dialog.remote_count.text())
+        self.window.apply_settings(dialog.values())   # OK
+        state = self.request("GET", "/remote/api/state", token=token)
+        self.assertNotEqual(state["status"], 401, "OK must not unpair the phone")
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        self.assertIn("1 device paired", dialog.remote_count.text())
+        dialog.forget_devices()
+        self.window.apply_settings(dialog.values())
+        self.assertEqual(self.window.remote_devices_setting(), [])
+
     def test_other_sites_cannot_use_a_paired_token(self):
         code = self.remote.new_code()
         token = self.pair(code)[1]["token"]

@@ -5588,7 +5588,7 @@ class SettingsDialog(QDialog):
 
     def _build_remote_tab(self, current):
         """The local API: on or off, port, token and examples."""
-        self.form = self.add_tab("Remote control")
+        self.form = self.add_tab("Remote control", scrolling=True)
         self.add_note(
             "Lets other programs on this computer control FaderDeck: a "
             "Stream Deck plugin, an OBS script, a shortcut. Nothing outside "
@@ -5670,7 +5670,13 @@ class SettingsDialog(QDialog):
         pair_button.clicked.connect(self.show_pairing_code)
         forget_button = QPushButton("FORGET PAIRED DEVICES")
         forget_button.clicked.connect(self.forget_devices)
+        # The paired devices belong to the running remote, not to this
+        # window: OK only clears them when FORGET was pressed.
         self.remote_devices = list(current["remote_devices"])
+        self.forget_requested = False
+        remote = getattr(self.parent(), "phone_remote", None)
+        if remote is not None:
+            remote.paired.connect(self.on_device_paired)
         remote_row = QHBoxLayout()
         for button in (pair_button, forget_button):
             button.setStyleSheet("QPushButton { padding: 4px 10px; }")
@@ -5710,9 +5716,16 @@ class SettingsDialog(QDialog):
             f"It works once, for {REMOTE_PAIR_SECONDS // 60} minutes.",
         )
 
+    def on_device_paired(self, device_hash):
+        if device_hash not in self.remote_devices:
+            self.remote_devices.append(device_hash)
+        self.update_remote_count()
+
     def forget_devices(self):
         self.remote_devices = []
+        self.forget_requested = True
         self.update_remote_count()
+        self.remote_count.setText("All paired devices are forgotten when you press OK.")
 
     def update_chime_hint(self):
         """Say whether the chosen device keeps the chime off the stream."""
@@ -5908,7 +5921,7 @@ class SettingsDialog(QDialog):
             "api_token": self.api_token.text(),
             "remote_enabled": self.remote_enabled.isChecked(),
             "remote_port": self.remote_port.value(),
-            "remote_devices": list(self.remote_devices),
+            "remote_forget": self.forget_requested,
         }
         values.update(self.hotkey_texts())
         values.update(
@@ -7652,8 +7665,12 @@ class MainWindow(QMainWindow):
 
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
+        values = dict(values)
+        if values.pop("remote_forget", False):
+            self.window_settings.setValue("remote_devices", "[]")
+            log.info("Phone remote: forgot every paired device")
         for key, value in values.items():
-            if key in ("theme", "themes", "remote_devices"):
+            if key in ("theme", "themes"):
                 value = json.dumps(value)
             self.window_settings.setValue(key, value)
         self.window_settings.sync()

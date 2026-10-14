@@ -388,7 +388,7 @@ class MainWindowTest(unittest.TestCase):
                           "api_enabled", "api_port", "api_token",
                           "theme", "themes", "check_updates", "mute_sound",
                           "mute_sound_device", "listen_bus", "stream_bus",
-                          "remote_enabled", "remote_port", "remote_devices",
+                          "remote_enabled", "remote_port", "remote_forget",
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
