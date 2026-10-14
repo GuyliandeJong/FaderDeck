@@ -870,24 +870,44 @@ class UpdateChecker(QObject):
         self._run(lambda: self.downloaded.emit(download_update(update, progress)))
 
 
-# Mute sounds: two short notes, falling when the microphone is muted and
-# rising when it is unmuted. They are written once as WAV files and Windows
-# plays them without waiting, on its default output device.
-MUTE_SOUND_NOTES = {True: (880, 587), False: (587, 880)}  # Hz, by muted
+# Mute sounds: two soft notes, falling when the microphone is muted and
+# rising when it is unmuted. Each note is a chime: a warm overtone, a natural
+# fade and a slight drop onto its pitch, rather than a flat beep. They are
+# written once as WAV files and Windows plays them without waiting, on its
+# default output device.
+MUTE_SOUND_NOTES = {True: (784, 523), False: (523, 784)}  # Hz, by muted
+MUTE_SOUND_SHAPE = {"step_ms": 85, "decay_ms": 110, "drop": 0.02, "overtone": 0.25}
 _mute_sound_files = {}
 
 
-def write_tone(path, notes, note_ms=70, volume=0.25, rate=44100):
-    """Write a mono 16-bit WAV of the notes, one after the other."""
-    samples = array.array("h")
-    count = rate * note_ms // 1000
-    ramp = rate // 200  # 5 ms in and out, so the notes do not click
-    for frequency in notes:
-        for i in range(count):
-            fade = min(1.0, i / ramp, (count - i) / ramp)
-            samples.append(int(32767 * volume * fade * math.sin(
-                2 * math.pi * frequency * i / rate
-            )))
+def write_chime(
+    path, notes, step_ms=70, decay_ms=60, drop=0.06, overtone=0.12,
+    volume=0.35, rate=44100,
+):
+    """Write a mono 16-bit WAV of the notes, each starting step_ms apart.
+
+    decay_ms: how fast a note fades. drop: how far sharp a note starts
+    (0.06 is 6 %). overtone: loudness of the octave above, for warmth.
+    """
+    step = rate * step_ms // 1000
+    tail = rate * decay_ms * 6 // 1000  # until about -50 dB
+    attack = max(1, rate * 3 // 1000)
+    mix = [0.0] * (step * (len(notes) - 1) + tail)
+    for index, frequency in enumerate(notes):
+        start = index * step
+        phase = 0.0
+        for i in range(tail):
+            seconds = i / rate
+            pitch = frequency * (1 + drop * math.exp(-seconds / 0.015))
+            phase += 2 * math.pi * pitch / rate
+            envelope = min(1.0, i / attack) * math.exp(-seconds * 1000 / decay_ms)
+            mix[start + i] += envelope * (
+                math.sin(phase) + overtone * math.sin(2 * phase)
+            )
+    peak = max(abs(value) for value in mix) or 1.0
+    samples = array.array(
+        "h", (int(32767 * volume * value / peak) for value in mix)
+    )
     with wave.open(path, "wb") as handle:
         handle.setnchannels(1)
         handle.setsampwidth(2)
@@ -904,7 +924,7 @@ def play_mute_sound(muted):
             path = os.path.join(
                 folder, "mic-muted.wav" if muted else "mic-unmuted.wav"
             )
-            write_tone(path, MUTE_SOUND_NOTES[muted])
+            write_chime(path, MUTE_SOUND_NOTES[muted], **MUTE_SOUND_SHAPE)
             _mute_sound_files[muted] = path
         winsound.PlaySound(
             path,
