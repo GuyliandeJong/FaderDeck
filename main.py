@@ -448,7 +448,6 @@ STRIPS = {
 }
 
 # The Mic strip is the only strip with processing controls and a VU meter.
-MIC_STRIP = STRIPS["Mic"]
 
 # The program was called VMStreamer up to v1.4.0. Its settings (hotkeys,
 # profiles, presets, hidden applications, window places) are stored per
@@ -1050,8 +1049,7 @@ HARDWARE_INPUTS = 5
 def set_mic_strip(index):
     """Choose which hardware input is the Mic strip. Call before the window
     is built: the strip, its processing controls and the level worker all
-    read STRIPS / MIC_STRIP when they are created."""
-    global MIC_STRIP
+    read STRIPS["Mic"] when they are created."""
     try:
         index = int(index)
     except (TypeError, ValueError):
@@ -1059,7 +1057,6 @@ def set_mic_strip(index):
     if not 0 <= index < HARDWARE_INPUTS:
         index = 0
     STRIPS["Mic"] = index
-    MIC_STRIP = index
 
 # Hide/unhide scope meaning "every virtual channel".
 ALL_CHANNELS = "*"
@@ -1665,7 +1662,8 @@ class ProcessingPanel(QWidget):
     def __init__(self, vm):
         super().__init__()
         self.vm = vm
-        self.target = getattr(vm.strip[MIC_STRIP], self.ATTRIBUTE)
+        self.strip_index = STRIPS["Mic"]
+        self.target = getattr(vm.strip[self.strip_index], self.ATTRIBUTE)
         self.setVisible(False)
         self.controls = {}
         self.settings = app_settings()
@@ -1892,7 +1890,7 @@ class ProcessingPanel(QWidget):
         if key in self.SCRIPT_KEYS:
             try:
                 self.vm.sendtext(
-                    f"Strip[{MIC_STRIP}].{self.SCRIPT_NAME}."
+                    f"Strip[{self.strip_index}].{self.SCRIPT_NAME}."
                     f"{key.capitalize()}={actual:.6f}"
                 )
             except OSError:
@@ -2468,7 +2466,7 @@ class StripWidget(QWidget):
 
         # Two-line source header, following VoiceMeeter's input cards.
         source_names = {
-            "Mic": f"Stereo Input {MIC_STRIP + 1}",
+            "Mic": f"Stereo Input {strip_index + 1}",
             "Game": "VAIO",
             "Chat": "VAIO AUX",
             "Media": "VAIO3",

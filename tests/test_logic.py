@@ -109,7 +109,6 @@ class SettingsValuesTest(unittest.TestCase):
             for value, expected in ((2, 2), ("3", 3), (9, 0), (None, 0), ("x", 0), (-1, 0)):
                 with self.subTest(value=value):
                     main.set_mic_strip(value)
-                    self.assertEqual(main.MIC_STRIP, expected)
                     self.assertEqual(main.STRIPS["Mic"], expected)
         finally:
             main.set_mic_strip(saved)

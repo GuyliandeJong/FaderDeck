@@ -203,10 +203,10 @@ class Sandbox:
         self._patch("QSettings", FakeSettings)
         self._patch("PYCAW_AVAILABLE", False)
         self._patch("voicemeeter_is_running", lambda: self.running)
-        self._patch("MIC_STRIP", 0)
         self._saved_api = main.voicemeeterlib.api
         main.voicemeeterlib.api = lambda *args, **kwargs: self.vm
         self._saved_strips = dict(main.STRIPS)
+        main.STRIPS["Mic"] = 0
         return self
 
     def _patch(self, name, value):

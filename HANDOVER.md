@@ -121,7 +121,7 @@ The Mic Processing window shows a Mic input bar (`MicLevelBar`) with the gate an
 
 `SettingsDialog` (button in the header) edits the program settings, stored in QSettings and read through `MainWindow.current_settings()`:
 
-- `mic_strip`: hardware input 0-4 of the microphone. Applied by `set_mic_strip()` before the window is built, because the strip, its processing controls and the level worker read `STRIPS` / `MIC_STRIP` when they are created. It therefore takes effect at the next start.
+- `mic_strip`: hardware input 0-4 of the microphone. Applied by `set_mic_strip()` before the window is built, because the strip, its processing controls and the level worker read `STRIPS["Mic"]` when they are created. It therefore takes effect at the next start.
 - `hotkey_mic_mute`: global hotkey, `Ctrl+Shift+M` by default, empty to switch off. Registered with Win32 `RegisterHotKey` on the main window and received through `HotkeyFilter`, a native event filter. `parse_hotkey()` accepts a modifier plus a letter, digit or F1-F24. A registered combination is taken from all other programs while FaderDeck runs.
 - `close_to_tray` (default on) and `start_minimized` (default off).
 
