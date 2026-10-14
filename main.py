@@ -740,7 +740,7 @@ class ColorButton(QPushButton):
 # Updates. FaderDeck asks GitHub for its latest release. An update is that
 # release's installer, checked against the SHA-256 that GitHub publishes for
 # it before it runs.
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 UPDATE_URL = (
     "https://api.github.com/repos/GuyliandeJong/FaderDeck/releases/latest"
 )
