@@ -6,6 +6,14 @@ A modern, lightweight control panel for **VoiceMeeter Potato**, designed for str
 
 FaderDeck provides a clean interface for managing your microphone, mixer channels, Windows application audio, and microphone processing without constantly switching back to the VoiceMeeter interface.
 
+## Install
+
+Download **FaderDeck-Setup.exe** from the [latest release](https://github.com/GuyliandeJong/FaderDeck/releases/latest) and run it. It installs for your Windows account only, so it does not ask for administrator rights, and it can start FaderDeck with Windows. Uninstall it from Windows Settings, Apps.
+
+Windows may warn that the program is not signed; choose **More info**, then **Run anyway**.
+
+Prefer no installer? The release also has **FaderDeck.exe**, which runs as it is. That copy does not update itself.
+
 ## Preview
 
 ![FaderDeck interface](screenshots/faderdeck.png)
@@ -41,6 +49,10 @@ Under Settings, Appearance you choose how FaderDeck looks, and every change show
 ![FaderDeck theme](screenshots/themes.png)
 
 ![Appearance settings](screenshots/settings-appearance.png)
+
+### Automatic Updates
+
+The installed FaderDeck checks for a new version when it starts and offers to install it. The update is checked against the fingerprint GitHub publishes for it before it runs; FaderDeck closes, updates and starts again. Switch the check off, or check by hand, under Settings, General.
 
 ### Setup Profiles
 
@@ -250,6 +262,8 @@ The resulting executable will be located at:
 dist\FaderDeck.exe
 ```
 
+With [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, the script then also builds the installer, `dist\FaderDeck-Setup.exe`, from `installer\faderdeck.iss`. Its version is `APP_VERSION` in `main.py`.
+
 ## Troubleshooting
 
 FaderDeck writes errors to a log file, which is the place to look when something does not work in the packaged build:
@@ -312,14 +326,13 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates.
 
 Next, roughly in this order:
 
-1. A Windows installer, and a signed EXE so Windows does not warn about it
-2. Support for VoiceMeeter Banana and the standard edition
-3. Automatic updates
-4. An Android app to control FaderDeck from a tablet or phone on your own network
+1. Support for VoiceMeeter Banana and the standard edition
+2. An Android app to control FaderDeck from a tablet or phone on your own network
+3. A signed EXE, so Windows does not warn about it (needs a code-signing certificate)
 
 ## Support
 

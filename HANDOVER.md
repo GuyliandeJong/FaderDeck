@@ -370,6 +370,14 @@ Do not stop FaderDeck by force (`Stop-Process -Force`, `taskkill /F`, Task Manag
 
 Run the build script plainly. Redirecting its output makes PowerShell 5.1 treat PyInstaller's progress messages as an error.
 
+## Installer and Updates (v1.7.0)
+
+- `installer\faderdeck.iss` (Inno Setup 6) installs per user under `%LOCALAPPDATA%\Programs\FaderDeck`; no administrator rights, so the automatic update can run it silently. `build_faderdeck.ps1` compiles it when ISCC.exe is found, with `/DAppVersion=` taken from `APP_VERSION`.
+- The installer finds a running FaderDeck by the `FaderDeck.SingleInstance` mutex and asks it to quit with `--quit`. `CloseApplications=no` on purpose: the Restart Manager would close it without logging out of VoiceMeeter.
+- Updates: `UpdateChecker` asks `api.github.com/repos/GuyliandeJong/FaderDeck/releases/latest` on a background thread. Only a newer, non-pre-release with a `FaderDeck-Setup.exe` asset from github.com and a `sha256:` digest is offered. The download is checked against that digest, started with `/SILENT /SUPPRESSMSGBOXES /NORESTART`, and FaderDeck quits; `[Run]` starts it again.
+- Bump `APP_VERSION` for every release, and attach both `FaderDeck.exe` and `FaderDeck-Setup.exe`. A release without the installer is never offered as an update.
+- Only the packaged program checks by itself; a run from source checks only through Settings, CHECK NOW.
+
 ## GitHub Release
 
 v1.0.2 is the latest tag.
