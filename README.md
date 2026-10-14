@@ -26,6 +26,7 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 
 - Fader with a dB scale, and live level meters on every channel
 - Mute, Solo and Mono
+- A soft sound when the microphone is muted or unmuted, so you hear it without looking (can be switched off)
 - Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter
 - Your own names for Game, Chat and Media (Settings, General), for example "Music" instead of "Media"
 - Reconnects by itself when VoiceMeeter is closed and started again
