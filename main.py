@@ -5228,6 +5228,29 @@ class MainWindow(QMainWindow):
         self.restore_window_geometry()
 
 
+        self._apply_window_style()
+
+        central = QWidget()
+        self.setCentralWidget(
+            central
+        )
+
+        main_layout = QVBoxLayout(
+
+            central
+
+        )
+        main_layout.setContentsMargins(9, 9, 9, 9)
+        main_layout.setSpacing(4)
+
+
+        self._build_header(main_layout)
+        self._build_mixer_area(main_layout)
+        self._build_lower_panels()
+        self._start_services()
+
+    def _apply_window_style(self):
+        """The dark style sheet of the whole window."""
         self.setStyleSheet(
 
             """
@@ -5330,22 +5353,8 @@ class MainWindow(QMainWindow):
             """
         )
 
-        central = QWidget()
-        self.setCentralWidget(
-            central
-        )
-
-        main_layout = QVBoxLayout(
-
-            central
-
-        )
-        main_layout.setContentsMargins(9, 9, 9, 9)
-        main_layout.setSpacing(4)
-
-
-        # Header
-
+    def _build_header(self, main_layout):
+        """Logo, name, connection status and the header buttons."""
         header = QHBoxLayout()
 
 
@@ -5408,9 +5417,8 @@ class MainWindow(QMainWindow):
             header
         )
 
-
-        # Mixer
-
+    def _build_mixer_area(self, main_layout):
+        """The strip row, the offline banner and the splitter under them."""
         # The mixer (top) and the Applications / Mic Processing panels
         # (bottom) share the window height through a draggable splitter, so
         # resizing the window never leaves an empty gap between them.
@@ -5447,7 +5455,8 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.offline_banner)
         main_layout.addWidget(self.main_splitter, 1)
 
-
+    def _build_lower_panels(self):
+        """Mic processing, setup profiles and the application lists."""
         # Mic processing section. Keep it collapsed by default so the main
         # mixer remains the visual focus, while advanced processing stays one click away.
         self.processing_toggle = QToolButton()
@@ -5541,7 +5550,48 @@ class MainWindow(QMainWindow):
         )
         self.processing_panel_layout.addWidget(self.processing_summary)
 
-        # Mixer profiles: gain, mute, solo, mono and routing of all strips.
+        self._build_profile_panel()
+
+        # The profile the mixer was last loaded from or saved to, and its
+        # stored content, to tell when the mixer no longer matches it.
+        self.active_profile = ""
+        self._profile_reference = None
+        self._profile_message_until = 0.0
+        self._profile_check_timer = QTimer(self)
+        self._profile_check_timer.setSingleShot(True)
+        # Long enough for VoiceMeeter to settle after a batch of changes.
+        self._profile_check_timer.setInterval(900)
+        self._profile_check_timer.timeout.connect(self.refresh_profile_state)
+        processing_wrapper_layout.addWidget(
+            self.profile_panel,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+        self.refresh_profile_list()
+
+        lower_layout.addWidget(
+            processing_wrapper,
+            1,
+            Qt.AlignmentFlag.AlignTop,
+        )
+        lower_layout.addWidget(self.applications_panel, 3)
+        self.main_splitter.addWidget(self.lower_container)
+        # Extra window height goes to the mixer; the lower panels keep the
+        # size the user dragged them to.
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        restored = False
+        saved_split = self.window_settings.value("splitter_v1")
+        if saved_split is not None:
+            try:
+                restored = bool(self.main_splitter.restoreState(saved_split))
+            except Exception:
+                restored = False
+        if not restored:
+            self.main_splitter.reset_sizes()
+
+    def _build_profile_panel(self):
+        """The SETUP PROFILE panel: list, LOAD, SAVE AS, DELETE and status."""
         self.profile_panel = QWidget()
         self.profile_panel.setObjectName("profilePanel")
         self.profile_panel.setStyleSheet(
@@ -5599,44 +5649,8 @@ class MainWindow(QMainWindow):
         profile_layout.addLayout(profile_buttons)
         profile_layout.addLayout(status_row)
 
-        # The profile the mixer was last loaded from or saved to, and its
-        # stored content, to tell when the mixer no longer matches it.
-        self.active_profile = ""
-        self._profile_reference = None
-        self._profile_message_until = 0.0
-        self._profile_check_timer = QTimer(self)
-        self._profile_check_timer.setSingleShot(True)
-        # Long enough for VoiceMeeter to settle after a batch of changes.
-        self._profile_check_timer.setInterval(900)
-        self._profile_check_timer.timeout.connect(self.refresh_profile_state)
-        processing_wrapper_layout.addWidget(
-            self.profile_panel,
-            0,
-            Qt.AlignmentFlag.AlignTop,
-        )
-        self.refresh_profile_list()
-
-        lower_layout.addWidget(
-            processing_wrapper,
-            1,
-            Qt.AlignmentFlag.AlignTop,
-        )
-        lower_layout.addWidget(self.applications_panel, 3)
-        self.main_splitter.addWidget(self.lower_container)
-        # Extra window height goes to the mixer; the lower panels keep the
-        # size the user dragged them to.
-        self.main_splitter.setStretchFactor(0, 1)
-        self.main_splitter.setStretchFactor(1, 0)
-        restored = False
-        saved_split = self.window_settings.value("splitter_v1")
-        if saved_split is not None:
-            try:
-                restored = bool(self.main_splitter.restoreState(saved_split))
-            except Exception:
-                restored = False
-        if not restored:
-            self.main_splitter.reset_sizes()
-
+    def _start_services(self):
+        """Tray, hotkeys, the local API and the VoiceMeeter connection."""
         # True once the program is really quitting, as opposed to the window
         # being closed to the tray.
         self._quitting = False
