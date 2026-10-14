@@ -197,6 +197,14 @@ Every colour in `main.py` is written for the dark theme. A theme is a translatio
 - Settings: `theme` holds the active theme as JSON and `themes` the user's saved ones. `clean_theme()` drops anything malformed.
 - Channel names (`channel_name_game` and so on) change only what is shown. The built-in names stay the keys for settings, profiles, hotkeys and the local API.
 
+## Phone Remote (v1.10.0)
+
+- `PhoneRemote` is a second HTTP server, separate from `LocalApi` (which stays on 127.0.0.1). It binds 0.0.0.0 on `remote_port` (8766) only when `remote_enabled`, and answers only private and loopback addresses. `remote.html` beside main.py is the page, bundled by build_faderdeck.ps1.
+- Pairing: `new_code()` makes a six-digit code (one device, two minutes, five tries). The device gets a random token; only `token_hash()` of it is stored, in `remote_devices`. OK in Settings never writes that list; only FORGET does, through `remote_forget`. OK restarts the server only when it was switched on or off or the port changed.
+- Requests from another site (an Origin that is not the page's own host) are refused. API calls go to the same `handle_api_call` as the local API.
+- The page carries `PAGE_VERSION` (a hash of remote.html, filled in when served) and reloads itself when `/state` reports another one.
+- Windows Firewall: ALLOW THROUGH FIREWALL runs `firewall_rule_command()` through `run_powershell_as_admin()` (ShellExecuteEx with "runas": the UAC prompt). The rule is named "FaderDeck phone remote" and allows `firewall_program()` (FaderDeck.exe, or the base Python behind a venv) on the port, private profile only. Its status is read with Get-NetFirewall* cmdlets (not netsh, whose text is localized) on a background thread (`BackgroundJob`). Tests replace `firewall_allows`.
+
 ## Logo
 
 The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.

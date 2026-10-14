@@ -1612,6 +1612,145 @@ class PhoneRemote(QObject):
         return self.json_answer(status, answer)
 
 
+# Windows Firewall blocks phones from reaching the remote until a rule
+# allows it, and adding one needs administrator rights. FaderDeck asks Windows
+# to run one PowerShell command as administrator (the user sees the usual
+# prompt) that allows exactly this program, on the remote's port, on private
+# networks only. Firewall rules are read through PowerShell objects, whose
+# names do not change with the Windows language.
+FIREWALL_RULE = "FaderDeck phone remote"
+
+
+def firewall_program():
+    """The program Windows sees listening: FaderDeck.exe, or the real Python
+    behind a virtual environment when run from source."""
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    return getattr(sys, "_base_executable", None) or sys.executable
+
+
+def _powershell_text(value):
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def firewall_rule_command(program, port):
+    """PowerShell that replaces FaderDeck's rule with one for this program
+    and port, on private networks."""
+    name = _powershell_text(FIREWALL_RULE)
+    return (
+        f"Remove-NetFirewallRule -DisplayName {name} -ErrorAction SilentlyContinue; "
+        f"New-NetFirewallRule -DisplayName {name} -Direction Inbound "
+        f"-Program {_powershell_text(program)} -Protocol TCP "
+        f"-LocalPort {int(port)} -Profile Private -Action Allow -ErrorAction Stop | Out-Null"
+    )
+
+
+def firewall_status_command():
+    """PowerShell that prints 'program|port' of FaderDeck's rule, if any."""
+    name = _powershell_text(FIREWALL_RULE)
+    return (
+        f"$r = Get-NetFirewallRule -DisplayName {name} -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.Enabled -eq 'True' -and $_.Action -eq 'Allow' } | Select-Object -First 1; "
+        "if ($r) { $a = $r | Get-NetFirewallApplicationFilter; "
+        "$p = $r | Get-NetFirewallPortFilter; "
+        "Write-Output ($a.Program + '|' + $p.LocalPort) }"
+    )
+
+
+def firewall_allows(program, port):
+    """True when FaderDeck's rule lets this program in on this port, False
+    when not, None when it could not be read. Takes a second: not on the
+    GUI thread."""
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             firewall_status_command()],
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = result.stdout.strip()
+    if not found:
+        return False
+    rule_program, _, rule_port = found.rpartition("|")
+    return (
+        os.path.normcase(os.path.abspath(rule_program))
+        == os.path.normcase(os.path.abspath(program))
+        and rule_port.strip() == str(int(port))
+    )
+
+
+class _ShellExecuteInfo(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.wintypes.DWORD),
+        ("fMask", ctypes.c_ulong),
+        ("hwnd", ctypes.wintypes.HWND),
+        ("lpVerb", ctypes.wintypes.LPCWSTR),
+        ("lpFile", ctypes.wintypes.LPCWSTR),
+        ("lpParameters", ctypes.wintypes.LPCWSTR),
+        ("lpDirectory", ctypes.wintypes.LPCWSTR),
+        ("nShow", ctypes.c_int),
+        ("hInstApp", ctypes.wintypes.HINSTANCE),
+        ("lpIDList", ctypes.c_void_p),
+        ("lpClass", ctypes.wintypes.LPCWSTR),
+        ("hkeyClass", ctypes.wintypes.HKEY),
+        ("dwHotKey", ctypes.wintypes.DWORD),
+        ("hIconOrMonitor", ctypes.wintypes.HANDLE),
+        ("hProcess", ctypes.wintypes.HANDLE),
+    ]
+
+
+def run_powershell_as_admin(command):
+    """Run a PowerShell command as administrator after Windows asks the user.
+
+    Waits for it, so call it off the GUI thread. Returns its exit code, or
+    None when the user said no to the prompt.
+    """
+    info = _ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(info)
+    info.fMask = 0x00000040  # SEE_MASK_NOCLOSEPROCESS: hand back the process
+    info.lpVerb = "runas"
+    info.lpFile = "powershell.exe"
+    info.lpParameters = (
+        "-NoProfile -NonInteractive -WindowStyle Hidden -Command "
+        f"\"{command}; if (-not $?) {{ exit 1 }}\""
+    )
+    info.nShow = 0  # SW_HIDE
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.ShellExecuteExW.argtypes = (ctypes.POINTER(_ShellExecuteInfo),)
+    if not shell32.ShellExecuteExW(ctypes.byref(info)):
+        return None  # declined, or Windows could not ask
+    kernel32 = ctypes.windll.kernel32
+    try:
+        kernel32.WaitForSingleObject(info.hProcess, 0xFFFFFFFF)
+        code = ctypes.wintypes.DWORD()
+        kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+        return code.value
+    finally:
+        kernel32.CloseHandle(info.hProcess)
+
+
+class BackgroundJob(QObject):
+    """Run a slow function on a thread and hand the result to the GUI thread."""
+
+    finished = Signal(object)
+
+    def start(self, function, *args):
+        def run():
+            try:
+                result = function(*args)
+            except Exception as e:
+                log.warning(f"{getattr(function, '__name__', 'job')} failed: {e}")
+                result = None
+            try:
+                self.finished.emit(result)
+            except RuntimeError:
+                pass  # the window that asked has been closed meanwhile
+
+        threading.Thread(target=run, daemon=True).start()
+
+
 class HotkeyFilter(QAbstractNativeEventFilter):
     """Pass this application's own Windows messages to callbacks: global
     hotkeys, and the request of a second start to show the window."""
@@ -5393,15 +5532,23 @@ class SettingsDialog(QDialog):
         layout.addWidget(buttons)
         self.fit_tabs()
 
+    def tab_content_height(self, page):
+        """Height a tab's content needs at the window's width. Wrapped
+        notes are taller in a narrow window than Qt's rough estimate."""
+        content = page.widget() if isinstance(page, QScrollArea) else page
+        width = max(page.width(), self.width() - 50, 300)
+        layout = content.layout()
+        if layout is not None and layout.hasHeightForWidth():
+            return layout.totalHeightForWidth(width)
+        return content.sizeHint().height()
+
     def fit_tabs(self):
         """Open tall enough that every tab but Hotkeys shows without scrolling."""
         tallest = 0
         for index in range(self.tabs.count()):
             if self.tabs.tabText(index) == "Hotkeys":
                 continue  # a long list; it scrolls
-            page = self.tabs.widget(index)
-            content = page.widget() if isinstance(page, QScrollArea) else page
-            tallest = max(tallest, content.sizeHint().height())
+            tallest = max(tallest, self.tab_content_height(self.tabs.widget(index)))
         around = (
             self.tabs.tabBar().sizeHint().height()
             + self.sizeHint().height() - self.tabs.sizeHint().height()
@@ -5411,7 +5558,8 @@ class SettingsDialog(QDialog):
         screen = self.screen()
         if screen is not None:
             wanted = min(wanted, screen.availableGeometry().height() - 60)
-        self.resize(max(self.width(), 560), max(wanted, self.minimumHeight()))
+        # Only grow: a status line that changed must not make it jump smaller.
+        self.resize(max(self.width(), 560), max(wanted, self.minimumHeight(), self.height()))
 
     def _build_general_tab(self, current, vm):
         """A Microphone tab (input, listening, stream, chime) and a General
@@ -5705,6 +5853,24 @@ class SettingsDialog(QDialog):
         )
         self.remote_address.setReadOnly(True)
         self.form.addRow("Address", self.remote_address)
+        self.firewall_button = QPushButton("ALLOW THROUGH FIREWALL")
+        self.firewall_button.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        self.firewall_button.setToolTip(
+            "Windows asks for permission once, then lets phones and tablets "
+            "on private networks reach FaderDeck on this port."
+        )
+        self.firewall_button.clicked.connect(self.allow_through_firewall)
+        self.firewall_status = QLabel("Checking Windows Firewall…")
+        self.firewall_status.setWordWrap(True)
+        self.firewall_status.setObjectName("settingsNote")
+        firewall_row = QHBoxLayout()
+        firewall_row.addWidget(self.firewall_button)
+        firewall_row.addWidget(self.firewall_status, 1)
+        self.form.addRow("Firewall", firewall_row)
+        self.firewall_job = BackgroundJob(self)
+        self.firewall_job.finished.connect(self.show_firewall_status)
+        self.remote_port.valueChanged.connect(self.check_firewall)
+        self.check_firewall()
         pair_button = QPushButton("PAIR A DEVICE")
         pair_button.clicked.connect(self.show_pairing_code)
         forget_button = QPushButton("FORGET PAIRED DEVICES")
@@ -5727,10 +5893,49 @@ class SettingsDialog(QDialog):
         self.form.addRow(self.remote_count)
         self.update_remote_count()
         self.add_note(
-            "Windows may ask whether FaderDeck may use your network: allow "
-            "private networks. Anyone with a paired device on your network "
-            "can control the mixer; forget them when in doubt."
+            "Anyone with a paired device on your network can control the "
+            "mixer; forget them when in doubt."
         )
+
+    def check_firewall(self):
+        self.firewall_status.setText("Checking Windows Firewall…")
+        self.firewall_job.start(
+            firewall_allows, firewall_program(), self.remote_port.value()
+        )
+
+    def show_firewall_status(self, allowed):
+        if allowed is True:
+            text, color = (
+                f"Allowed: phones can reach port {self.remote_port.value()}.",
+                "#3fb950",
+            )
+        elif allowed is False:
+            text, color = (
+                "Not allowed yet: phones will time out until you press "
+                "this.", "#f0883e",
+            )
+        else:
+            text, color = "Could not read Windows Firewall.", "#8ba0b5"
+        self.firewall_button.setEnabled(True)
+        self.firewall_status.setText(text)
+        self.firewall_status.setStyleSheet(f"color: {color}; font-size: 11px;")
+        self.fit_tabs()
+
+    def allow_through_firewall(self):
+        self.firewall_button.setEnabled(False)
+        self.firewall_status.setText("Waiting for Windows…")
+        command = firewall_rule_command(firewall_program(), self.remote_port.value())
+        self.firewall_job.start(self.add_firewall_rule, command)
+
+    @staticmethod
+    def add_firewall_rule(command):
+        """Runs off the GUI thread; the result goes to show_firewall_status."""
+        code = run_powershell_as_admin(command)
+        if code is None:
+            log.info("Firewall rule: permission was not given")
+            return False
+        log.info(f"Firewall rule for the phone remote: exit code {code}")
+        return firewall_allows(firewall_program(), int(command.split("-LocalPort ")[1].split()[0]))
 
     def update_remote_count(self):
         count = len(self.remote_devices)

@@ -204,6 +204,7 @@ class Sandbox:
         self._patch("PYCAW_AVAILABLE", False)
         self._patch("voicemeeter_is_running", lambda: self.running)
         self.mute_sounds = []  # played instead of heard
+        self._patch("firewall_allows", lambda program, port: False)
         self._patch(
             "play_mute_sound",
             lambda muted, device="": self.mute_sounds.append((muted, device)),

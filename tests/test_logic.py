@@ -243,6 +243,20 @@ class MuteSoundTest(unittest.TestCase):
         self.assertLess(max(abs(v) for v in samples[-200:]), 200)  # no click at the end
 
 
+class FirewallTest(unittest.TestCase):
+    def test_rule_allows_one_program_one_port_on_private_networks(self):
+        command = main.firewall_rule_command(r"C:\Program Files\Fader's\FaderDeck.exe", 8766)
+        self.assertIn("-Program 'C:\\Program Files\\Fader''s\\FaderDeck.exe'", command)
+        self.assertIn("-LocalPort 8766", command)
+        self.assertIn("-Profile Private", command)
+        self.assertIn("-Direction Inbound", command)
+        self.assertTrue(command.startswith("Remove-NetFirewallRule"), "replaces an old rule")
+
+    def test_the_program_behind_a_virtual_environment(self):
+        self.assertTrue(os.path.isfile(main.firewall_program()))
+        self.assertNotIn(os.sep + "Scripts" + os.sep, main.firewall_program())
+
+
 class UpdateTest(unittest.TestCase):
     DIGEST = "sha256:" + "ab" * 32
 

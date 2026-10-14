@@ -92,6 +92,17 @@ A hotkey is taken from every other program while FaderDeck runs, so pick combina
 - Optional: start minimised to the tray
 - Starting FaderDeck a second time shows the running one instead of opening another
 
+### Phone and Tablet Remote
+
+Use a phone or tablet on your home network as a mixing console: a fader per channel, mute, monitor, mute stream and your setup profiles, in your own channel names and colours. It works in any browser, on Android, iPhone and tablets, and needs nothing installed.
+
+1. In Settings, Remote control, tick **Allow phones and tablets on my home network**.
+2. Press **ALLOW THROUGH FIREWALL** and say yes to the Windows prompt. Without it, Windows blocks the phone and the page times out.
+3. Open the address shown there on the phone, press **PAIR A DEVICE** on the PC and type the code.
+4. Use the browser's **Add to home screen** to keep it as an app.
+
+Only paired devices on your own network can control FaderDeck; **FORGET PAIRED DEVICES** removes them all. The page updates itself when FaderDeck is updated.
+
 ### Remote Control
 
 Other programs on the same PC, such as Stream Deck plugins and OBS scripts, can control FaderDeck. It is off by default. The requests are listed under [Remote Control](#remote-control-1) further down.
