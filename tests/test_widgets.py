@@ -431,6 +431,24 @@ class MainWindowTest(unittest.TestCase):
         self.window.toggle_mic_mute()
         self.assertEqual(len(sounds), 2)
 
+    def test_chime_settings_warn_when_the_stream_may_hear_it(self):
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        dialog.sound_device.addItem("Game (VB-Audio Voicemeeter VAIO…",
+                                    "Game (VB-Audio Voicemeeter VAIO")
+        dialog.sound_device.addItem("Headphones", "Headphones")
+        dialog.sound_device.setCurrentIndex(0)
+        self.assertIn("default output", dialog.chime_hint.text())
+        dialog.sound_device.setCurrentIndex(dialog.sound_device.findData("Headphones"))
+        self.assertIn("Only you hear it", dialog.chime_hint.text())
+        dialog.sound_device.setCurrentIndex(
+            dialog.sound_device.findData("Game (VB-Audio Voicemeeter VAIO"))
+        self.assertIn("VoiceMeeter input", dialog.chime_hint.text())
+        self.assertEqual(dialog.values()["mute_sound_device"],
+                         "Game (VB-Audio Voicemeeter VAIO")
+        dialog.mute_sound.setChecked(False)
+        self.assertFalse(dialog.sound_device.isEnabled())
+        self.assertEqual(dialog.chime_hint.text(), "")
+
     def test_settings_window_names_hotkeys_another_program_holds(self):
         self.window.refused_hotkeys = {
             "hotkey_mic_mute": ("Ctrl+Alt+M", "Mute microphone")}

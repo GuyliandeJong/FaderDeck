@@ -5173,13 +5173,19 @@ class SettingsDialog(QDialog):
         self.mic_input.setCurrentIndex(current["mic_strip"])
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note("The VoiceMeeter input your microphone is on.")
+
+        self.add_heading("MUTE CHIME")
         self.mute_sound = QCheckBox(
-            "Play a sound when the microphone is muted or unmuted"
+            "Play a chime when the microphone is muted or unmuted"
         )
         self.mute_sound.setChecked(current["mute_sound"])
         self.form.addRow(self.mute_sound)
+        self.add_note(
+            "A short confirmation for you: falling when muted, rising when "
+            "unmuted. It does not pass your voice through."
+        )
         self.sound_device = QComboBox()
-        self.sound_device.addItem("Windows default", "")
+        self.sound_device.addItem("Windows default output", "")
         try:
             devices = sound_devices()
         except Exception:
@@ -5188,25 +5194,27 @@ class SettingsDialog(QDialog):
         if chosen and chosen not in devices:
             devices.append(chosen)  # not connected now; keep the choice
         for device in devices:
-            self.sound_device.addItem(device, device)
+            # waveOut cuts names at 31 characters; show that it is cut.
+            self.sound_device.addItem(
+                device + ("…" if len(device) >= 31 else ""), device
+            )
         self.sound_device.setCurrentIndex(max(0, self.sound_device.findData(chosen)))
-        test_sound = QPushButton("PLAY CHIME")
-        test_sound.setToolTip(
-            "Play the mute sound on this device. It does not pass your "
-            "microphone through."
-        )
-        test_sound.setStyleSheet("QPushButton { padding: 4px 10px; }")
-        test_sound.clicked.connect(
+        self.preview_chime = QPushButton("PREVIEW")
+        self.preview_chime.setToolTip("Play the mute chime on this device")
+        self.preview_chime.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        self.preview_chime.clicked.connect(
             lambda: play_mute_sound(True, self.sound_device.currentData())
         )
         sound_row = QHBoxLayout()
         sound_row.addWidget(self.sound_device, 1)
-        sound_row.addWidget(test_sound)
-        self.form.addRow("Sound device", sound_row)
-        self.add_note(
-            "Pick a device your stream does not capture, such as your "
-            "headphones, so viewers do not hear it."
-        )
+        sound_row.addWidget(self.preview_chime)
+        self.form.addRow("Hear it on", sound_row)
+        self.chime_hint = QLabel()
+        self.chime_hint.setWordWrap(True)
+        self.form.addRow(self.chime_hint)
+        self.mute_sound.toggled.connect(self.update_chime_hint)
+        self.sound_device.currentIndexChanged.connect(self.update_chime_hint)
+        self.update_chime_hint()
 
         self.add_heading("CHANNEL NAMES")
         self.channel_names = {}
@@ -5380,6 +5388,35 @@ class SettingsDialog(QDialog):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.form.addRow(example)
+
+    def update_chime_hint(self):
+        """Say whether the chosen device keeps the chime off the stream."""
+        on = self.mute_sound.isChecked()
+        self.sound_device.setEnabled(on)
+        self.preview_chime.setEnabled(on)
+        device = self.sound_device.currentData() or ""
+        if not on:
+            text, color = "", "#8ba0b5"
+        elif "voicemeeter" in device.casefold():
+            text, color = (
+                "This is a VoiceMeeter input: the chime goes into your mix "
+                "and your stream may hear it. Choose your headphones or "
+                "speakers instead.", "#f0883e",
+            )
+        elif not device:
+            text, color = (
+                "With VoiceMeeter, the Windows default output is often a "
+                "VoiceMeeter input, and then your stream hears the chime. "
+                "Choose your headphones or speakers to be sure.", "#f0883e",
+            )
+        else:
+            text, color = (
+                "Only you hear it here, unless your stream captures this "
+                "device.", "#8ba0b5",
+            )
+        self.chime_hint.setText(text)
+        self.chime_hint.setVisible(bool(text))
+        self.chime_hint.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def add_tab(self, title, scrolling=False):
         """Add a page and return its form layout."""
