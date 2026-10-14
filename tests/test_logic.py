@@ -167,6 +167,12 @@ class ThemeTest(unittest.TestCase):
             colour(main.theme_color("#ff514b", light)).hslHueF(),
             colour("#ff514b").hslHueF(), 2)
 
+    def test_light_curve_always_falls_and_keeps_accents_vivid(self):
+        values = [main.light_lightness(i / 100) for i in range(101)]
+        self.assertTrue(all(a > b for a, b in zip(values, values[1:])))
+        game = main._PlainColor(main.theme_color("#ff626b", self.theme(light=True)))
+        self.assertGreater(game.lightnessF(), 0.4)
+
     def test_accent_replaces_blue_only(self):
         green = self.theme(accent="#22cc66")
         colour = main._PlainColor

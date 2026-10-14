@@ -567,11 +567,28 @@ def clean_theme(value, name=None):
     }
 
 
+# Lightness in the dark theme -> lightness in the light theme. It always
+# falls, so a pair such as white text on a blue button keeps its contrast.
+# The ends are pulled in (a soft grey background, not white), and the middle
+# is flat, so the channel colours (0.5 to 0.77) stay vivid at 0.36 to 0.47,
+# dark enough to read on a light background, instead of turning dark as
+# they would with plain inversion.
+LIGHT_LIGHTNESS = (
+    (0.00, 0.96),  # window backgrounds
+    (0.25, 0.80),  # borders, hover backgrounds
+    (0.40, 0.50),
+    (0.75, 0.40),  # accents and grey secondary text
+    (0.85, 0.22),
+    (1.00, 0.10),  # pale text
+)
+
+
 def light_lightness(lightness):
     """Lightness (0-1) in the light theme of a colour from the dark theme."""
-    # TODO(human): tune this curve. Plain inversion turns the near-black
-    # backgrounds near-white and the pale text near-black.
-    return 1.0 - lightness
+    for (x0, y0), (x1, y1) in zip(LIGHT_LIGHTNESS, LIGHT_LIGHTNESS[1:]):
+        if lightness <= x1:
+            return y0 + (y1 - y0) * (lightness - x0) / (x1 - x0)
+    return LIGHT_LIGHTNESS[-1][1]
 
 
 def theme_color(code, theme=DEFAULT_THEME):
