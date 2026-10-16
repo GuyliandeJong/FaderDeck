@@ -536,6 +536,57 @@ class MainWindowTest(unittest.TestCase):
         self.window.toggle_stream_mute()
         self.assertTrue(mic.route_buttons["B2"].isChecked())
 
+    def stream_mix_on(self):
+        self.window.window_settings.setValue("stream_bus", "B2")
+        self.window.apply_stream_mix()
+        return self.sandbox.vm.strip[5]  # Game
+
+    def test_without_a_stream_output_the_fader_sets_the_strip_itself(self):
+        game = self.sandbox.vm.strip[5]
+        self.window.strips["Game"].fader.setValue(-600)
+        self.assertEqual(game.gain, -6.0)
+        self.assertFalse(self.window.mix_box.isVisibleTo(self.window))
+
+    def test_you_and_stream_mixes_set_their_own_outputs(self):
+        game = self.stream_mix_on()
+        fader = self.window.strips["Game"].fader
+        self.assertTrue(self.window.mix_box.isVisibleTo(self.window))
+        fader.setValue(-1000)                       # YOU
+        self.assertEqual([layer.gain for layer in game.gainlayer],
+                         [-10.0] * 6 + [0.0, -10.0], "every output but B2")
+        self.window.set_mix("stream")
+        self.assertEqual(fader.value(), 0, "the fader shows the stream's volume")
+        fader.setValue(-2500)                       # STREAM
+        self.assertEqual(game.gainlayer[6].gain, -25.0)
+        self.assertEqual(game.gainlayer[0].gain, -10.0, "your mix is untouched")
+        self.window.set_mix("you")
+        self.assertEqual(fader.value(), -1000)
+
+    def test_stream_mix_is_in_profiles_and_the_api(self):
+        game = self.stream_mix_on()
+        strip = self.window.strips["Game"]
+        strip.fader.setValue(-800)
+        game.gainlayer[6].gain = -20.0
+        state = strip.profile_state()
+        self.assertEqual((state["gain"], state["stream_gain"]), (-8.0, -20.0))
+        strip.fader.setValue(0)
+        game.gainlayer[6].gain = 0.0
+        strip.apply_profile(state)
+        self.assertEqual((game.gainlayer[0].gain, game.gainlayer[6].gain), (-8.0, -20.0))
+        status, answer = self.window.handle_api_call(
+            "POST", ["gain", "game"], {"mix": "stream", "db": "-30"})
+        self.assertEqual((status, answer["gain"]), (200, -30.0))
+        self.assertEqual(game.gainlayer[0].gain, -8.0)
+        self.assertEqual(self.window.api_state()["stream_mix"], True)
+
+    def test_turning_the_stream_output_off_goes_back_to_one_mix(self):
+        self.stream_mix_on()
+        self.window.set_mix("stream")
+        self.window.window_settings.setValue("stream_bus", "")
+        self.window.apply_stream_mix()
+        self.assertEqual(self.window.mix, "you")
+        self.assertFalse(self.window.mix_box.isVisibleTo(self.window))
+
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []
         saved = main.subprocess.Popen

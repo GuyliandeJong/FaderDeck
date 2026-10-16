@@ -3588,10 +3588,45 @@ class StripWidget(QWidget):
         )
         self.fader.update()
 
+    # The stream mix. A VoiceMeeter strip has a volume per output (a gain
+    # layer) as well as its own volume, and writing its own volume resets
+    # every layer to it. So once the stream has an output of its own, the
+    # fader writes layers: YOU sets every output but the stream's, STREAM
+    # only the stream's. Without a stream output it is the strip's volume.
+    stream_bus = None  # VoiceMeeter bus index of the stream's output
+    mix = "you"
+
+    def set_mix(self, stream_bus, mix):
+        self.stream_bus = stream_bus
+        self.mix = mix if stream_bus is not None else "you"
+        # Show the other mix at once, even right after a fader move.
+        self._last_local_gain_change = 0.0
+        self.sync_from_voicemeeter()
+
+    def mix_gain(self, mix=None):
+        mix = mix or self.mix
+        if self.stream_bus is None:
+            return self.strip.gain
+        if mix == "stream":
+            return self.strip.gainlayer[self.stream_bus].gain
+        own = 0 if self.stream_bus != 0 else 1  # any output but the stream's
+        return self.strip.gainlayer[own].gain
+
+    def set_mix_gain(self, gain, mix=None):
+        mix = mix or self.mix
+        if self.stream_bus is None:
+            self.strip.gain = gain
+        elif mix == "stream":
+            self.strip.gainlayer[self.stream_bus].gain = gain
+        else:
+            for bus, layer in enumerate(self.strip.gainlayer):
+                if bus != self.stream_bus:
+                    layer.gain = gain
+
     def profile_state(self):
         """What a mixer profile stores for this strip."""
-        return {
-            "gain": self.fader.value() / 100,
+        state = {
+            "gain": round(self.mix_gain("you"), 2),
             "mute": self.mute_button.isChecked(),
             "solo": self.solo_button.isChecked(),
             "mono": self.mono_button.isChecked(),
@@ -3600,6 +3635,9 @@ class StripWidget(QWidget):
                 for output, button in self.route_buttons.items()
             },
         }
+        if self.stream_bus is not None:
+            state["stream_gain"] = round(self.mix_gain("stream"), 2)
+        return state
 
     def apply_profile(self, state):
         """Apply a stored profile_state(). Returns False if it is not usable.
@@ -3608,10 +3646,20 @@ class StripWidget(QWidget):
         so only what differs is sent to VoiceMeeter.
         """
         try:
-            gain = float(state["gain"])
-            if not math.isfinite(gain):
-                return False
-            self.fader.setValue(int(round(gain * 100)))  # clamped by the fader
+            wanted = {"you": float(state["gain"])}
+            if self.stream_bus is not None and "stream_gain" in state:
+                wanted["stream"] = float(state["stream_gain"])
+            for mix, gain in wanted.items():
+                if not math.isfinite(gain):
+                    return False
+                gain = min(12.0, max(-60.0, gain))
+                # Only what differs is sent to VoiceMeeter.
+                if round(self.mix_gain(mix), 2) != round(gain, 2):
+                    self.set_mix_gain(gain, mix)
+            self.fader.blockSignals(True)
+            self.fader.setValue(int(round(self.mix_gain() * 100)))
+            self.fader.blockSignals(False)
+            self.update_gain_label()
             for key, button, handler in (
                 ("mute", self.mute_button, self.on_mute_clicked),
                 ("solo", self.solo_button, self.on_solo_clicked),
@@ -3669,7 +3717,7 @@ class StripWidget(QWidget):
         self._last_local_gain_change = time.monotonic()
 
         try:
-            self.strip.gain = gain
+            self.set_mix_gain(gain)
         except Exception as e:
             log.error(
                 f"Failed to set {self.name} gain: "
@@ -3735,7 +3783,7 @@ class StripWidget(QWidget):
 
         try:
 
-            gain = self.strip.gain
+            gain = self.mix_gain()
 
 
             # The event observer may report a stale value immediately after a
@@ -6592,6 +6640,33 @@ class MainWindow(QMainWindow):
             self.status_label
         )
         header.addSpacing(8)
+        # Which mix the faders set; shown once the stream has an output.
+        self.mix_buttons = {}
+        mix_box = QWidget()
+        mix_layout = QHBoxLayout(mix_box)
+        mix_layout.setContentsMargins(0, 0, 0, 0)
+        mix_layout.setSpacing(0)
+        for mix, text, tip, color in (
+            ("you", "YOU", "The faders set what you hear", "#58a6ff"),
+            ("stream", "STREAM", "The faders set what your stream hears", "#f0883e"),
+        ):
+            button = QPushButton(text)
+            button.setCheckable(True)
+            button.setFixedHeight(26)
+            button.setToolTip(tip)
+            button.setStyleSheet(
+                "QPushButton { background: #18232e; border: 1px solid #314558; "
+                "padding: 0 10px; font-weight: bold; color: #8ba0b5; }"
+                f"QPushButton:checked {{ color: #ffffff; border-color: {color}; "
+                f"background: {color}; }}"
+            )
+            button.clicked.connect(lambda _checked, m=mix: self.set_mix(m))
+            mix_layout.addWidget(button)
+            self.mix_buttons[mix] = button
+        self.mix_buttons["you"].setChecked(True)
+        self.mix_box = mix_box
+        mix_box.setVisible(False)
+        header.addWidget(mix_box)
         header.addWidget(self.compact_button)
         header.addWidget(self.settings_button)
         self.app_subtitle = app_subtitle
@@ -7025,6 +7100,7 @@ class MainWindow(QMainWindow):
             self.start_mic_level_worker()
 
             self.create_strips()
+            self.apply_stream_mix()
             self.create_processing_controls()
             self.create_applications()
 
@@ -7993,6 +8069,35 @@ class MainWindow(QMainWindow):
             if title is not None:
                 title.setText(f"{label.upper()} APPS")
 
+    # The stream mix.
+
+    mix = "you"  # which mix the faders set: "you" or "stream"
+
+    def stream_mix_bus(self):
+        """VoiceMeeter bus index of the stream's output, or None."""
+        output = self.stream_bus_setting()
+        return ROUTE_BUS.get(output) if output else None
+
+    def apply_stream_mix(self):
+        """Give every strip the stream's output; show the switch when set."""
+        bus = self.stream_mix_bus()
+        if bus is None:
+            self.mix = "you"
+        for strip in self.strips.values():
+            strip.set_mix(bus, self.mix)
+        if hasattr(self, "mix_box"):
+            self.mix_box.setVisible(bus is not None)
+            for mix, button in self.mix_buttons.items():
+                button.setChecked(mix == self.mix)
+
+    def set_mix(self, mix):
+        """Let the faders set YOU (what you hear) or STREAM."""
+        if self.stream_mix_bus() is None:
+            mix = "you"
+        self.mix = mix if mix in ("you", "stream") else "you"
+        self.apply_stream_mix()
+        log.info(f"Faders set the {self.mix} mix")
+
     def set_mic_input(self, index):
         """Move the Mic strip and its processing to another hardware input."""
         previous = STRIPS["Mic"]
@@ -8031,6 +8136,7 @@ class MainWindow(QMainWindow):
         self.window_settings.sync()
         apply_theme(values["theme"])
         self.set_mic_input(values["mic_strip"])
+        self.apply_stream_mix()
         self.sync_tray()
         self.refresh_channel_names()
 
@@ -8170,6 +8276,8 @@ class MainWindow(QMainWindow):
         return {
             "connected": self.connected,
             "page": getattr(self, "remote_page_version", ""),
+            "mix": self.mix,
+            "stream_mix": self.stream_mix_bus() is not None,
             "names": {name: channel_label(name, self.window_settings) for name in self.strips},
             "monitor": listening,
             "stream_mute": stream_muted,
@@ -8216,6 +8324,27 @@ class MainWindow(QMainWindow):
                     self.toggle_strip_mute(name)
                 return 200, {"channel": name, "mute": strip.mute_button.isChecked()}
 
+            mix = params.get("mix", "").casefold()
+            if mix and mix not in ("you", "stream"):
+                return 400, {"error": "mix must be you or stream."}
+            if mix and mix != self.mix:
+                if mix == "stream" and self.stream_mix_bus() is None:
+                    return 409, {"error": "Choose the output your stream hears in Settings first."}
+                # Another mix than the faders show: set it directly.
+                try:
+                    if "db" in params:
+                        decibels = float(params["db"])
+                    elif "step" in params:
+                        decibels = strip.mix_gain(mix) + float(params["step"])
+                    else:
+                        return 400, {"error": "Give db or step."}
+                    if not math.isfinite(decibels):
+                        raise ValueError
+                except ValueError:
+                    return 400, {"error": "db and step must be numbers."}
+                strip.set_mix_gain(min(12.0, max(-60.0, decibels)), mix)
+                return 200, {"channel": name, "mix": mix,
+                             "gain": round(strip.mix_gain(mix), 2)}
             try:
                 if "db" in params:
                     decibels = float(params["db"])

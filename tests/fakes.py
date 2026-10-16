@@ -113,8 +113,26 @@ class FakeDevice:
     sr = 48000
 
 
+class FakeLayer:
+    def __init__(self):
+        self.gain = 0.0
+
+
 class FakeStrip:
+    """Like VoiceMeeter, setting the strip's gain sets every gain layer."""
+
+    @property
+    def gain(self):
+        return self._gain
+
+    @gain.setter
+    def gain(self, value):
+        self._gain = value
+        for layer in self.gainlayer:
+            layer.gain = value
+
     def __init__(self, index):
+        self.gainlayer = [FakeLayer() for _ in range(8)]
         self.gain = 0.0
         self.mute = False
         self.solo = False
