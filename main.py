@@ -8325,6 +8325,8 @@ class MainWindow(QMainWindow):
                 return 200, {"channel": name, "mute": strip.mute_button.isChecked()}
 
             mix = params.get("mix", "").casefold()
+            if mix == "you" and self.stream_mix_bus() is None:
+                mix = ""  # one mix only: the faders are "you"
             if mix and mix not in ("you", "stream"):
                 return 400, {"error": "mix must be you or stream."}
             if mix and mix != self.mix:

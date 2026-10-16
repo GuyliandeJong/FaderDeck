@@ -21,6 +21,13 @@ body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
 header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex: none; }
 header img { width: 28px; height: 28px; border-radius: 7px; }
 header b { font-size: 18px; } header b span { color: #8a5cff; font-weight: 400; }
+#mixes { display: flex; margin-left: 12px; }
+#mixes button { min-height: 32px; padding: 0 12px; border-radius: 0; }
+#mixes button:first-child { border-radius: 8px 0 0 8px; }
+#mixes button:last-child { border-radius: 0 8px 8px 0; }
+#mixes button.on { color: #fff; }
+#mixYou.on { background: #1f6feb; border-color: #58a6ff; }
+#mixStream.on { background: #b35c12; border-color: #f0883e; }
 #status { margin-left: auto; font-size: 13px; color: var(--muted); }
 #status.ok { color: #3fb950; }
 
@@ -79,7 +86,9 @@ footer button { flex: none; padding: 0 18px; }
 </style>
 </head>
 <body>
-<header><img src="/remote/icon-192.png" alt=""><b>Fader<span>Deck</span></b><div id="status">Connecting…</div></header>
+<header><img src="/remote/icon-192.png" alt=""><b>Fader<span>Deck</span></b>
+  <div id="mixes" hidden><button id="mixYou" class="on" title="The faders set what you hear">YOU</button><button id="mixStream" title="The faders set what your stream hears">STREAM</button></div>
+  <div id="status">Connecting…</div></header>
 
 <section id="pair" hidden>
   <h2>Pair this device</h2>
@@ -110,6 +119,7 @@ const MIN_DB = -60, MAX_DB = 12;
 const PAGE_VERSION = "{{PAGE_VERSION}}";
 let token = localStorage.getItem("faderdeckToken") || "";
 let dragging = null;
+let mix = "you";  // which mix this device's faders set
 let built = false;
 const $ = (id) => document.getElementById(id);
 
@@ -165,7 +175,7 @@ function fader(strip, name) {
   }
   function send() {
     clearTimeout(sendTimer);
-    sendTimer = setTimeout(() => call("POST", `gain/${name.toLowerCase()}?db=${value.toFixed(1)}`), 60);
+    sendTimer = setTimeout(() => call("POST", `gain/${name.toLowerCase()}?db=${value.toFixed(1)}&mix=${mix}`), 60);
   }
   function fromPointer(event) {
     const rect = track.getBoundingClientRect();
@@ -206,6 +216,8 @@ function build(state) {
   for (const name of Object.keys(state.channels)) {
     main.appendChild(strip(name, (state.names || {})[name] || name));
   }
+  $("mixYou").onclick = () => { mix = "you"; refresh(); };
+  $("mixStream").onclick = () => { mix = "stream"; refresh(); };
   $("listen").onclick = () => call("POST", "monitor?state=toggle").then(refresh);
   $("stream").onclick = () => call("POST", "stream-mute?state=toggle").then(refresh);
   $("load").onclick = () => {
@@ -228,8 +240,13 @@ async function refresh() {
       const name = element.dataset.channel, channel = state.channels[name];
       if (!channel) continue;
       element.querySelector(".mute").classList.toggle("on", channel.mute);
-      if (dragging !== name) element.place(channel.gain);
+      const gain = mix === "stream" && channel.stream_gain !== undefined ? channel.stream_gain : channel.gain;
+      if (dragging !== name) element.place(gain);
     }
+    $("mixes").hidden = !state.stream_mix;
+    if (!state.stream_mix) mix = "you";
+    $("mixYou").classList.toggle("on", mix === "you");
+    $("mixStream").classList.toggle("on", mix === "stream");
     $("listen").classList.toggle("on", !!state.monitor);
     $("stream").classList.toggle("on", !!state.stream_mute);
     $("stream").disabled = state.stream_mute === null;
