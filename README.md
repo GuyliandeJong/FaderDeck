@@ -25,6 +25,7 @@ Prefer no installer? The release also has **FaderDeck.exe**, which runs as it is
 Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game, Chat and Media.
 
 - Fader with a dB scale, and live level meters on every channel
+- Scroll on a fader for 0.1 dB steps (1 dB with Shift); double right-click puts it back at 0 dB
 - Mute, Solo and Mono
 - A soft sound when the microphone is muted or unmuted, so you hear it without looking. Choose the device it plays on, such as your headphones, so your stream does not pick it up; or switch it off
 - Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter

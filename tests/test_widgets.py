@@ -679,9 +679,39 @@ class MainWindowTest(unittest.TestCase):
     def test_fader_steps(self):
         fader = self.window.strips["Game"].fader
         self.assertEqual(
-            (fader.wheel_step, fader.singleStep(), fader.pageStep()),
-            (50, 10, 100),
+            (fader.wheel_step, fader.shift_step, fader.singleStep(), fader.pageStep()),
+            (10, 100, 10, 100),
         )
+
+    def wheel(self, widget, notches, shift=False):
+        from PySide6.QtCore import QPoint, QPointF
+        from PySide6.QtGui import QWheelEvent
+        centre = QPointF(widget.width() / 2, widget.height() / 2)
+        modifiers = main.Qt.KeyboardModifier.ShiftModifier if shift else main.Qt.KeyboardModifier.NoModifier
+        event = QWheelEvent(centre, widget.mapToGlobal(centre), QPoint(), QPoint(0, 120 * notches),
+                            main.Qt.MouseButton.NoButton, modifiers, main.Qt.ScrollPhase.NoScrollPhase, False)
+        widget.wheelEvent(event)
+
+    def test_scrolling_moves_a_fader_by_a_tenth_and_shift_by_one_db(self):
+        fader = self.window.strips["Game"].fader
+        fader.setValue(-1000)
+        self.wheel(fader, 1)
+        self.assertEqual(fader.value(), -990)
+        self.wheel(fader, -3)
+        self.assertEqual(fader.value(), -1020)
+        self.wheel(fader, 1, shift=True)
+        self.assertEqual(fader.value(), -920)
+
+    def test_double_right_click_resets_a_fader_to_zero(self):
+        from PySide6.QtTest import QTest
+        fader = self.window.strips["Game"].fader
+        fader.setValue(-1500)
+        QTest.mouseClick(fader, main.Qt.MouseButton.RightButton)
+        self.assertEqual(fader.value(), -1500, "a single right-click does nothing")
+        QTest.mouseDClick(fader, main.Qt.MouseButton.RightButton)
+        self.assertEqual(fader.value(), 0)
+        pump()
+        self.assertEqual(self.sandbox.vm.strip[5].gain, 0.0)
         # Every channel shows its dB numbers, except in compact view.
         self.assertTrue(all(strip.fader.show_labels for strip in self.window.strips.values()))
         self.window.set_compact(True)

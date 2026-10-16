@@ -3037,8 +3037,9 @@ class FineControlSlider(QSlider):
         super().__init__(orientation, parent)
         self._wheel_remainder = 0
         # Step of one wheel notch; None means singleStep(). With Shift held
-        # the wheel always moves by singleStep(), for fine adjustment.
+        # the wheel moves by shift_step, or singleStep() when that is None.
         self.wheel_step = None
+        self.shift_step = None
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -3046,9 +3047,11 @@ class FineControlSlider(QSlider):
             event.ignore()
             return
 
-        fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         step = self.singleStep()
-        if self.wheel_step is not None and not fine:
+        if shift and self.shift_step is not None:
+            step = self.shift_step
+        elif self.wheel_step is not None and not shift:
             step = self.wheel_step
 
         self._wheel_remainder += delta
@@ -3066,6 +3069,15 @@ class MixerFader(FineControlSlider):
     UNITS_PER_DB = 100
     WIDTH = 100  # leaves room for the scale labels; the track stays centered
     show_labels = True
+
+    def mouseDoubleClickEvent(self, event):
+        # A double right-click puts the fader back at 0 dB; a single one
+        # does nothing, so a stray click cannot reset it.
+        if event.button() == Qt.MouseButton.RightButton:
+            self.setValue(0)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -3307,15 +3319,16 @@ class StripWidget(QWidget):
             1200,
 
         )
-        # Fader units are 0.01 dB. One wheel notch is 0.5 dB, which is about
-        # the smallest change that is heard; Shift+wheel and the arrow keys
-        # move 0.1 dB, Page Up/Down 1 dB.
+        # Fader units are 0.01 dB. One wheel notch and the arrow keys move
+        # 0.1 dB; Shift+wheel and Page Up/Down move 1 dB for bigger jumps.
         self.fader.setSingleStep(10)
         self.fader.setPageStep(100)
-        self.fader.wheel_step = 50
+        self.fader.wheel_step = 10
+        self.fader.shift_step = 100
         self.fader.setToolTip(
-            "Mouse wheel: 0.5 dB, with Shift 0.1 dB. "
-            "Arrow keys: 0.1 dB. Page Up/Down: 1 dB."
+            "Mouse wheel: 0.1 dB, with Shift 1 dB. "
+            "Arrow keys: 0.1 dB. Page Up/Down: 1 dB. "
+            "Double right-click: back to 0 dB."
         )
         self.fader.show_labels = True
 
