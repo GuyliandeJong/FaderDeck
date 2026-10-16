@@ -2059,25 +2059,70 @@ def profile_states_match(stored, current):
     return same(stored, current)
 
 # Routing buttons of every strip, and the VoiceMeeter bus behind each one.
-ROUTE_ROWS = (("A1", "A2", "A3"), ("B1", "B2", "B3"))
-ROUTE_BUS = {"A1": 0, "A2": 1, "A3": 2, "B1": 5, "B2": 6, "B3": 7}
+# VoiceMeeter Potato's outputs. A1-A5 are hardware outputs: a device you
+# hear, such as headphones. B1-B3 are virtual outputs: Windows shows them as
+# recording devices ("VoiceMeeter Out B1") that programs such as Discord and
+# OBS take their sound from.
+ALL_OUTPUTS = ("A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3")
+HARDWARE_OUTPUTS = ALL_OUTPUTS[:5]
+VIRTUAL_OUTPUTS = ALL_OUTPUTS[5:]
+ROUTE_BUS = {output: bus for bus, output in enumerate(ALL_OUTPUTS)}
+OUTPUT_NAME_MAX = 8  # more does not fit a routing button
+CLASSIC_OUTPUTS = ("A1", "A2", "A3", "B1", "B2", "B3")  # when the mixer cannot say
 
 
-def route_name(vm, output):
+def output_device(vm, output):
+    """The device chosen in VoiceMeeter for a hardware output, or ""."""
+    if output not in HARDWARE_OUTPUTS or vm is None:
+        return ""
+    try:
+        return str(vm.bus[ROUTE_BUS[output]].device.name or "").strip()
+    except Exception:
+        return ""
+
+
+def available_outputs(vm):
+    """The outputs that do something: hardware outputs with a device, and
+    every virtual output (it is there for a program to pick)."""
+    if vm is None:
+        return list(CLASSIC_OUTPUTS)
+    hardware = [output for output in HARDWARE_OUTPUTS if output_device(vm, output)]
+    return hardware + list(VIRTUAL_OUTPUTS)
+
+
+def output_name(output, settings=None):
+    """The user's own name for an output, or ""."""
+    value = (settings or app_settings()).value(f"output_name_{output}", "")
+    return str(value or "").strip()[:OUTPUT_NAME_MAX]
+
+
+def route_name(vm, output, settings=None):
     """(button text, tooltip) for a routing button.
 
-    "A1" means little unless you know VoiceMeeter; when its bus has been
-    given a name there ("Headphones", "Stream"), that name is shown.
+    "B2" means little unless you know VoiceMeeter. A name given in FaderDeck
+    ("Voice") comes first, then one given in VoiceMeeter; the code and, for
+    a hardware output, its device are in the tooltip.
     """
-    kind = "hardware output" if output.startswith("A") else "virtual output"
-    try:
-        label = str(vm.bus[ROUTE_BUS[output]].label or "").strip()
-    except Exception:
-        label = ""
-    if label:
-        text = label if len(label) <= 8 else label[:7] + "…"
-        return text, f"{output} — {label} ({kind})"
-    return output, f"{output} ({kind} {output[1]})"
+    hardware = output in HARDWARE_OUTPUTS
+    kind = "hardware output" if hardware else "virtual output: a program takes it"
+    device = output_device(vm, output)
+    detail = f"{kind}, {device}" if device else kind
+    name = output_name(output, settings)
+    if not name:
+        try:
+            name = str(vm.bus[ROUTE_BUS[output]].label or "").strip()
+        except Exception:
+            name = ""
+        if len(name) > OUTPUT_NAME_MAX:
+            name = name[:OUTPUT_NAME_MAX - 1] + "…"
+    if name:
+        return name, f"{name} ({output}, {detail})"
+    return output, f"{output} ({detail})"
+
+
+def output_label(output, settings=None):
+    """How an output is named in text: its own name, or its code."""
+    return output_name(output, settings) or output
 
 
 # Styles used in more than one place.
@@ -3641,12 +3686,31 @@ class StripWidget(QWidget):
         routing_layout.setHorizontalSpacing(5)
         routing_layout.setVerticalSpacing(2)
         self.route_buttons = {}
-        for row, outputs in enumerate(ROUTE_ROWS):
-            for column, output in enumerate(outputs):
-                self._add_route_button(
-                    routing_layout, output, row, column, accent
-                )
+        self.routing_layout = routing_layout
+        self.visible_routes = []
+        for output in ALL_OUTPUTS:
+            self._add_route_button(routing_layout, output, 0, 0, accent)
         layout.addLayout(routing_layout)
+        self.place_routes(available_outputs(self.vm))
+
+    def place_routes(self, outputs):
+        """Show the routing buttons of these outputs, at most four in a row:
+        for headphones on A1 and the three virtual outputs, one row."""
+        for button in self.route_buttons.values():
+            self.routing_layout.removeWidget(button)
+            button.setVisible(False)
+        per_row = 4 if len(outputs) <= 4 else (len(outputs) + 1) // 2
+        for index, output in enumerate(outputs):
+            button = self.route_buttons[output]
+            self.routing_layout.addWidget(button, index // per_row, index % per_row)
+            button.setVisible(not self.compact)
+        self.visible_routes = list(outputs)
+
+    def rename_routes(self):
+        for output, button in self.route_buttons.items():
+            text, tooltip = route_name(self.vm, output)
+            button.setText(text)
+            button.setToolTip(tooltip)
 
     def _add_route_button(self, layout, output, row, column, accent):
         text, tooltip = route_name(self.vm, output)
@@ -3675,7 +3739,7 @@ class StripWidget(QWidget):
             self.solo_button,
             self.mono_button,
             self.routing_title,
-            *self.route_buttons.values(),
+            *(self.route_buttons[output] for output in self.visible_routes),
         ):
             widget.setVisible(not compact)
         self.strip_header.setFixedHeight(
@@ -3851,11 +3915,12 @@ class StripWidget(QWidget):
         off_stream = bool(buttons) and not any(b.isChecked() for b in buttons)
         self.fader.setEnabled(not off_stream)
         if off_stream:
-            names = " or ".join(outputs)
+            names = " or ".join(output_label(o) for o in outputs)
             self.gain_label.setText(f"not sent to {names}")
             self.gain_label.setToolTip(
                 f"Your stream hears {names}, and this channel is not routed "
-                f"there. Click {outputs[-1]} below to send it to your stream."
+                f"there. Click {output_label(outputs[-1])} below to send it to "
+                "your stream."
             )
         else:
             self.gain_label.setText(f"{gain:+.2f} dB")
@@ -5867,11 +5932,17 @@ class SettingsDialog(QDialog):
         self.stream_outputs = {}
         stream_row = QHBoxLayout()
         stream_row.setSpacing(10)
-        for output in ("A1", "A2", "A3", "B1", "B2", "B3"):
-            text, _tooltip = route_name(vm, output) if vm is not None else (output, "")
-            if output.startswith("A"):
+        outputs = available_outputs(vm)
+        for output in HARDWARE_OUTPUTS:
+            # The one chosen before stays in the list, even without a device.
+            if output in outputs or output == current["listen_bus"]:
+                text, _tooltip = route_name(vm, output)
                 self.listen_bus.addItem(text, output)
+        for output in VIRTUAL_OUTPUTS:
+            # Only a virtual output can reach the stream software.
+            text, tooltip = route_name(vm, output)
             box = QCheckBox(text)
+            box.setToolTip(tooltip)
             box.setChecked(output in chosen_stream)
             self.stream_outputs[output] = box
             stream_row.addWidget(box)
@@ -5910,8 +5981,9 @@ class SettingsDialog(QDialog):
         self.add_heading("STREAM")
         self.form.addRow("Your stream hears", stream_row)
         self.add_note(
-            "Tick every output your stream software records, for example B2 "
-            "for your voice and B3 for game, chat and media. MUTE STREAM "
+            "Tick every VoiceMeeter output your stream software records, for "
+            "example B2 for your voice and B3 for game, chat and media. Only "
+            "the virtual outputs B1-B3 can reach it. MUTE STREAM "
             "takes your microphone off them and the STREAM mix sets their "
             "volumes. Keep B1 for Discord, so voice chat still hears you."
         )
@@ -6003,6 +6075,26 @@ class SettingsDialog(QDialog):
             self.form.addRow(channel, edit)
             self.channel_names[key] = edit
         self.add_note("Leave a field empty to keep the built-in name.")
+
+        self.add_heading("OUTPUT NAMES")
+        self.output_names = {}
+        shown = available_outputs(vm)
+        for output in ALL_OUTPUTS:
+            edit = QLineEdit(current[f"output_name_{output}"])
+            edit.setMaxLength(OUTPUT_NAME_MAX)
+            self.output_names[output] = edit
+            if output not in shown:
+                continue  # kept, but an output that does nothing is not listed
+            device = output_device(vm, output)
+            edit.setPlaceholderText(output)
+            label = f"{output} · {device}" if device else f"{output} · virtual"
+            if len(label) > 26:
+                label = label[:25] + "…"
+            self.form.addRow(label, edit)
+        self.add_note(
+            "Shown on the routing buttons instead of A1 or B2, for example "
+            "Phones, Discord, Voice, Sound. Leave empty to keep the code."
+        )
 
         self.add_heading("WINDOW")
         self.close_to_tray = QCheckBox(
@@ -6567,6 +6659,10 @@ class SettingsDialog(QDialog):
         values.update(self.hotkey_texts())
         values.update(
             (key, edit.text().strip()) for key, edit in self.channel_names.items()
+        )
+        values.update(
+            (f"output_name_{output}", edit.text().strip())
+            for output, edit in self.output_names.items()
         )
         return values
 
@@ -7336,6 +7432,7 @@ class MainWindow(QMainWindow):
             self.start_mic_level_worker()
 
             self.create_strips()
+            self.refresh_outputs()
             self.apply_stream_mix()
             self.create_processing_controls()
             self.create_applications()
@@ -7415,6 +7512,8 @@ class MainWindow(QMainWindow):
         running = voicemeeter_is_running()
 
         if self.connected:
+            if running:
+                self.refresh_outputs()
             if not running:
                 log.warning("VoiceMeeter was closed; waiting for it to return")
                 if self.processing_dialog is not None:
@@ -8282,6 +8381,10 @@ class MainWindow(QMainWindow):
                 for key in CHANNEL_NAME_KEYS.values()
             },
             **{
+                f"output_name_{output}": output_name(output, settings)
+                for output in ALL_OUTPUTS
+            },
+            **{
                 action.key: str(settings.value(action.key, action.default) or "")
                 for action in HOTKEYS
             },
@@ -8309,6 +8412,20 @@ class MainWindow(QMainWindow):
     # The stream mix.
 
     mix = "you"  # which mix the faders set: "you" or "stream"
+
+    def refresh_outputs(self):
+        """Show the outputs that do something, by their names. Checked every
+        two seconds: a device chosen in VoiceMeeter appears by itself."""
+        if self.vm is None or not self.strips:
+            return
+        outputs = available_outputs(self.vm)
+        if outputs != getattr(self, "_shown_outputs", None):
+            self._shown_outputs = outputs
+            for strip in self.strips.values():
+                strip.place_routes(outputs)
+        for strip in self.strips.values():
+            strip.rename_routes()
+            strip.update_gain_label()
 
     def stream_mix_buses(self):
         """VoiceMeeter bus indexes of the stream's outputs."""
@@ -8396,6 +8513,7 @@ class MainWindow(QMainWindow):
         self.window_settings.sync()
         apply_theme(values["theme"])
         self.set_mic_input(values["mic_strip"])
+        self.refresh_outputs()
         self.apply_stream_mix()
         self.sync_tray()
         self.refresh_channel_names()
@@ -8755,13 +8873,15 @@ class MainWindow(QMainWindow):
 
     def listen_bus_setting(self):
         bus = str(self.window_settings.value("listen_bus", "A1") or "")
-        return bus if bus in ("A1", "A2", "A3") else "A1"
+        return bus if bus in HARDWARE_OUTPUTS else "A1"
 
     def stream_outputs_setting(self):
         """The outputs the stream hears, such as ["B2", "B3"]: comma-separated
         in the setting, which held one output before."""
         chosen = str(self.window_settings.value("stream_bus", "") or "").split(",")
-        return [output for output in ROUTE_BUS if output in chosen]
+        # Only virtual outputs reach stream software; an A chosen before
+        # this rule is left out.
+        return [output for output in VIRTUAL_OUTPUTS if output in chosen]
 
     def mic_shortcut_state(self):
         """(listening, muted for the stream); the second is None when the
@@ -8835,7 +8955,7 @@ class MainWindow(QMainWindow):
             self.stream_mute_button.setToolTip(
                 "Mute your microphone for the stream only; voice chat still "
                 "hears you. (Takes it off "
-                f"{' and '.join(self.stream_outputs_setting())}.)"
+                f"{' and '.join(output_label(o) for o in self.stream_outputs_setting())}.)"
             )
 
     def step_strip_gain(self, name, decibels):

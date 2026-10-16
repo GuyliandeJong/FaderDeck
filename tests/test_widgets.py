@@ -389,6 +389,7 @@ class MainWindowTest(unittest.TestCase):
                           "theme", "themes", "check_updates", "mute_sound",
                           "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget",
+                          *(f"output_name_{o}" for o in main.ALL_OUTPUTS),
                           *main.CHANNEL_NAME_KEYS.values()})
 
     def test_own_channel_name_is_shown_but_the_key_stays(self):
@@ -775,27 +776,49 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(again.compact_button.isChecked())
         self.assertTrue(again.strips["Game"].compact)
 
-    def test_every_strip_has_both_routing_rows(self):
+    def test_only_outputs_that_do_something_are_shown(self):
         vm = self.sandbox.vm
+        # The fake mixer has devices on A1-A3 and none on A4 and A5.
         for name, strip in self.window.strips.items():
             with self.subTest(name=name):
-                self.assertEqual(
-                    list(strip.route_buttons),
-                    ["A1", "A2", "A3", "B1", "B2", "B3"],
-                )
+                self.assertEqual(list(strip.route_buttons), list(main.ALL_OUTPUTS))
+                self.assertEqual(strip.visible_routes,
+                                 ["A1", "A2", "A3", "B1", "B2", "B3"])
+                self.assertFalse(strip.route_buttons["A4"].isVisibleTo(strip))
         self.window.strips["Game"].route_buttons["B1"].click()
         self.assertTrue(vm.strip[5].B1)
+        # A device chosen in VoiceMeeter shows up; one removed goes away.
+        vm.bus[3].device.name = "Speakers 2"
+        vm.bus[1].device.name = vm.bus[2].device.name = ""
+        self.window.refresh_outputs()
+        game = self.window.strips["Game"]
+        self.assertEqual(game.visible_routes, ["A1", "A4", "B1", "B2", "B3"])
+        self.assertTrue(game.route_buttons["A4"].isVisibleTo(game))
+        self.assertFalse(game.route_buttons["A2"].isVisibleTo(game))
+        # Compact view hides them, and shows only those again afterwards.
+        self.window.set_compact(True)
+        self.window.set_compact(False)
+        self.assertFalse(game.route_buttons["A2"].isVisibleTo(game))
+        self.assertTrue(game.route_buttons["A4"].isVisibleTo(game))
 
-    def test_routing_buttons_use_the_bus_names_from_voicemeeter(self):
-        vm = self.sandbox.vm
-        self.assertEqual(main.route_name(vm, "A2"), ("A2", "A2 (hardware output 2)"))
+    def test_routing_buttons_use_your_names_then_voicemeeters(self):
+        vm, settings = self.sandbox.vm, self.window.window_settings
+        self.assertEqual(main.route_name(vm, "A2"), ("A2", "A2 (hardware output, Headset)"))
         vm.bus[5].label = "Stream"
-        self.assertEqual(
-            main.route_name(vm, "B1"),
-            ("Stream", "B1 \u2014 Stream (virtual output)"),
-        )
+        self.assertEqual(main.route_name(vm, "B1")[0], "Stream")
         vm.bus[0].label = "Headphones Left"
         self.assertEqual(main.route_name(vm, "A1")[0], "Headpho\u2026")
+        settings.setValue("output_name_B1", "Discord")
+        self.assertEqual(main.route_name(vm, "B1")[0], "Discord", "yours comes first")
+        self.assertIn("B1", main.route_name(vm, "B1")[1], "the code stays in the tooltip")
+        self.window.refresh_outputs()
+        self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Discord")
+
+    def test_stream_outputs_are_virtual_only(self):
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        self.assertEqual(list(dialog.stream_outputs), ["B1", "B2", "B3"])
+        self.window.window_settings.setValue("stream_bus", "A1,B2")
+        self.assertEqual(self.window.stream_outputs_setting(), ["B2"])
 
     def test_mute_button_is_the_wide_one(self):
         self.window.resize(1000, 900)

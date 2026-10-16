@@ -140,6 +140,8 @@ class FakeStrip:
         self.A1 = True
         self.A2 = False
         self.A3 = False
+        self.A4 = False
+        self.A5 = False
         self.B1 = index == 0
         self.B2 = False
         self.B3 = False
@@ -152,8 +154,10 @@ class FakeStrip:
 
 
 class FakeBus:
-    def __init__(self):
+    def __init__(self, device=""):
         self.label = ""
+        self.device = FakeDevice()
+        self.device.name = device
 
 
 class FakeObserver:
@@ -172,7 +176,8 @@ class FakeVM:
 
     def __init__(self):
         self.strip = [FakeStrip(index) for index in range(8)]
-        self.bus = [FakeBus() for _ in range(8)]
+        # A1-A3 have a device, A4 and A5 none, like a typical mixer.
+        self.bus = [FakeBus(name) for name in ("Speakers", "Headset", "HDMI", "", "", "", "", "")]
         self.observer = FakeObserver()
         self.sent = []
         self.logged_in = False
