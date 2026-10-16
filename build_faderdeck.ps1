@@ -67,6 +67,11 @@ Write-Host "Built: $(Join-Path $projectDir 'dist\FaderDeck.exe')"
 
 # The Stream Deck plugin, when Node.js is installed: dist\FaderDeck.streamDeckPlugin.
 $streamDeck = Join-Path $projectDir "streamdeck"
+$nodeDir = Join-Path $env:ProgramFiles "nodejs"
+if (-not (Get-Command npm -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $nodeDir "npm.cmd"))) {
+    # Installed after this shell started, so not on its PATH yet.
+    $env:Path = "$nodeDir;$env:APPDATA\npm;$env:Path"
+}
 if (Get-Command npm -ErrorAction SilentlyContinue) {
     Push-Location $streamDeck
     try {
