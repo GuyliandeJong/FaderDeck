@@ -5832,6 +5832,128 @@ class StripLevelWorker(QObject):
         self.finished.emit()
 
 
+# The streaming setup. New users meet VoiceMeeter's devices in Windows,
+# Discord and OBS under names such as "Voicemeeter Out B2" and cannot tell
+# which is which, or why. This window explains it, routes it in one go, and
+# says what to pick in each program, by the names Windows shows by default.
+STREAM_SETUP_NAMES = {"B1": "Discord", "B2": "Voice", "B3": "Sound"}
+
+STREAM_SETUP_STEPS = """
+<p style="margin-top:0"><b>How it works.</b> VoiceMeeter's <b>A outputs</b> are devices
+you hear, such as your headphones. Its <b>B outputs</b> are like cables into other
+programs: Windows lists them as microphones called <i>Voicemeeter Out B1</i>,
+<i>B2</i> and <i>B3</i>, and Discord or OBS picks one.</p>
+<table cellspacing="0" cellpadding="3">
+<tr><td><b>Your microphone</b></td><td>&rarr; B1 &rarr; Discord</td></tr>
+<tr><td></td><td>&rarr; B2 &rarr; your stream: your voice</td></tr>
+<tr><td><b>Game, Chat, Media</b></td><td>&rarr; your headphones</td></tr>
+<tr><td></td><td>&rarr; B3 &rarr; your stream: the sound</td></tr>
+</table>
+<p>Your voice and the sound reach the stream separately, so you can filter
+your voice alone, mute it for the stream only, and give the stream its own mix.</p>
+"""
+
+STREAM_SETUP_PROGRAMS = """
+<p style="margin-top:0"><b>Then pick these in your programs</b> (the names Windows
+gives them; if you renamed them, look for your name):</p>
+<p><b>Windows</b>, Settings, Sound, Output: <i>Voicemeeter Input</i>. Programs
+play into the Game channel unless you move them.</p>
+<p><b>Discord</b>, Settings, Voice &amp; Video:<br>
+Input device: <i>Voicemeeter Out B1</i><br>
+Output device: <i>Voicemeeter AUX Input</i> (the Chat channel)</p>
+<p><b>Music or a browser</b>: drag it to the Media column in FaderDeck, or pick
+<i>Voicemeeter VAIO3 Input</i> as its output.</p>
+<p><b>OBS</b>:<br>
+Settings, Audio: set Desktop Audio to <i>Disabled</i>, and remove any
+Application Audio Capture sources: OBS would hear everything twice.<br>
+Sources, +, Audio Input Capture: <i>Voicemeeter Out B2</i> (your voice).<br>
+Sources, +, Audio Input Capture: <i>Voicemeeter Out B3</i> (the sound).</p>
+"""
+
+
+class StreamSetupDialog(QDialog):
+    """Explains the streaming routing and sets it up in one go."""
+
+    def __init__(self, window, vm=None):
+        super().__init__(window)
+        self.window = window
+        self.setWindowTitle("FaderDeck — Streaming setup")
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        self.setMinimumWidth(560)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        steps = QLabel(STREAM_SETUP_STEPS)
+        steps.setWordWrap(True)
+        steps.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(steps)
+
+        form = QFormLayout()
+        self.headphones = QComboBox()
+        for output in available_outputs(vm):
+            if output in HARDWARE_OUTPUTS:
+                device = output_device(vm, output)
+                self.headphones.addItem(f"{output} · {device}" if device else output, output)
+        if not self.headphones.count():
+            self.headphones.addItem("A1", "A1")
+        self.headphones.setCurrentIndex(
+            max(0, self.headphones.findData(window.listen_bus_setting()))
+        )
+        form.addRow("Your headphones are on", self.headphones)
+        self.name_outputs = QCheckBox(
+            "Name the outputs in FaderDeck: Phones, Discord, Voice, Sound"
+        )
+        self.name_outputs.setChecked(True)
+        form.addRow(self.name_outputs)
+        layout.addLayout(form)
+
+        self.apply_button = QPushButton("APPLY THIS ROUTING")
+        self.apply_button.setStyleSheet("QPushButton { padding: 6px 14px; font-weight: bold; }")
+        self.apply_button.clicked.connect(self.apply)
+        self.status = QLabel(
+            "Changes the routing of all four channels. Your faders and "
+            "setup profiles are not touched."
+        )
+        self.status.setObjectName("settingsNote")
+        self.status.setWordWrap(True)
+        apply_row = QHBoxLayout()
+        apply_row.addWidget(self.apply_button)
+        apply_row.addWidget(self.status, 1)
+        layout.addLayout(apply_row)
+
+        programs = QLabel(STREAM_SETUP_PROGRAMS)
+        programs.setWordWrap(True)
+        programs.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(programs)
+
+        sound_settings = QPushButton("OPEN WINDOWS SOUND SETTINGS")
+        sound_settings.setToolTip(
+            "To give the VoiceMeeter devices names of your own: Recording, "
+            "right-click a device, Properties."
+        )
+        sound_settings.clicked.connect(
+            lambda: subprocess.Popen(["control", "mmsys.cpl"], close_fds=True)
+        )
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        bottom = QHBoxLayout()
+        bottom.addWidget(sound_settings)
+        bottom.addStretch(1)
+        bottom.addWidget(buttons)
+        layout.addLayout(bottom)
+
+    def apply(self):
+        problem = self.window.apply_stream_setup(
+            self.headphones.currentData(), self.name_outputs.isChecked()
+        )
+        self.status.setText(problem or (
+            "Done. Your voice is on B1 and B2, the sound on your headphones "
+            "and B3, and the YOU / STREAM switch is in the header. Now pick "
+            "the devices below in your programs."
+        ))
+
+
 class SettingsDialog(QDialog):
     """Program settings. values() returns what the user chose."""
 
@@ -5979,6 +6101,17 @@ class SettingsDialog(QDialog):
         self.on_monitor_level(self.monitor_level.value(), preview=False)
 
         self.add_heading("STREAM")
+        setup_button = QPushButton("SET UP FOR STREAMING…")
+        setup_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        setup_button.setToolTip(
+            "Explains which output goes where, routes everything in one go, "
+            "and says what to pick in Discord and OBS"
+        )
+        setup_button.clicked.connect(self.open_stream_setup)
+        setup_row = QHBoxLayout()
+        setup_row.addWidget(setup_button)
+        setup_row.addStretch(1)
+        self.form.addRow(setup_row)
         self.form.addRow("Your stream hears", stream_row)
         self.add_note(
             "Tick every VoiceMeeter output your stream software records, for "
@@ -6451,6 +6584,15 @@ class SettingsDialog(QDialog):
     def on_sound_check_done(self, text):
         self.sound_check_button.setEnabled(True)
         self.sound_check_status.setText(str(text or "Sound check did not work."))
+
+    def open_stream_setup(self):
+        window = self.parent()
+        if not hasattr(window, "apply_stream_setup"):
+            return
+        StreamSetupDialog(window, window.vm if window.connected else None).exec()
+        # The setup changed settings this window also shows: start afresh.
+        self.reject()
+        QTimer.singleShot(0, window.open_settings)
 
     def update_chime_hint(self):
         """Say whether the chosen device keeps the chime off the stream."""
@@ -8412,6 +8554,41 @@ class MainWindow(QMainWindow):
     # The stream mix.
 
     mix = "you"  # which mix the faders set: "you" or "stream"
+
+    def apply_stream_setup(self, headphones, name_outputs=True):
+        """The streaming routing in one go: the microphone on B1 (voice
+        chat) and B2 (the stream's voice), Game, Chat and Media on the
+        headphones and B3 (the stream's sound). Returns a problem or ""."""
+        if not self.connected or not self.strips:
+            return "VoiceMeeter is not connected."
+        wanted = {
+            "Mic": {"B1": True, "B2": True, "B3": False},
+            **{
+                name: {headphones: True, "B1": False, "B2": False, "B3": True}
+                for name in ("Game", "Chat", "Media")
+            },
+        }
+        for name, routes in wanted.items():
+            strip = self.strips.get(name)
+            if strip is None:
+                continue
+            for output, on in routes.items():
+                button = strip.route_buttons.get(output)
+                if button is not None and button.isChecked() != on:
+                    button.setChecked(on)
+                    strip.on_route_clicked(output, on)
+        settings = self.window_settings
+        settings.setValue("stream_bus", "B2,B3")
+        settings.setValue("listen_bus", headphones)
+        if name_outputs:
+            for output, name in {headphones: "Phones", **STREAM_SETUP_NAMES}.items():
+                settings.setValue(f"output_name_{output}", name)
+        settings.sync()
+        self.refresh_outputs()
+        self.apply_stream_mix()
+        self.sync_tray()
+        log.info(f"Streaming setup applied (headphones on {headphones})")
+        return ""
 
     def refresh_outputs(self):
         """Show the outputs that do something, by their names. Checked every

@@ -45,7 +45,7 @@ For this, your stream must take its sound from VoiceMeeter's outputs only. A set
 | B2 | your microphone | OBS, as the microphone source |
 | B3 | Game, Chat and Media | OBS, as the sound source (instead of Desktop Audio or application capture) |
 
-Tick B2 and B3 under Settings, Microphone, Your stream hears. Mute stream then takes your voice off B2 while Discord keeps it, the STREAM mix sets the volumes on B2 and B3, and in OBS your voice and the game sound stay separate sources with their own filters and recording tracks. In the STREAM mix, a channel that reaches none of the stream's outputs says "not sent to B2 or B3".
+**Settings, Microphone, SET UP FOR STREAMING** does all of this in one click and lists what to pick in Windows, Discord and OBS, by the names Windows gives the VoiceMeeter devices. By hand: tick B2 and B3 under Settings, Microphone, Your stream hears. Mute stream then takes your voice off B2 while Discord keeps it, the STREAM mix sets the volumes on B2 and B3, and in OBS your voice and the game sound stay separate sources with their own filters and recording tracks. In the STREAM mix, a channel that reaches none of the stream's outputs says "not sent to B2 or B3".
 
 FaderDeck does this with VoiceMeeter's volume per output. VoiceMeeter's own main faders then no longer show the volumes; moving one there resets the stream mix of that channel.
 

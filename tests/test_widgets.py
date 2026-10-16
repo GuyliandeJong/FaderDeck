@@ -814,6 +814,23 @@ class MainWindowTest(unittest.TestCase):
         self.window.refresh_outputs()
         self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Discord")
 
+    def test_streaming_setup_routes_voice_and_sound_apart(self):
+        vm = self.sandbox.vm
+        dialog = main.StreamSetupDialog(self.window, vm)
+        dialog.headphones.setCurrentIndex(dialog.headphones.findData("A2"))
+        dialog.apply()
+        self.assertTrue(dialog.status.text().startswith("Done"))
+        mic = vm.strip[0]
+        self.assertEqual((mic.B1, mic.B2, mic.B3), (True, True, False))
+        for index in (5, 6, 7):
+            strip = vm.strip[index]
+            self.assertEqual((strip.A2, strip.B1, strip.B2, strip.B3), (True, False, False, True))
+        self.assertEqual(self.window.stream_outputs_setting(), ["B2", "B3"])
+        self.assertEqual(self.window.listen_bus_setting(), "A2")
+        self.assertEqual(self.window.strips["Game"].route_buttons["B3"].text(), "Sound")
+        self.assertEqual(self.window.strips["Game"].route_buttons["A2"].text(), "Phones")
+        self.assertTrue(self.window.mix_box.isVisibleTo(self.window))
+
     def test_stream_outputs_are_virtual_only(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
         self.assertEqual(list(dialog.stream_outputs), ["B1", "B2", "B3"])
