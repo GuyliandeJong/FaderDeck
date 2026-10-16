@@ -5845,12 +5845,12 @@ STREAM_SETUP_STEPS = """
 <p style="margin-top:0"><b>How it works.</b> VoiceMeeter's <b>A outputs</b> are devices
 you hear, such as your headphones. Its <b>B outputs</b> are like cables into other
 programs: Windows lists them as microphones called <i>Voicemeeter Out B1</i>,
-<i>B2</i> and <i>B3</i>, and Discord or OBS picks one.</p>
+<i>B2</i> and <i>B3</i>, and your call program or OBS picks one.</p>
 <table cellspacing="0" cellpadding="3">
-<tr><td><b>Your microphone</b></td><td>&rarr; B1 &rarr; Discord</td></tr>
-<tr><td></td><td>&rarr; B2 &rarr; your stream: your voice</td></tr>
-<tr><td><b>Game, Chat, Media</b></td><td>&rarr; your headphones</td></tr>
-<tr><td></td><td>&rarr; B3 &rarr; your stream: the sound</td></tr>
+<tr><td><b>Your microphone</b></td><td>&rarr; B1 <i>(Call)</i> &rarr; your voice call: Discord, TeamSpeak, Zoom&hellip;</td></tr>
+<tr><td></td><td>&rarr; B2 <i>(Str. mic)</i> &rarr; your stream: your voice</td></tr>
+<tr><td><b>Game, Chat, Media</b></td><td>&rarr; your headphones <i>(Hear)</i></td></tr>
+<tr><td></td><td>&rarr; B3 <i>(Str. mix)</i> &rarr; your stream: game, chat and music</td></tr>
 </table>
 <p>Your voice and the sound reach the stream separately, so you can filter
 your voice alone, mute it for the stream only, and give the stream its own mix.</p>
@@ -5861,9 +5861,10 @@ STREAM_SETUP_PROGRAMS = """
 gives them; if you renamed them, look for your name):</p>
 <p><b>Windows</b>, Settings, Sound, Output: <i>Voicemeeter Input</i>. Programs
 play into the Game channel unless you move them.</p>
-<p><b>Discord</b>, Settings, Voice &amp; Video:<br>
-Input device: <i>Voicemeeter Out B1</i><br>
-Output device: <i>Voicemeeter AUX Input</i> (the Chat channel)</p>
+<p><b>Your call program</b> (Discord, TeamSpeak, Zoom&hellip;), in its voice or
+audio settings:<br>
+Input device or microphone: <i>Voicemeeter Out B1</i><br>
+Output device or speaker: <i>Voicemeeter AUX Input</i> (the Chat channel)</p>
 <p><b>Music or a browser</b>: drag it to the Media column in FaderDeck, or pick
 <i>Voicemeeter VAIO3 Input</i> as its output.</p>
 <p><b>OBS</b>:<br>
@@ -6108,7 +6109,7 @@ class SettingsDialog(QDialog):
         setup_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
         setup_button.setToolTip(
             "Explains which output goes where, routes everything in one go, "
-            "and says what to pick in Discord and OBS"
+            "and says what to pick in your call program and OBS"
         )
         setup_button.clicked.connect(self.open_stream_setup)
         setup_row = QHBoxLayout()
@@ -6121,7 +6122,7 @@ class SettingsDialog(QDialog):
             "example B2 for your voice and B3 for game, chat and media. Only "
             "the virtual outputs B1-B3 can reach it. MUTE STREAM "
             "takes your microphone off them and the STREAM mix sets their "
-            "volumes. Keep B1 for Discord, so voice chat still hears you."
+            "volumes. Keep B1 for your call program, so voice chat still hears you."
         )
 
         self.add_heading("SOUND CHECK")
