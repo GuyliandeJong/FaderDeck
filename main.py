@@ -518,9 +518,18 @@ def channel_label(name, settings=None):
 # is a translation of those colours, applied where they reach Qt: in style
 # sheets, in QColor("#rrggbb") and in the drawn icons. The default theme
 # translates nothing.
-DEFAULT_THEME = {"name": "Dark", "light": False, "accent": "", "channels": {}}
-# accent: replaces the hue of the dark theme's blues, backgrounds included.
+DEFAULT_THEME = {
+    "name": "Dark", "light": False, "accent": "", "base": "", "channels": {},
+}
+# accent: replaces the hue of the dark theme's bright blues (highlights, the
+#   selected tab, checkboxes).
+# base: replaces the hue of its greys and backgrounds, and caps how coloured
+#   they may be: a nearly grey base gives neutral greys. Without a base they
+#   follow the accent, as they did before there was one.
 # channels: the colour of a mixer channel (a key of STRIP_COLORS).
+# The themes after FaderDeck take their colours from popular programs and
+# games; their names describe the look, so they do not suggest any tie to
+# those brands.
 BUILTIN_THEMES = {
     "Dark": {},
     "Light": {"light": True},
@@ -534,9 +543,65 @@ BUILTIN_THEMES = {
             "Media": "#8a5cff",
         },
     },
+    # Discord: blurple on neutral grey, with its status colours.
+    "Blurple": {
+        "accent": "#5865f2", "base": "#1e1f22",
+        "channels": {"Mic": "#23a55a", "Game": "#f0b232", "Chat": "#5865f2", "Media": "#eb459e"},
+    },
+    # Twitch: purple on near-black.
+    "Live Purple": {
+        "accent": "#9146ff", "base": "#18181b",
+        "channels": {"Mic": "#bf94ff", "Game": "#9146ff", "Chat": "#00e6a0", "Media": "#ff5c5c"},
+    },
+    # YouTube: red, white and link blue on black.
+    "Broadcast Red": {
+        "accent": "#ff0033", "base": "#0f0f0f",
+        "channels": {"Mic": "#ff0033", "Game": "#3ea6ff", "Chat": "#f1f1f1", "Media": "#ff8a80"},
+    },
+    # Steam: light blue and store green on navy.
+    "Storefront": {
+        "accent": "#66c0f4", "base": "#1b2838",
+        "channels": {"Mic": "#66c0f4", "Game": "#a4d007", "Chat": "#c7d5e0", "Media": "#e5b143"},
+    },
+    # Playnite's default theme: cyan glyphs on deep navy, orange notices.
+    "Library": {
+        "accent": "#55cdff", "base": "#0d1225",
+        "channels": {"Mic": "#55cdff", "Game": "#5b8def", "Chat": "#a3b4ff", "Media": "#ffa500"},
+    },
+    # Kik: a light theme in its green, with its blue.
+    "Lime Chat": {
+        "light": True, "accent": "#5dcd11",
+        "channels": {"Mic": "#4fb80f", "Game": "#ff8a1a", "Chat": "#1fa8e8", "Media": "#a855f7"},
+    },
+    # Cyberpunk 2077: yellow, hot pink and cyan on black.
+    "Neon City": {
+        "accent": "#00f0ff", "base": "#0b0b12",
+        "channels": {"Mic": "#fcee0a", "Game": "#ff2a6d", "Chat": "#00f0ff", "Media": "#b967ff"},
+    },
+    # League of Legends: gold and teal on deep blue.
+    "Hextech": {
+        "accent": "#0ac8b9", "base": "#010a13",
+        "channels": {"Mic": "#c8aa6e", "Game": "#0ac8b9", "Chat": "#cdbe91", "Media": "#f0e6d2"},
+    },
+    # Valorant: red and cream on dark navy.
+    "Tactical": {
+        "accent": "#ff4655", "base": "#0f1923",
+        "channels": {"Mic": "#ff4655", "Game": "#ece8e1", "Chat": "#3ddcc6", "Media": "#f2b134"},
+    },
+    # Minecraft: grass, earth, water and gold on dark stone.
+    "Overworld": {
+        "accent": "#7cbd3c", "base": "#25221d",
+        "channels": {"Mic": "#7cbd3c", "Game": "#b07a45", "Chat": "#4aa3df", "Media": "#e0c25a"},
+    },
+    # Overwatch: orange and hero blue on slate.
+    "Payload": {
+        "accent": "#f99e1a", "base": "#182233",
+        "channels": {"Mic": "#f99e1a", "Game": "#218ffe", "Chat": "#e8eef5", "Media": "#3fd1c6"},
+    },
 }
 CUSTOM_THEME = "Custom"
 BLUE_HUES = (0.52, 0.66)
+NEUTRAL_SATURATION = 0.45  # below: a grey or background; above: a highlight
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 _PlainColor = QColor
 _plain_set_style_sheet = QWidget.setStyleSheet
@@ -558,6 +623,7 @@ def clean_theme(value, name=None):
         "name": str(name or value.get("name") or DEFAULT_THEME["name"])[:40],
         "light": value.get("light") is True,
         "accent": colour(value.get("accent")),
+        "base": colour(value.get("base")),
         "channels": {
             channel: colour(channels[channel])
             for channel in STRIP_COLORS
@@ -606,9 +672,18 @@ def theme_color(code, theme=DEFAULT_THEME):
             changed = True
             break
     else:
-        if theme["accent"] and BLUE_HUES[0] <= hue <= BLUE_HUES[1]:
-            hue = _PlainColor(theme["accent"]).getHslF()[0]
-            changed = True
+        if BLUE_HUES[0] <= hue <= BLUE_HUES[1]:
+            # The dark theme's greys and backgrounds are faintly blue; its
+            # highlights are strongly blue.
+            neutral = saturation < NEUTRAL_SATURATION
+            if neutral and theme.get("base"):
+                base_hue, base_saturation, _l, _a = _PlainColor(theme["base"]).getHslF()
+                hue = max(base_hue, 0.0)
+                saturation = min(saturation, base_saturation)
+                changed = True
+            elif theme["accent"]:
+                hue = _PlainColor(theme["accent"]).getHslF()[0]
+                changed = True
     if theme["light"]:
         lightness = min(1.0, max(0.0, light_lightness(lightness)))
         changed = True
@@ -5722,6 +5797,10 @@ class SettingsDialog(QDialog):
         self.accent = ColorButton("#58a6ff")
         self.accent.changed.connect(self.on_theme_edited)
         self.form.addRow("Accent colour", self.accent)
+        self.base = ColorButton("#0d1117")
+        self.base.setToolTip("The colour of the window's backgrounds and greys")
+        self.base.changed.connect(self.on_theme_edited)
+        self.form.addRow("Background colour", self.base)
         self.add_heading("CHANNEL COLOURS")
         self.channel_colors = {}
         for channel, colors in STRIP_COLORS.items():
@@ -6092,6 +6171,7 @@ class SettingsDialog(QDialog):
         theme = clean_theme({
             "light": self.light.isChecked(),
             "accent": self.accent.color,
+            "base": self.base.color,
             "channels": {
                 channel: button.color
                 for channel, button in self.channel_colors.items()
@@ -6108,6 +6188,7 @@ class SettingsDialog(QDialog):
         self.light.setChecked(theme["light"])
         self.light.blockSignals(False)
         self.accent.set_color(theme["accent"])
+        self.base.set_color(theme["base"])
         for channel, button in self.channel_colors.items():
             button.set_color(theme["channels"].get(channel, ""))
         name = self.theme_value()["name"]

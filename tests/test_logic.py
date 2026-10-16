@@ -206,7 +206,7 @@ class ThemeTest(unittest.TestCase):
         stored = Stored(
             '{"light": 1, "accent": "red", "channels": {"Game": "#AA0000", "X": "#000000"}}')
         self.assertEqual(main.theme_settings(stored), {
-            "name": "Dark", "light": False, "accent": "",
+            "name": "Dark", "light": False, "accent": "", "base": "",
             "channels": {"Game": "#aa0000"}})
         self.assertEqual(main.saved_themes(Stored('{"Dark": {}, "Mine": {"light": true}}')),
                          {"Mine": main.clean_theme({"light": True}, "Mine")})
@@ -217,6 +217,24 @@ class ThemeTest(unittest.TestCase):
         for colors in main.STRIP_COLORS.values():
             for code in colors.values():
                 self.assertEqual(source.count(code), 1, code)
+
+    def test_base_makes_greys_neutral_and_leaves_highlights_to_the_accent(self):
+        theme = self.theme(accent="#ff0033", base="#0f0f0f")
+        colour = main._PlainColor
+        background = colour(main.theme_color("#0d1117", theme))
+        self.assertLess(background.hslSaturationF(), 0.05, "near-black, not red")
+        grey_text = colour(main.theme_color("#8ba0b5", theme))
+        self.assertLess(grey_text.hslSaturationF(), 0.05, "grey text stays grey")
+        highlight = colour(main.theme_color("#58a6ff", theme))
+        self.assertAlmostEqual(highlight.hslHueF(), colour("#ff0033").hslHueF(), 2)
+        self.assertGreater(highlight.hslSaturationF(), 0.9)
+
+    def test_without_a_base_the_accent_tints_everything_as_before(self):
+        colour = main._PlainColor
+        theme = self.theme(accent="#22cc66")
+        self.assertAlmostEqual(
+            colour(main.theme_color("#0d1117", theme)).hslHueF(),
+            colour("#22cc66").hslHueF(), 2)
 
     def test_built_in_themes_are_valid(self):
         for name, value in main.BUILTIN_THEMES.items():

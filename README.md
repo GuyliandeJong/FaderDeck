@@ -44,7 +44,8 @@ A button in the header shrinks the window to the four channels with fader, meter
 Under Settings, Appearance you choose how FaderDeck looks, and every change shows at once; Cancel puts the old colours back.
 
 - Built-in themes: **Dark**, **Light**, and **FaderDeck**, which follows the logo's blue-to-purple gradient across the four channels
-- An accent colour that replaces the blue throughout the window
+- Themes in the colours of popular apps and games: **Blurple**, **Live Purple**, **Broadcast Red**, **Storefront**, **Library**, **Lime Chat**, **Neon City**, **Hextech**, **Tactical**, **Overworld** and **Payload**
+- An accent colour for the highlights, and a background colour for the window's backgrounds and greys
 - A colour of your own for each channel, to match your setup
 - **Save as** keeps your colours as a theme of your own, to switch back to later
 
