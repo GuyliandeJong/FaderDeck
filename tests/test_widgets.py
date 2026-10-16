@@ -575,6 +575,29 @@ class MainWindowTest(unittest.TestCase):
         self.window.set_mix("you")
         self.assertTrue(strip.gain_label.text().endswith("dB"))
 
+    def test_voice_on_b2_and_sound_on_b3(self):
+        vm = self.sandbox.vm
+        mic, game = vm.strip[0], vm.strip[5]
+        mic.B2, game.B3 = True, True
+        self.window.strips["Mic"].sync_routes()
+        self.window.strips["Game"].sync_routes()
+        self.window.window_settings.setValue("stream_bus", "B2,B3")
+        self.window.apply_stream_mix()
+        # MUTE STREAM takes the voice off B2 and puts it back there only.
+        self.window.toggle_stream_mute()
+        self.assertEqual((mic.B2, mic.B3), (False, False))
+        self.assertTrue(mic.B1, "voice chat still hears you")
+        self.window.toggle_stream_mute()
+        self.assertEqual((mic.B2, mic.B3), (True, False))
+        # The STREAM mix sets the stream outputs; Game shows its B3 volume.
+        self.window.set_mix("stream")
+        fader = self.window.strips["Game"].fader
+        fader.setValue(-1500)
+        self.assertEqual((game.gainlayer[6].gain, game.gainlayer[7].gain), (-15.0, -15.0))
+        self.assertEqual(game.gainlayer[0].gain, 0.0)
+        # A channel on neither stream output says so.
+        self.assertEqual(self.window.strips["Chat"].gain_label.text(), "not sent to B2 or B3")
+
     def test_stream_mix_is_in_profiles_and_the_api(self):
         game = self.stream_mix_on()
         strip = self.window.strips["Game"]

@@ -37,7 +37,15 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 
 Give your viewers a different mix than you hear: music quieter on stream, game louder for you. Once your stream has an output of its own (Settings, Microphone, Your stream hears), a **YOU / STREAM** switch appears in the header. The faders then set what you hear or what your stream hears. Setup profiles keep both mixes, and the phone remote has its own switch.
 
-For this, your stream must take its sound from that output only: route Game, Chat and Media to it as well (for example B2), and in OBS use VoiceMeeter Out B2 as the audio source instead of Desktop Audio or application capture. In the STREAM mix, a channel that is not routed there says "not sent to B2".
+For this, your stream must take its sound from VoiceMeeter's outputs only. A setup that works well:
+
+| Output | Carries | Used by |
+| --- | --- | --- |
+| B1 | your microphone | Discord |
+| B2 | your microphone | OBS, as the microphone source |
+| B3 | Game, Chat and Media | OBS, as the sound source (instead of Desktop Audio or application capture) |
+
+Tick B2 and B3 under Settings, Microphone, Your stream hears. Mute stream then takes your voice off B2 while Discord keeps it, the STREAM mix sets the volumes on B2 and B3, and in OBS your voice and the game sound stay separate sources with their own filters and recording tracks. In the STREAM mix, a channel that reaches none of the stream's outputs says "not sent to B2 or B3".
 
 FaderDeck does this with VoiceMeeter's volume per output. VoiceMeeter's own main faders then no longer show the volumes; moving one there resets the stream mix of that channel.
 
@@ -81,7 +89,7 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 - **Monitor level**: hear yourself quieter than others hear you (Settings, Microphone)
 - **Sound check**: record five seconds of your voice with the mic processing applied, as voice chat and your stream hear it, and hear it back (Settings, Microphone)
 
-Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
+Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord (see Stream Mix for a full setup).
 
 ![Microphone settings](screenshots/settings-microphone.png)
 

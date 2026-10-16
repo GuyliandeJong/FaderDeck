@@ -3699,18 +3699,18 @@ class StripWidget(QWidget):
     # every layer to it. So once the stream has an output of its own, the
     # fader writes layers: YOU sets every output but the stream's, STREAM
     # only the stream's. Without a stream output it is the strip's volume.
-    stream_bus = None  # VoiceMeeter bus index of the stream's output
+    stream_buses = ()  # VoiceMeeter bus indexes of the stream's outputs
     mix = "you"
     # Outputs that get the YOU volume plus an offset in dB: the Mic strip's
     # monitor output, so you can hear yourself quieter than others hear you.
     offsets = {}
 
     def layered(self):
-        return self.stream_bus is not None or bool(self.offsets)
+        return bool(self.stream_buses) or bool(self.offsets)
 
-    def set_mix(self, stream_bus, mix):
-        self.stream_bus = stream_bus
-        self.mix = mix if stream_bus is not None else "you"
+    def set_mix(self, stream_buses, mix):
+        self.stream_buses = tuple(stream_buses)
+        self.mix = mix if self.stream_buses else "you"
         # Show the other mix at once, even right after a fader move.
         self._last_local_gain_change = 0.0
         self.sync_from_voicemeeter()
@@ -3725,12 +3725,18 @@ class StripWidget(QWidget):
         mix = mix or self.mix
         if not self.layered():
             return self.strip.gain
-        if mix == "stream" and self.stream_bus is not None:
-            return self.strip.gainlayer[self.stream_bus].gain
+        if mix == "stream" and self.stream_buses:
+            # The stream output this channel goes to, if it goes to one.
+            routed = [
+                bus for bus, output in zip(self.stream_buses, self.stream_outputs())
+                if self.route_buttons.get(output) is not None
+                and self.route_buttons[output].isChecked()
+            ]
+            return self.strip.gainlayer[(routed or self.stream_buses)[0]].gain
         # Any output that is neither the stream's nor offset carries YOU.
         own = next(
             bus for bus in range(len(self.strip.gainlayer))
-            if bus != self.stream_bus and bus not in self.offsets
+            if bus not in self.stream_buses and bus not in self.offsets
         )
         return self.strip.gainlayer[own].gain
 
@@ -3738,11 +3744,12 @@ class StripWidget(QWidget):
         mix = mix or self.mix
         if not self.layered():
             self.strip.gain = gain
-        elif mix == "stream" and self.stream_bus is not None:
-            self.strip.gainlayer[self.stream_bus].gain = gain
+        elif mix == "stream" and self.stream_buses:
+            for bus in self.stream_buses:
+                self.strip.gainlayer[bus].gain = gain
         else:
             for bus, layer in enumerate(self.strip.gainlayer):
-                if bus != self.stream_bus:
+                if bus not in self.stream_buses:
                     level = gain + self.offsets.get(bus, 0.0)
                     layer.gain = min(12.0, max(-60.0, level))
 
@@ -3758,7 +3765,7 @@ class StripWidget(QWidget):
                 for output, button in self.route_buttons.items()
             },
         }
-        if self.stream_bus is not None:
+        if self.stream_buses:
             state["stream_gain"] = round(self.mix_gain("stream"), 2)
         return state
 
@@ -3770,7 +3777,7 @@ class StripWidget(QWidget):
         """
         try:
             wanted = {"you": float(state["gain"])}
-            if self.stream_bus is not None and "stream_gain" in state:
+            if self.stream_buses and "stream_gain" in state:
                 wanted["stream"] = float(state["stream_gain"])
             for mix, gain in wanted.items():
                 if not math.isfinite(gain):
@@ -3829,27 +3836,26 @@ class StripWidget(QWidget):
         self.update_gain_label()
 
 
-    def stream_output(self):
-        """The routing button name of the stream's output, or None."""
-        for output, bus in ROUTE_BUS.items():
-            if bus == self.stream_bus:
-                return output
-        return None
+    def stream_outputs(self):
+        """The routing button names of the stream's outputs."""
+        names = {bus: output for output, bus in ROUTE_BUS.items()}
+        return [names[bus] for bus in self.stream_buses if bus in names]
 
     def update_gain_label(self):
 
         gain = self.fader.value() / 100
-        output = self.stream_output() if self.mix == "stream" else None
-        button = self.route_buttons.get(output) if output else None
-        # In the stream mix, a channel that is not sent to the stream's
-        # output has no stream volume to set: say so instead.
-        off_stream = button is not None and not button.isChecked()
+        outputs = self.stream_outputs() if self.mix == "stream" else []
+        buttons = [self.route_buttons[o] for o in outputs if o in self.route_buttons]
+        # In the stream mix, a channel that reaches none of the stream's
+        # outputs has no stream volume to set: say so instead.
+        off_stream = bool(buttons) and not any(b.isChecked() for b in buttons)
         self.fader.setEnabled(not off_stream)
         if off_stream:
-            self.gain_label.setText(f"not sent to {output}")
+            names = " or ".join(outputs)
+            self.gain_label.setText(f"not sent to {names}")
             self.gain_label.setToolTip(
-                f"Your stream hears {output}, and this channel is not routed "
-                f"there. Click {output} below to send it to your stream."
+                f"Your stream hears {names}, and this channel is not routed "
+                f"there. Click {outputs[-1]} below to send it to your stream."
             )
         else:
             self.gain_label.setText(f"{gain:+.2f} dB")
@@ -5857,19 +5863,22 @@ class SettingsDialog(QDialog):
             + outline_toggle_style(TOGGLE_COLORS["solo"])
         )
         self.monitor_button.clicked.connect(self.toggle_monitor)
-        self.stream_bus = QComboBox()
-        self.stream_bus.addItem("Not set", "")
+        chosen_stream = set(str(current["stream_bus"] or "").split(","))
+        self.stream_outputs = {}
+        stream_row = QHBoxLayout()
+        stream_row.setSpacing(10)
         for output in ("A1", "A2", "A3", "B1", "B2", "B3"):
             text, _tooltip = route_name(vm, output) if vm is not None else (output, "")
             if output.startswith("A"):
                 self.listen_bus.addItem(text, output)
-            self.stream_bus.addItem(text, output)
+            box = QCheckBox(text)
+            box.setChecked(output in chosen_stream)
+            self.stream_outputs[output] = box
+            stream_row.addWidget(box)
         self.listen_bus.setCurrentIndex(
             max(0, self.listen_bus.findData(current["listen_bus"]))
         )
-        self.stream_bus.setCurrentIndex(
-            max(0, self.stream_bus.findData(current["stream_bus"]))
-        )
+        stream_row.addStretch(1)
         monitor_row = QHBoxLayout()
         monitor_row.addWidget(self.listen_bus, 1)
         monitor_row.addWidget(self.monitor_button)
@@ -5899,12 +5908,12 @@ class SettingsDialog(QDialog):
         self.on_monitor_level(self.monitor_level.value(), preview=False)
 
         self.add_heading("STREAM")
-        self.form.addRow("Your stream hears", self.stream_bus)
+        self.form.addRow("Your stream hears", stream_row)
         self.add_note(
-            "MUTE STREAM takes your microphone off this output. It only "
-            "keeps you in voice chat when your stream software has an "
-            "output of its own: in OBS, use VoiceMeeter Out B2 for the "
-            "microphone, and keep B1 for Discord."
+            "Tick every output your stream software records, for example B2 "
+            "for your voice and B3 for game, chat and media. MUTE STREAM "
+            "takes your microphone off them and the STREAM mix sets their "
+            "volumes. Keep B1 for Discord, so voice chat still hears you."
         )
 
         self.add_heading("SOUND CHECK")
@@ -6538,7 +6547,9 @@ class SettingsDialog(QDialog):
             "mic_strip": int(self.mic_input.currentData()),
             "listen_bus": self.listen_bus.currentData(),
             "monitor_level": self.monitor_level.value(),
-            "stream_bus": self.stream_bus.currentData(),
+            "stream_bus": ",".join(
+                output for output, box in self.stream_outputs.items() if box.isChecked()
+            ),
             "theme": self.theme_value(),
             "themes": dict(self.themes),
             "close_to_tray": self.close_to_tray.isChecked(),
@@ -8252,7 +8263,7 @@ class MainWindow(QMainWindow):
             "mic_strip": mic_strip,
             "listen_bus": self.listen_bus_setting(),
             "monitor_level": self.monitor_level_setting(),
-            "stream_bus": self.stream_bus_setting(),
+            "stream_bus": ",".join(self.stream_outputs_setting()),
             "theme": theme_settings(settings),
             "themes": saved_themes(settings),
             "close_to_tray": setting_bool(settings, "close_to_tray", True),
@@ -8299,21 +8310,20 @@ class MainWindow(QMainWindow):
 
     mix = "you"  # which mix the faders set: "you" or "stream"
 
-    def stream_mix_bus(self):
-        """VoiceMeeter bus index of the stream's output, or None."""
-        output = self.stream_bus_setting()
-        return ROUTE_BUS.get(output) if output else None
+    def stream_mix_buses(self):
+        """VoiceMeeter bus indexes of the stream's outputs."""
+        return tuple(ROUTE_BUS[output] for output in self.stream_outputs_setting())
 
     def apply_stream_mix(self):
-        """Give every strip the stream's output; show the switch when set."""
-        bus = self.stream_mix_bus()
-        if bus is None:
+        """Give every strip the stream's outputs; show the switch when set."""
+        buses = self.stream_mix_buses()
+        if not buses:
             self.mix = "you"
         for strip in self.strips.values():
-            strip.set_mix(bus, self.mix)
+            strip.set_mix(buses, self.mix)
         self.set_monitor_level()
         if hasattr(self, "mix_box"):
-            self.mix_box.setVisible(bus is not None)
+            self.mix_box.setVisible(bool(buses))
             for mix, button in self.mix_buttons.items():
                 button.setChecked(mix == self.mix)
 
@@ -8332,13 +8342,17 @@ class MainWindow(QMainWindow):
             return
         level = self.monitor_level_setting() if level is None else level
         bus = ROUTE_BUS.get(output or self.listen_bus_setting())
-        offsets = {bus: float(level)} if level and bus is not None and bus != self.stream_mix_bus() else {}
+        offsets = (
+            {bus: float(level)}
+            if level and bus is not None and bus not in self.stream_mix_buses()
+            else {}
+        )
         if offsets != mic.offsets:
             mic.set_offsets(offsets)
 
     def set_mix(self, mix):
         """Let the faders set YOU (what you hear) or STREAM."""
-        if self.stream_mix_bus() is None:
+        if not self.stream_mix_buses():
             mix = "you"
         self.mix = mix if mix in ("you", "stream") else "you"
         self.apply_stream_mix()
@@ -8523,7 +8537,7 @@ class MainWindow(QMainWindow):
             "connected": self.connected,
             "page": getattr(self, "remote_page_version", ""),
             "mix": self.mix,
-            "stream_mix": self.stream_mix_bus() is not None,
+            "stream_mix": bool(self.stream_mix_buses()),
             "names": {name: channel_label(name, self.window_settings) for name in self.strips},
             "monitor": listening,
             "stream_mute": stream_muted,
@@ -8571,12 +8585,12 @@ class MainWindow(QMainWindow):
                 return 200, {"channel": name, "mute": strip.mute_button.isChecked()}
 
             mix = params.get("mix", "").casefold()
-            if mix == "you" and self.stream_mix_bus() is None:
+            if mix == "you" and not self.stream_mix_buses():
                 mix = ""  # one mix only: the faders are "you"
             if mix and mix not in ("you", "stream"):
                 return 400, {"error": "mix must be you or stream."}
             if mix and mix != self.mix:
-                if mix == "stream" and self.stream_mix_bus() is None:
+                if mix == "stream" and not self.stream_mix_buses():
                     return 409, {"error": "Choose the output your stream hears in Settings first."}
                 # Another mix than the faders show: set it directly.
                 try:
@@ -8743,9 +8757,11 @@ class MainWindow(QMainWindow):
         bus = str(self.window_settings.value("listen_bus", "A1") or "")
         return bus if bus in ("A1", "A2", "A3") else "A1"
 
-    def stream_bus_setting(self):
-        bus = str(self.window_settings.value("stream_bus", "") or "")
-        return bus if bus in ROUTE_BUS else ""
+    def stream_outputs_setting(self):
+        """The outputs the stream hears, such as ["B2", "B3"]: comma-separated
+        in the setting, which held one output before."""
+        chosen = str(self.window_settings.value("stream_bus", "") or "").split(",")
+        return [output for output in ROUTE_BUS if output in chosen]
 
     def mic_shortcut_state(self):
         """(listening, muted for the stream); the second is None when the
@@ -8754,10 +8770,13 @@ class MainWindow(QMainWindow):
         if mic is None:
             return False, None
         listen = mic.route_buttons.get(self.listen_bus_setting())
-        stream = mic.route_buttons.get(self.stream_bus_setting())
+        streams = [
+            mic.route_buttons[output] for output in self.stream_outputs_setting()
+            if output in mic.route_buttons
+        ]
         return (
             bool(listen is not None and listen.isChecked()),
-            None if stream is None else not stream.isChecked(),
+            None if not streams else not any(b.isChecked() for b in streams),
         )
 
     def set_mic_route(self, output, on):
@@ -8779,8 +8798,24 @@ class MainWindow(QMainWindow):
         if stream_muted is None:
             self.sync_tray()
             return
-        # Muted for the stream means: not routed to the stream's output.
-        self.set_mic_route(self.stream_bus_setting(), stream_muted)
+        # Muted for the stream means: routed to none of the stream's outputs.
+        # Unmuting puts it back where it was (your voice on B2, not on the
+        # game sound on B3).
+        mic = self.strips["Mic"]
+        outputs = self.stream_outputs_setting()
+        if not stream_muted:
+            self._stream_mute_outputs = [
+                output for output in outputs if mic.route_buttons[output].isChecked()
+            ]
+            for output in self._stream_mute_outputs:
+                self.set_mic_route(output, False)
+        else:
+            back = [
+                output for output in getattr(self, "_stream_mute_outputs", [])
+                if output in outputs
+            ] or outputs[:1]
+            for output in back:
+                self.set_mic_route(output, True)
 
     def sync_mic_shortcuts(self):
         if not hasattr(self, "stream_mute_button"):
@@ -8799,7 +8834,8 @@ class MainWindow(QMainWindow):
         else:
             self.stream_mute_button.setToolTip(
                 "Mute your microphone for the stream only; voice chat still "
-                f"hears you. (Takes it off {self.stream_bus_setting()}.)"
+                "hears you. (Takes it off "
+                f"{' and '.join(self.stream_outputs_setting())}.)"
             )
 
     def step_strip_gain(self, name, decibels):
