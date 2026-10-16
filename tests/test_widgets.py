@@ -562,6 +562,19 @@ class MainWindowTest(unittest.TestCase):
         self.window.set_mix("you")
         self.assertEqual(fader.value(), -1000)
 
+    def test_stream_mix_says_when_a_channel_is_not_sent_to_the_stream(self):
+        game = self.stream_mix_on()
+        strip = self.window.strips["Game"]
+        game.B2 = False
+        strip.sync_routes()
+        self.window.set_mix("stream")
+        self.assertEqual(strip.gain_label.text(), "not sent to B2")
+        self.assertFalse(strip.fader.isEnabled())
+        strip.route_buttons["B2"].click()
+        self.assertTrue(strip.fader.isEnabled())
+        self.window.set_mix("you")
+        self.assertTrue(strip.gain_label.text().endswith("dB"))
+
     def test_stream_mix_is_in_profiles_and_the_api(self):
         game = self.stream_mix_on()
         strip = self.window.strips["Game"]

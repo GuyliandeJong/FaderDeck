@@ -37,6 +37,8 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 
 Give your viewers a different mix than you hear: music quieter on stream, game louder for you. Once your stream has an output of its own (Settings, Microphone, Your stream hears), a **YOU / STREAM** switch appears in the header. The faders then set what you hear or what your stream hears. Setup profiles keep both mixes, and the phone remote has its own switch.
 
+For this, your stream must take its sound from that output only: route Game, Chat and Media to it as well (for example B2), and in OBS use VoiceMeeter Out B2 as the audio source instead of Desktop Audio or application capture. In the STREAM mix, a channel that is not routed there says "not sent to B2".
+
 FaderDeck does this with VoiceMeeter's volume per output. VoiceMeeter's own main faders then no longer show the volumes; moving one there resets the stream mix of that channel.
 
 ### Compact View

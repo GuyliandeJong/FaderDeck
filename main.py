@@ -3808,6 +3808,7 @@ class StripWidget(QWidget):
     def on_route_clicked(self, output, checked):
         try:
             setattr(self.strip, output, bool(checked))
+            self.update_gain_label()  # the stream mix may now reach this channel
         except Exception as exc:
             log.error(
                 f"Failed to set {self.name} route {output}: "
@@ -3825,15 +3826,34 @@ class StripWidget(QWidget):
                 pass
             finally:
                 button.blockSignals(False)
+        self.update_gain_label()
 
+
+    def stream_output(self):
+        """The routing button name of the stream's output, or None."""
+        for output, bus in ROUTE_BUS.items():
+            if bus == self.stream_bus:
+                return output
+        return None
 
     def update_gain_label(self):
 
         gain = self.fader.value() / 100
-
-        self.gain_label.setText(
-            f"{gain:+.2f} dB"
-        )
+        output = self.stream_output() if self.mix == "stream" else None
+        button = self.route_buttons.get(output) if output else None
+        # In the stream mix, a channel that is not sent to the stream's
+        # output has no stream volume to set: say so instead.
+        off_stream = button is not None and not button.isChecked()
+        self.fader.setEnabled(not off_stream)
+        if off_stream:
+            self.gain_label.setText(f"not sent to {output}")
+            self.gain_label.setToolTip(
+                f"Your stream hears {output}, and this channel is not routed "
+                f"there. Click {output} below to send it to your stream."
+            )
+        else:
+            self.gain_label.setText(f"{gain:+.2f} dB")
+            self.gain_label.setToolTip("")
 
     def on_fader_changed(self, value):
         gain = value / 100
