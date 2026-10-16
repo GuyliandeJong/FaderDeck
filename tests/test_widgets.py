@@ -387,7 +387,7 @@ class MainWindowTest(unittest.TestCase):
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
                           "theme", "themes", "check_updates", "mute_sound",
-                          "mute_sound_device", "listen_bus", "stream_bus",
+                          "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget",
                           *main.CHANNEL_NAME_KEYS.values()})
 
@@ -586,6 +586,27 @@ class MainWindowTest(unittest.TestCase):
         self.window.apply_stream_mix()
         self.assertEqual(self.window.mix, "you")
         self.assertFalse(self.window.mix_box.isVisibleTo(self.window))
+
+    def test_monitor_level_lowers_only_the_monitor_output(self):
+        mic, fader = self.sandbox.vm.strip[0], self.window.strips["Mic"].fader
+        self.window.window_settings.setValue("listen_bus", "A1")
+        self.window.window_settings.setValue("monitor_level", -12)
+        self.window.apply_stream_mix()
+        self.assertEqual(mic.gainlayer[0].gain, -12.0, "A1: you hear yourself quieter")
+        self.assertEqual(mic.gainlayer[5].gain, 0.0, "B1: voice chat hears you as before")
+        fader.setValue(-300)
+        self.assertEqual((mic.gainlayer[0].gain, mic.gainlayer[5].gain), (-15.0, -3.0))
+        self.assertEqual(fader.value(), -300, "the fader shows what others hear")
+        self.window.set_monitor_level(0)
+        self.assertEqual(mic.gainlayer[0].gain, -3.0)
+
+    def test_monitor_level_preview_is_undone_by_cancel(self):
+        mic = self.sandbox.vm.strip[0]
+        dialog = main.SettingsDialog(self.window, self.window.current_settings())
+        dialog.monitor_level.setValue(-20)
+        self.assertEqual(mic.gainlayer[0].gain, -20.0)
+        dialog.reject()
+        self.assertEqual(mic.gainlayer[0].gain, 0.0)
 
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []

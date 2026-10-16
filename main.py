@@ -3595,6 +3595,12 @@ class StripWidget(QWidget):
     # only the stream's. Without a stream output it is the strip's volume.
     stream_bus = None  # VoiceMeeter bus index of the stream's output
     mix = "you"
+    # Outputs that get the YOU volume plus an offset in dB: the Mic strip's
+    # monitor output, so you can hear yourself quieter than others hear you.
+    offsets = {}
+
+    def layered(self):
+        return self.stream_bus is not None or bool(self.offsets)
 
     def set_mix(self, stream_bus, mix):
         self.stream_bus = stream_bus
@@ -3603,25 +3609,36 @@ class StripWidget(QWidget):
         self._last_local_gain_change = 0.0
         self.sync_from_voicemeeter()
 
+    def set_offsets(self, offsets):
+        """Give some outputs the YOU volume plus an offset, from now on."""
+        you = self.mix_gain("you")
+        self.offsets = dict(offsets)
+        self.set_mix_gain(you, "you")
+
     def mix_gain(self, mix=None):
         mix = mix or self.mix
-        if self.stream_bus is None:
+        if not self.layered():
             return self.strip.gain
-        if mix == "stream":
+        if mix == "stream" and self.stream_bus is not None:
             return self.strip.gainlayer[self.stream_bus].gain
-        own = 0 if self.stream_bus != 0 else 1  # any output but the stream's
+        # Any output that is neither the stream's nor offset carries YOU.
+        own = next(
+            bus for bus in range(len(self.strip.gainlayer))
+            if bus != self.stream_bus and bus not in self.offsets
+        )
         return self.strip.gainlayer[own].gain
 
     def set_mix_gain(self, gain, mix=None):
         mix = mix or self.mix
-        if self.stream_bus is None:
+        if not self.layered():
             self.strip.gain = gain
-        elif mix == "stream":
+        elif mix == "stream" and self.stream_bus is not None:
             self.strip.gainlayer[self.stream_bus].gain = gain
         else:
             for bus, layer in enumerate(self.strip.gainlayer):
                 if bus != self.stream_bus:
-                    layer.gain = gain
+                    level = gain + self.offsets.get(bus, 0.0)
+                    layer.gain = min(12.0, max(-60.0, level))
 
     def profile_state(self):
         """What a mixer profile stores for this strip."""
@@ -5738,6 +5755,22 @@ class SettingsDialog(QDialog):
         )
         self.listen_bus.currentIndexChanged.connect(self.update_monitor_button)
         self.update_monitor_button()
+        self.original_monitor_level = current["monitor_level"]
+        self.monitor_level = QSlider(Qt.Orientation.Horizontal)
+        self.monitor_level.setRange(-30, 0)
+        self.monitor_level.setValue(int(current["monitor_level"]))
+        self.monitor_level_label = QLabel()
+        self.monitor_level_label.setMinimumWidth(52)
+        level_row = QHBoxLayout()
+        level_row.addWidget(self.monitor_level, 1)
+        level_row.addWidget(self.monitor_level_label)
+        self.form.addRow("Monitor level", level_row)
+        self.add_note(
+            "How loud you hear yourself, compared with how loud voice chat "
+            "and your stream hear you. Changes are heard at once."
+        )
+        self.monitor_level.valueChanged.connect(self.on_monitor_level)
+        self.on_monitor_level(self.monitor_level.value(), preview=False)
 
         self.add_heading("STREAM")
         self.form.addRow("Your stream hears", self.stream_bus)
@@ -6110,6 +6143,12 @@ class SettingsDialog(QDialog):
         self.update_remote_count()
         self.remote_count.setText("All paired devices are forgotten when you press OK.")
 
+    def on_monitor_level(self, value, preview=True):
+        self.monitor_level_label.setText("0 dB" if value == 0 else f"{value} dB")
+        window = self.parent()
+        if preview and hasattr(window, "set_monitor_level"):
+            window.set_monitor_level(value, self.listen_bus.currentData())
+
     def monitor_route(self):
         """The Mic strip's routing button for the chosen monitor output."""
         window = self.parent()
@@ -6276,6 +6315,9 @@ class SettingsDialog(QDialog):
         self.show_theme(self.theme_value())
 
     def reject(self):
+        window = self.parent()
+        if hasattr(window, "set_monitor_level"):
+            window.set_monitor_level(self.original_monitor_level)
         apply_theme(self.original_theme)
         super().reject()
 
@@ -6313,6 +6355,7 @@ class SettingsDialog(QDialog):
         values = {
             "mic_strip": int(self.mic_input.currentData()),
             "listen_bus": self.listen_bus.currentData(),
+            "monitor_level": self.monitor_level.value(),
             "stream_bus": self.stream_bus.currentData(),
             "theme": self.theme_value(),
             "themes": dict(self.themes),
@@ -8026,6 +8069,7 @@ class MainWindow(QMainWindow):
         return {
             "mic_strip": mic_strip,
             "listen_bus": self.listen_bus_setting(),
+            "monitor_level": self.monitor_level_setting(),
             "stream_bus": self.stream_bus_setting(),
             "theme": theme_settings(settings),
             "themes": saved_themes(settings),
@@ -8085,10 +8129,30 @@ class MainWindow(QMainWindow):
             self.mix = "you"
         for strip in self.strips.values():
             strip.set_mix(bus, self.mix)
+        self.set_monitor_level()
         if hasattr(self, "mix_box"):
             self.mix_box.setVisible(bus is not None)
             for mix, button in self.mix_buttons.items():
                 button.setChecked(mix == self.mix)
+
+    def monitor_level_setting(self):
+        try:
+            level = int(float(self.window_settings.value("monitor_level", 0) or 0))
+        except (TypeError, ValueError):
+            level = 0
+        return min(0, max(-30, level))
+
+    def set_monitor_level(self, level=None, output=None):
+        """Hear yourself `level` dB quieter on the monitor output (0: as loud
+        as others hear you)."""
+        mic = self.strips.get("Mic")
+        if mic is None or not self.connected:
+            return
+        level = self.monitor_level_setting() if level is None else level
+        bus = ROUTE_BUS.get(output or self.listen_bus_setting())
+        offsets = {bus: float(level)} if level and bus is not None and bus != self.stream_mix_bus() else {}
+        if offsets != mic.offsets:
+            mic.set_offsets(offsets)
 
     def set_mix(self, mix):
         """Let the faders set YOU (what you hear) or STREAM."""
