@@ -1,0 +1,127 @@
+{
+	"Name": "FaderDeck",
+	"Version": "1.0.0.0",
+	"Author": "FaderDeck",
+	"Actions": [
+		{
+			"Name": "Mute",
+			"UUID": "com.faderdeck.streamdeck.mute",
+			"Icon": "imgs/actions/mute/icon",
+			"Tooltip": "Mute or unmute a FaderDeck channel. The key turns red while it is muted.",
+			"PropertyInspectorPath": "ui/channel.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/mute/key",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/mute/key-on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Volume",
+			"UUID": "com.faderdeck.streamdeck.volume",
+			"Icon": "imgs/actions/volume/icon",
+			"Tooltip": "Change a channel's volume. On a dial: turn for volume, press to mute.",
+			"PropertyInspectorPath": "ui/volume.html",
+			"Controllers": [
+				"Keypad",
+				"Encoder"
+			],
+			"Encoder": {
+				"layout": "$B1",
+				"TriggerDescription": {
+					"Rotate": "Volume",
+					"Push": "Mute"
+				}
+			},
+			"States": [
+				{
+					"Image": "imgs/actions/volume/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Monitor",
+			"UUID": "com.faderdeck.streamdeck.monitor",
+			"Icon": "imgs/actions/monitor/icon",
+			"Tooltip": "Hear your own microphone. The key lights up while it is on.",
+			"PropertyInspectorPath": "ui/connection.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/monitor/key",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/monitor/key-on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Mute stream",
+			"UUID": "com.faderdeck.streamdeck.streammute",
+			"Icon": "imgs/actions/streammute/icon",
+			"Tooltip": "Mute your microphone for the stream only; voice chat still hears you.",
+			"PropertyInspectorPath": "ui/connection.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/streammute/key",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/streammute/key-on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Setup profile",
+			"UUID": "com.faderdeck.streamdeck.profile",
+			"Icon": "imgs/actions/profile/icon",
+			"Tooltip": "Load a setup profile, or the next or previous one.",
+			"PropertyInspectorPath": "ui/profile.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/profile/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		}
+	],
+	"Category": "FaderDeck",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Control FaderDeck, the VoiceMeeter Potato mixer: mute, volume, monitor, mute stream and setup profiles.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 3,
+	"Software": {
+		"MinimumVersion": "7.1"
+	},
+	"OS": [
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "24",
+		"Debug": "disabled"
+	},
+	"UUID": "com.faderdeck.streamdeck"
+}

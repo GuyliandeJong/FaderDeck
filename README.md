@@ -115,6 +115,14 @@ Use a phone or tablet on your home network as a mixing console: a fader per chan
 
 Only paired devices on your own network can control FaderDeck; **FORGET PAIRED DEVICES** removes them all. The page updates itself when FaderDeck is updated.
 
+### Stream Deck
+
+The FaderDeck plugin for the Elgato Stream Deck has keys for **Mute** (per channel), **Volume**, **Monitor**, **Mute stream** and **Setup profile**. Mute, Monitor and Mute stream keys light up to show the state, also when you change it on the PC. On a Stream Deck+ dial, turn for volume and press to mute, with the volume on the display.
+
+1. Download **FaderDeck.streamDeckPlugin** from the [latest release](https://github.com/GuyliandeJong/FaderDeck/releases/latest) and open it; the Stream Deck app installs it.
+2. In FaderDeck, Settings, Remote control: tick **Allow control by other programs**.
+3. Put a FaderDeck key on your deck and copy the port and token from FaderDeck into it. All FaderDeck keys share them.
+
 ### Remote Control
 
 Other programs on the same PC, such as Stream Deck plugins and OBS scripts, can control FaderDeck. It is off by default. The requests are listed under [Remote Control](#remote-control-1) further down.
@@ -362,13 +370,12 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check, a Stream Deck plugin.
 
 Next, roughly in this order:
 
-1. A Stream Deck plugin
-2. Support for VoiceMeeter Banana and the standard edition
-3. MIDI controllers as physical faders
+1. Support for VoiceMeeter Banana and the standard edition
+2. MIDI controllers as physical faders
 
 Postponed: a signed EXE, so Windows does not warn about it. It needs a paid code-signing certificate.
 

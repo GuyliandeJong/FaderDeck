@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+	<body>
+		<sdpi-item label="Channel">
+			<sdpi-select setting="channel" default="mic">
+				<option value="mic">Mic</option>
+				<option value="game">Game</option>
+				<option value="chat">Chat</option>
+				<option value="media">Media</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Step (dB)">
+			<sdpi-textfield setting="step" placeholder="1" default="1"></sdpi-textfield>
+		</sdpi-item>
+		<sdpi-item>
+			<p style="color:#999;font-size:9pt;margin:0">A key moves the volume by this step; use a negative step for a quieter key. A dial moves this much per click and mutes when pressed.</p>
+		</sdpi-item>
+		<sdpi-item label="Port">
+			<sdpi-textfield setting="port" global placeholder="8765"></sdpi-textfield>
+		</sdpi-item>
+		<sdpi-item label="Token">
+			<sdpi-password setting="token" global></sdpi-password>
+		</sdpi-item>
+		<sdpi-item>
+			<p style="color:#999;font-size:9pt;margin:0">In FaderDeck: Settings, Remote control. Tick "Allow control by other programs", then copy the port and token here. They are shared by all FaderDeck keys.</p>
+		</sdpi-item>
+	</body>
+</html>

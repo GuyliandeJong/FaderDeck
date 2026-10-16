@@ -213,6 +213,13 @@ Every colour in `main.py` is written for the dark theme. A theme is a translatio
 - Profiles store `gain` (YOU) and, with a stream output, `stream_gain`. `/api/gain` takes `mix=`; the phone remote sends its own choice.
 - `set_mix` resets `_last_local_gain_change` so the fader shows the other mix at once (the echo guard would hide it for half a second).
 
+## Stream Deck Plugin
+
+- `streamdeck/` is the plugin, made from the template that ships in Elgato's CLI (`@elgato/cli`, Stream Deck SDK 3, Node.js 24). `src/faderdeck.ts` calls FaderDeck's local API on 127.0.0.1 with the port and token from the plugin's global settings, and polls `/api/state` once a second so keys show changes made elsewhere. `src/actions.ts` has the five actions; `ui/*.html` are the settings pages (sdpi-components).
+- Images: `tools/make_streamdeck_images.py` draws them from `MONO_ICONS` and `LOGO_SVG`.
+- Build: `build_faderdeck.ps1` runs `npm install`, `npm run build` and `streamdeck pack` when npm is found, into `dist\FaderDeck.streamDeckPlugin`. By hand: `npm run pack` in `streamdeck/`. Attach the file to each release.
+- `node_modules`, `bin` and `logs` are not committed (streamdeck/.gitignore).
+
 ## Logo
 
 The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.

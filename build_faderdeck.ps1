@@ -65,6 +65,28 @@ finally {
 
 Write-Host "Built: $(Join-Path $projectDir 'dist\FaderDeck.exe')"
 
+# The Stream Deck plugin, when Node.js is installed: dist\FaderDeck.streamDeckPlugin.
+$streamDeck = Join-Path $projectDir "streamdeck"
+if (Get-Command npm -ErrorAction SilentlyContinue) {
+    Push-Location $streamDeck
+    try {
+        & npm install --no-fund --no-audit --silent
+        & npm run build --silent
+        & npx streamdeck pack com.faderdeck.streamdeck.sdPlugin --output (Join-Path $projectDir "dist") --force
+        if ($LASTEXITCODE -ne 0) {
+            throw "The Stream Deck plugin could not be built."
+        }
+        Move-Item -Force (Join-Path $projectDir "dist\com.faderdeck.streamdeck.streamDeckPlugin") (Join-Path $projectDir "dist\FaderDeck.streamDeckPlugin")
+        Write-Host "Built: $(Join-Path $projectDir 'dist\FaderDeck.streamDeckPlugin')"
+    }
+    finally {
+        Pop-Location
+    }
+}
+else {
+    Write-Host "Node.js was not found, so the Stream Deck plugin was not built."
+}
+
 # The installer, when Inno Setup 6 is installed. Its version is APP_VERSION.
 $iscc = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
