@@ -275,6 +275,18 @@ class FirewallTest(unittest.TestCase):
         self.assertNotIn(os.sep + "Scripts" + os.sep, main.firewall_program())
 
 
+class SoundCheckTest(unittest.TestCase):
+    def test_picks_the_processed_microphone(self):
+        pick = main.sound_check_device
+        self.assertEqual(pick(["Mic (USB)", "Voicemeeter Out B1 (VB-Audio Vo"]),
+                         "Voicemeeter Out B1 (VB-Audio Vo")
+        renamed = ["Analogue 1 + 2 (2- Focusrite US", "Voicemeeter Out A1 (VB-Audio Vo",
+                   "Stream Microphone (VB-Audio Voi", "Microphone (VB-Audio Voicemeete"]
+        self.assertEqual(pick(renamed), "Microphone (VB-Audio Voicemeete")
+        self.assertEqual(pick(["Voicemeeter Out A1 (VB-Audio Vo", "Focusrite"]), "",
+                         "never a hardware output or the raw mic")
+
+
 class UpdateTest(unittest.TestCase):
     DIGEST = "sha256:" + "ab" * 32
 

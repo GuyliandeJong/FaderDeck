@@ -608,6 +608,28 @@ class MainWindowTest(unittest.TestCase):
         dialog.reject()
         self.assertEqual(mic.gainlayer[0].gain, 0.0)
 
+    def test_sound_check_records_the_processed_mic_and_plays_it_back(self):
+        recorded, played = [], []
+        saved = main.record_samples, main.play_samples
+        main.record_samples = lambda device, seconds: recorded.append((device, seconds)) or b"\x01\x00" * 10
+        main.play_samples = lambda data, device="": played.append((data, device))
+        try:
+            dialog = main.SettingsDialog(self.window, self.window.current_settings())
+            self.assertEqual(dialog.sound_check_source.currentData(),
+                             "Voicemeeter Out B1 (VB-Audio Vo", "B1 is picked by itself")
+            dialog.run_sound_check()
+            for _ in range(100):
+                if played:
+                    break
+                pump(0.02)
+            pump(0.1)
+        finally:
+            main.record_samples, main.play_samples = saved
+        self.assertEqual(recorded, [("Voicemeeter Out B1 (VB-Audio Vo", main.SOUND_CHECK_SECONDS)])
+        self.assertEqual(len(played), 1)
+        self.assertIn("Playing back", dialog.sound_check_status.text())
+        self.assertTrue(dialog.sound_check_button.isEnabled())
+
     def test_downloaded_update_starts_the_installer_and_quits(self):
         started = []
         saved = main.subprocess.Popen

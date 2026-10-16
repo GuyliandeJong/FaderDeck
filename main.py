@@ -999,6 +999,7 @@ class UpdateChecker(QObject):
 MUTE_SOUND_NOTES = {True: (784, 523), False: (523, 784)}  # Hz, by muted
 MUTE_SOUND_SHAPE = {"step_ms": 85, "decay_ms": 110, "drop": 0.02, "overtone": 0.25}
 SOUND_RATE = 44100
+SOUND_CHECK_SECONDS = 5
 _mute_sounds = {}
 
 
@@ -1153,6 +1154,111 @@ def play_samples(data, device=""):
             log.debug(f"Could not play a sound: {e}")
 
     threading.Thread(target=guarded, name="FaderDeckSound", daemon=True).start()
+
+
+class _WaveInCaps(ctypes.Structure):
+    _fields_ = [
+        ("wMid", ctypes.wintypes.WORD),
+        ("wPid", ctypes.wintypes.WORD),
+        ("vDriverVersion", ctypes.c_uint),
+        ("szPname", ctypes.c_wchar * 32),
+        ("dwFormats", ctypes.wintypes.DWORD),
+        ("wChannels", ctypes.wintypes.WORD),
+        ("wReserved1", ctypes.wintypes.WORD),
+    ]
+
+
+def _winmm_in():
+    winmm = ctypes.WinDLL("winmm")
+    handle = ctypes.c_void_p
+    for name, argtypes in (
+        ("waveInGetDevCapsW", (ctypes.c_size_t, ctypes.POINTER(_WaveInCaps), ctypes.c_uint)),
+        ("waveInOpen", (ctypes.POINTER(handle), ctypes.c_uint, ctypes.POINTER(_WaveFormat),
+                        ctypes.c_size_t, ctypes.c_size_t, ctypes.wintypes.DWORD)),
+        ("waveInPrepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveInAddBuffer", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveInStart", (handle,)),
+        ("waveInReset", (handle,)),
+        ("waveInUnprepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveInClose", (handle,)),
+    ):
+        function = getattr(winmm, name)
+        function.argtypes = argtypes
+        function.restype = ctypes.c_uint
+    winmm.waveInGetNumDevs.restype = ctypes.c_uint
+    return winmm
+
+
+def recording_devices():
+    """Names of the devices Windows can record from (cut at 31 characters)."""
+    winmm = _winmm_in()
+    names = []
+    for index in range(winmm.waveInGetNumDevs()):
+        caps = _WaveInCaps()
+        if winmm.waveInGetDevCapsW(index, ctypes.byref(caps), ctypes.sizeof(caps)) == 0:
+            names.append(caps.szPname)
+    return names
+
+
+def sound_check_device(names, output="B1"):
+    """A recording device that carries the processed microphone.
+
+    "VoiceMeeter Out B1" first. People rename these in Windows ("Stream
+    Microphone"), so next any VoiceMeeter device that is not one of the
+    hardware outputs A1-A5, preferring one that is called a microphone.
+    The raw microphone itself would skip the processing.
+    """
+    wanted = f"out {output}".casefold()
+    for name in names:
+        if wanted in name.casefold():
+            return name
+    virtual = [
+        name for name in names
+        if "vb-audio" in name.casefold()
+        and not re.search(r"out a\d", name.casefold())
+    ]
+    for name in virtual:
+        if name.casefold().startswith("microphone"):
+            return name
+    return virtual[0] if virtual else ""
+
+
+def record_samples(device, seconds):
+    """Record mono 16-bit samples from a device, by name. Waits: call it
+    off the GUI thread. Raises OSError when the device cannot be opened."""
+    winmm = _winmm_in()
+    names = recording_devices()
+    if device not in names:
+        raise OSError(f"{device or 'No device'} is not connected")
+    sound_format = _WaveFormat(1, 1, SOUND_RATE, SOUND_RATE * 2, 2, 16, 0)
+    handle = ctypes.c_void_p()
+    if winmm.waveInOpen(ctypes.byref(handle), names.index(device),
+                        ctypes.byref(sound_format), 0, 0, 0):
+        raise OSError(f"{device} could not be opened for recording")
+    buffer, header = wave_header(bytes(SOUND_RATE * 2 * seconds))
+    size = ctypes.sizeof(header)
+    try:
+        winmm.waveInPrepareHeader(handle, ctypes.byref(header), size)
+        winmm.waveInAddBuffer(handle, ctypes.byref(header), size)
+        winmm.waveInStart(handle)
+        deadline = time.monotonic() + seconds + 3
+        while not header.dwFlags & WHDR_DONE and time.monotonic() < deadline:
+            time.sleep(0.05)
+        winmm.waveInReset(handle)
+        winmm.waveInUnprepareHeader(handle, ctypes.byref(header), size)
+        return ctypes.string_at(buffer, header.dwBytesRecorded)
+    finally:
+        winmm.waveInClose(handle)
+
+
+def sound_check(device, seconds, play_on):
+    """Record the processed microphone, then play it back. Returns a short
+    report for the settings window."""
+    samples = record_samples(device, seconds)
+    if not samples:
+        return "Nothing was recorded. Is the microphone routed to that output?"
+    play_samples(samples, play_on)
+    return "Playing back what voice chat and your stream hear."
 
 
 def play_mute_sound(muted, device=""):
@@ -5781,6 +5887,40 @@ class SettingsDialog(QDialog):
             "microphone, and keep B1 for Discord."
         )
 
+        self.add_heading("SOUND CHECK")
+        self.add_note(
+            f"Records {SOUND_CHECK_SECONDS} seconds of your voice with the "
+            "mic processing applied, as voice chat and your stream hear it, "
+            "and plays it back where you hear the mute chime."
+        )
+        self.sound_check_source = QComboBox()
+        try:
+            sources = recording_devices()
+        except Exception:
+            sources = []
+        for source in sources:
+            self.sound_check_source.addItem(
+                source + ("…" if len(source) >= 31 else ""), source
+            )
+        self.sound_check_source.setCurrentIndex(
+            max(0, self.sound_check_source.findData(sound_check_device(sources)))
+        )
+        self.sound_check_button = QPushButton("RECORD")
+        self.sound_check_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.sound_check_button.clicked.connect(self.run_sound_check)
+        check_row = QHBoxLayout()
+        check_row.addWidget(self.sound_check_source, 1)
+        check_row.addWidget(self.sound_check_button)
+        self.form.addRow("Record from", check_row)
+        self.sound_check_status = QLabel(
+            "Speak as you do on stream after pressing RECORD."
+        )
+        self.sound_check_status.setObjectName("settingsNote")
+        self.sound_check_status.setWordWrap(True)
+        self.form.addRow(self.sound_check_status)
+        self.sound_check_job = BackgroundJob(self)
+        self.sound_check_job.finished.connect(self.on_sound_check_done)
+
         self.add_heading("MUTE CHIME")
         self.mute_sound = QCheckBox(
             "Play a chime when the microphone is muted or unmuted"
@@ -6168,6 +6308,28 @@ class SettingsDialog(QDialog):
         output = self.listen_bus.currentData()
         self.parent().set_mic_route(output, checked)
         self.update_monitor_button()
+
+    def run_sound_check(self):
+        device = self.sound_check_source.currentData() or ""
+        self.sound_check_button.setEnabled(False)
+        self.sound_check_status.setText(
+            f"Recording… speak now ({SOUND_CHECK_SECONDS} seconds)."
+        )
+        self.sound_check_job.start(
+            self.sound_check_or_problem, device, self.sound_device.currentData()
+        )
+
+    @staticmethod
+    def sound_check_or_problem(device, play_on):
+        """Runs off the GUI thread; the text goes to on_sound_check_done."""
+        try:
+            return sound_check(device, SOUND_CHECK_SECONDS, play_on)
+        except OSError as e:
+            return f"Sound check did not work: {e}"
+
+    def on_sound_check_done(self, text):
+        self.sound_check_button.setEnabled(True)
+        self.sound_check_status.setText(str(text or "Sound check did not work."))
 
     def update_chime_hint(self):
         """Say whether the chosen device keeps the chime off the stream."""

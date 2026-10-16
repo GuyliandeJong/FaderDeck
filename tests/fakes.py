@@ -223,6 +223,7 @@ class Sandbox:
         self._patch("voicemeeter_is_running", lambda: self.running)
         self.mute_sounds = []  # played instead of heard
         self._patch("firewall_allows", lambda program, port: False)
+        self._patch("recording_devices", lambda: ["Voicemeeter Out B1 (VB-Audio Vo", "Microphone (USB)"])
         self._patch(
             "play_mute_sound",
             lambda muted, device="": self.mute_sounds.append((muted, device)),
