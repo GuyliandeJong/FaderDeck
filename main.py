@@ -28,8 +28,8 @@ from logging.handlers import RotatingFileHandler
 from urllib.parse import parse_qs, unquote, urlsplit
 
 
-from PySide6.QtCore import (Qt, Signal, QObject, QTimer, QRectF, QBuffer, QIODevice, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
-from PySide6.QtGui import QBrush, QColor, QDrag, QImage, QFont, QFontMetricsF, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtCore import (QUrl, Qt, Signal, QObject, QTimer, QRectF, QBuffer, QIODevice, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
+from PySide6.QtGui import QDesktopServices, QBrush, QColor, QDrag, QImage, QFont, QFontMetricsF, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
 
 from PySide6.QtSvg import QSvgRenderer
 
@@ -77,7 +77,7 @@ from PySide6.QtWidgets import (
 )
 
 
-import voicemeeterlib
+voicemeeterlib = None  # loaded by load_voicemeeterlib()
 
 try:
     from pycaw.pycaw import AudioUtilities
@@ -426,6 +426,48 @@ def stable_hide_key(executable_path, app_name=""):
             part = _STORE_FOLDER.sub(r"\1_*_\3", part)
         parts.append(part)
     return "\\".join(parts)
+
+
+VOICEMEETER_DOWNLOAD_URL = "https://vb-audio.com/Voicemeeter/potato.htm"
+# VoiceMeeter's uninstall key: one for every edition. The library finds
+# its DLL through it too.
+VOICEMEETER_KEY = (
+    r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    r"\VB:Voicemeeter {17359A74-1236-5467}"
+)
+
+
+def voicemeeter_install_state():
+    """"potato" when VoiceMeeter Potato is installed, "other" for only
+    Standard or Banana, "missing" for none. Reads the registry and lists
+    one folder, so it is quick enough for the GUI thread."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, VOICEMEETER_KEY) as key:
+            uninstaller = winreg.QueryValueEx(key, "UninstallString")[0]
+        folder = os.path.dirname(uninstaller.strip().strip('"'))
+        names = {name.lower() for name in os.listdir(folder)}
+    except OSError:
+        return "missing"
+    # Potato's installer brings all three editions; Potato is voicemeeter8.
+    if "voicemeeter8.exe" in names or "voicemeeter8x64.exe" in names:
+        return "potato"
+    return "other"
+
+
+def load_voicemeeterlib():
+    """The voicemeeterlib module, or None while it cannot load (VoiceMeeter
+    is not installed). Tried again on every call, so an install made while
+    FaderDeck runs is picked up."""
+    global voicemeeterlib
+    if voicemeeterlib is None:
+        try:
+            import voicemeeterlib as module
+        except Exception as error:
+            log.warning(f"VoiceMeeter API not available: {error}")
+            return None
+        voicemeeterlib = module
+    return voicemeeterlib
 
 
 # Window class of VoiceMeeter's main window (all editions).
@@ -5866,6 +5908,62 @@ Sources, +, Audio Input Capture: <i>Voicemeeter Out B3</i> (the sound).</p>
 WELCOME = True  # greet a new user; the tests switch it off
 
 
+class VoicemeeterMissingDialog(QDialog):
+    """Shown at start while VoiceMeeter Potato is not installed: FaderDeck
+    is a remote for it and can do nothing on its own."""
+
+    def __init__(self, window, state):
+        super().__init__(window)
+        self.setWindowTitle("VoiceMeeter Potato is missing")
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        self.setMinimumWidth(480)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("It looks like VoiceMeeter Potato is missing")
+        title.setStyleSheet("font-size: 17px; font-weight: bold;")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        if state == "other":
+            found = (
+                "VoiceMeeter is installed on this PC, but not the Potato "
+                "edition. FaderDeck needs Potato: it uses its three virtual "
+                "inputs (Game, Chat, Media) and its outputs B1 to B3."
+            )
+        else:
+            found = (
+                "FaderDeck could not find VoiceMeeter Potato on this PC. "
+                "FaderDeck is a remote for it: VoiceMeeter does the mixing, "
+                "FaderDeck gives you the faders, mute buttons and routing."
+            )
+        text = QLabel(
+            found + "<br><br>"
+            "VoiceMeeter Potato is made by VB-Audio and free to use "
+            "(donationware). To set it up:"
+            "<ol style='margin-left: -20px;'>"
+            "<li>Download and run the VoiceMeeter Potato installer.</li>"
+            "<li>Restart your PC: its audio drivers need that.</li>"
+            "<li>Start VoiceMeeter Potato. FaderDeck connects by itself.</li>"
+            "</ol>"
+        )
+        text.setWordWrap(True)
+        text.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(text)
+
+        buttons = QDialogButtonBox()
+        self.download_button = buttons.addButton(
+            "Download VoiceMeeter Potato", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        self.download_button.setToolTip(VOICEMEETER_DOWNLOAD_URL)
+        buttons.addButton("Close", QDialogButtonBox.ButtonRole.RejectRole)
+        self.download_button.setDefault(True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+
 class WelcomeDialog(QDialog):
     """Shown once, the first time FaderDeck's window opens: not everyone
     goes looking in the settings, and the streaming setup is where most
@@ -6938,6 +7036,8 @@ class MainWindow(QMainWindow):
         # Health checks in a row that found VoiceMeeter running while we were
         # disconnected; see check_connection().
         self._seen_running = 0
+        self.vm_install_state = voicemeeter_install_state()
+        self._missing_shown = False
         self.strips = {}
         migrate_settings()
         self.window_settings = app_settings()
@@ -7220,18 +7320,21 @@ class MainWindow(QMainWindow):
         )
         banner_layout = QHBoxLayout(self.offline_banner)
         banner_layout.setContentsMargins(10, 5, 6, 5)
-        banner_text = QLabel(
-            "VoiceMeeter Potato is not running. FaderDeck connects "
-            "automatically when it starts."
-        )
-        banner_text.setStyleSheet("color: #f0b6b1; font-weight: bold;")
-        start_button = QPushButton("Start VoiceMeeter")
-        start_button.setToolTip("Start VoiceMeeter Potato and connect to it")
-        start_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.banner_text = QLabel()
+        self.banner_text.setWordWrap(True)
+        self.banner_text.setStyleSheet("color: #f0b6b1; font-weight: bold;")
+        self.start_button = QPushButton("Start VoiceMeeter")
+        self.start_button.setToolTip("Start VoiceMeeter Potato and connect to it")
+        self.start_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
         # Logging in starts VoiceMeeter when it is not running.
-        start_button.clicked.connect(self.connect_vm)
-        banner_layout.addWidget(banner_text, 1)
-        banner_layout.addWidget(start_button)
+        self.start_button.clicked.connect(self.connect_vm)
+        self.download_button = QPushButton("Download VoiceMeeter")
+        self.download_button.setToolTip(VOICEMEETER_DOWNLOAD_URL)
+        self.download_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.download_button.clicked.connect(self.open_voicemeeter_download)
+        banner_layout.addWidget(self.banner_text, 1)
+        banner_layout.addWidget(self.start_button)
+        banner_layout.addWidget(self.download_button)
         self.offline_banner.setVisible(False)
         main_layout.addWidget(self.offline_banner)
         main_layout.addWidget(self.main_splitter, 1)
@@ -7604,6 +7707,9 @@ class MainWindow(QMainWindow):
         Safe to call again after VoiceMeeter was restarted: the same API
         object is reused, so the existing widgets keep working.
         """
+        if self.vm is None and load_voicemeeterlib() is None:
+            self._show_connection_state()
+            return
         try:
             if self.vm is None:
                 self.vm = voicemeeterlib.api(
@@ -7734,6 +7840,16 @@ class MainWindow(QMainWindow):
                 "color: #f85149; font-weight: bold;"
             )
         self.offline_banner.setVisible(not self.connected)
+        if not self.connected:
+            self.vm_install_state = voicemeeter_install_state()
+        installed = self.vm_install_state == "potato"
+        self.banner_text.setText(
+            "VoiceMeeter Potato is not running. FaderDeck connects "
+            "automatically when it starts." if installed else
+            "VoiceMeeter Potato is not installed. FaderDeck needs it to work."
+        )
+        self.start_button.setVisible(installed)
+        self.download_button.setVisible(not installed)
         # Controls that would write to VoiceMeeter are greyed out meanwhile.
         self.mixer_container.setEnabled(self.connected)
         self.processing_toggle.setEnabled(self.connected)
@@ -8607,15 +8723,28 @@ class MainWindow(QMainWindow):
     mix = "you"  # which mix the faders set: "you" or "stream"
 
     def maybe_welcome(self):
-        """Greet a new user once, when the window is first on screen."""
-        if not WELCOME or setting_bool(self.window_settings, "welcome_shown", False):
+        """Greet a new user once, when the window is first on screen.
+        Without VoiceMeeter Potato, explain that first (once per start)."""
+        if not WELCOME:
             return
         if not self.isVisible() or self.isMinimized():
             return  # started in the tray: show_from_tray asks again
+        if self.vm_install_state != "potato":
+            if not self._missing_shown:
+                self._missing_shown = True
+                dialog = VoicemeeterMissingDialog(self, self.vm_install_state)
+                if self.run_dialog(dialog) == QDialog.DialogCode.Accepted:
+                    self.open_voicemeeter_download()
+            return  # the welcome waits until VoiceMeeter is there
+        if setting_bool(self.window_settings, "welcome_shown", False):
+            return
         self.window_settings.setValue("welcome_shown", True)
         self.window_settings.sync()
         if self.run_dialog(WelcomeDialog(self)) == QDialog.DialogCode.Accepted:
             self.run_dialog(StreamSetupDialog(self, self.vm if self.connected else None))
+
+    def open_voicemeeter_download(self):
+        QDesktopServices.openUrl(QUrl(VOICEMEETER_DOWNLOAD_URL))
 
     def run_dialog(self, dialog):
         """exec() a dialog. Kept apart so tests can answer it."""

@@ -11,6 +11,7 @@ import re
 import sys
 import tempfile
 import time
+import types
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Keep the application log out of the real %LOCALAPPDATA%.
@@ -234,8 +235,10 @@ class Sandbox:
             "play_mute_sound",
             lambda muted, device="": self.mute_sounds.append((muted, device)),
         )
-        self._saved_api = main.voicemeeterlib.api
-        main.voicemeeterlib.api = lambda *args, **kwargs: self.vm
+        self.install_state = "potato"
+        self._patch("voicemeeter_install_state", lambda: self.install_state)
+        self._patch("voicemeeterlib", types.SimpleNamespace(
+            api=lambda *args, **kwargs: self.vm))
         self._saved_strips = dict(main.STRIPS)
         main.STRIPS["Mic"] = 0
         return self
@@ -247,7 +250,6 @@ class Sandbox:
     def __exit__(self, *exc):
         for name, value in self._saved.items():
             setattr(main, name, value)
-        main.voicemeeterlib.api = self._saved_api
         main.STRIPS.clear()
         main.STRIPS.update(self._saved_strips)
 

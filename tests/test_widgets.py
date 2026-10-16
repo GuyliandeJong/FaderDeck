@@ -833,6 +833,28 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Call")
         self.assertTrue(self.window.mix_box.isVisibleTo(self.window))
 
+    def test_without_voicemeeter_it_explains_and_offers_the_download(self):
+        self.sandbox.install_state = "missing"
+        self.sandbox.running = False
+        window = self.sandbox.window()
+        window.release_vm()
+        window._show_connection_state()
+        self.assertFalse(window.download_button.isHidden())
+        self.assertTrue(window.start_button.isHidden())
+        self.assertIn("not installed", window.banner_text.text())
+        shown, opened = [], []
+        window.open_voicemeeter_download = lambda: opened.append(True)
+        window.run_dialog = lambda dialog: shown.append(type(dialog).__name__) or (
+            main.QDialog.DialogCode.Accepted)
+        main.WELCOME = True  # the sandbox puts it back
+        window.show()
+        window.maybe_welcome()
+        window.maybe_welcome()
+        self.assertEqual(shown, ["VoicemeeterMissingDialog"], "once, and no welcome yet")
+        self.assertEqual(opened, [True])
+        self.assertFalse(main.setting_bool(window.window_settings, "welcome_shown", False))
+        window.hide()
+
     def test_welcome_shows_once_and_can_open_the_setup(self):
         main.WELCOME = True  # the sandbox puts it back
         welcome = self.window.maybe_welcome

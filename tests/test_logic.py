@@ -287,6 +287,30 @@ class SoundCheckTest(unittest.TestCase):
                          "never a hardware output or the raw mic")
 
 
+class VoicemeeterInstallTest(unittest.TestCase):
+    def state(self, files, registered=True):
+        import tempfile
+        import winreg
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as folder:
+            for name in files:
+                open(os.path.join(folder, name), "w").close()
+            uninstaller = os.path.join(folder, "Voicemeeter8Setup.exe")
+
+            def open_key(root, key):
+                if not registered:
+                    raise FileNotFoundError(key)
+                return mock.MagicMock()
+            with mock.patch.object(winreg, "OpenKey", open_key),                     mock.patch.object(winreg, "QueryValueEx",
+                                      lambda key, name: (f'"{uninstaller}"', 1)):
+                return main.voicemeeter_install_state()
+
+    def test_potato_banana_and_none(self):
+        self.assertEqual(self.state(["voicemeeter8x64.exe", "voicemeeterpro.exe"]), "potato")
+        self.assertEqual(self.state(["voicemeeterpro.exe", "voicemeeter.exe"]), "other")
+        self.assertEqual(self.state([], registered=False), "missing")
+
+
 class UpdateTest(unittest.TestCase):
     DIGEST = "sha256:" + "ab" * 32
 
