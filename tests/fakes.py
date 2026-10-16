@@ -222,6 +222,7 @@ class Sandbox:
 
     def __enter__(self):
         FakeSettings.store = {}
+        self._patch("WELCOME", False)  # no dialog may wait for a click in a test
         FakeSettings.old_store = {}
         self._patch("QSettings", FakeSettings)
         self._patch("PYCAW_AVAILABLE", False)

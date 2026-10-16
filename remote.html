@@ -87,14 +87,14 @@ footer button { flex: none; padding: 0 18px; }
 </head>
 <body>
 <header><img src="/remote/icon-192.png" alt=""><b>Fader<span>Deck</span></b>
-  <div id="mixes" hidden><button id="mixYou" class="on" title="The faders set what you hear">YOU</button><button id="mixStream" title="The faders set what your stream hears">STREAM</button></div>
+  <div id="mixes" hidden><button id="mixYou" class="on" title="The faders set what you hear">You</button><button id="mixStream" title="The faders set what your stream hears">Stream</button></div>
   <div id="status">Connecting…</div></header>
 
 <section id="pair" hidden>
   <h2>Pair this device</h2>
-  <p>In FaderDeck on your PC, open Settings, Remote control, and press PAIR A DEVICE. Type the code it shows.</p>
+  <p>In FaderDeck on your PC, open Settings, Remote control, and press "Pair a device". Type the code it shows.</p>
   <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
-  <button id="pairButton">PAIR</button>
+  <button id="pairButton">Pair</button>
   <p id="error"></p>
 </section>
 
@@ -102,13 +102,13 @@ footer button { flex: none; padding: 0 18px; }
 <footer id="footer" hidden>
   <div class="group mic">
     <label>Mic</label>
-    <button id="listen" title="Hear your own microphone">MONITOR</button>
-    <button id="stream" class="streammute" title="Mute your microphone for the stream only; voice chat still hears you"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><rect x="8.2" y="3.2" width="7.6" height="11.6" rx="3.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11.5v1.1a6.5 6.5 0 0 0 13 0v-1.1M12 19.1v2.1M8.5 21.2h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>MUTE STREAM</button>
+    <button id="listen" title="Hear your own microphone">Monitor</button>
+    <button id="stream" class="streammute" title="Mute your microphone for the stream only; voice chat still hears you"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><rect x="8.2" y="3.2" width="7.6" height="11.6" rx="3.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11.5v1.1a6.5 6.5 0 0 0 13 0v-1.1M12 19.1v2.1M8.5 21.2h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Mute stream</button>
   </div>
   <div class="group">
     <label for="profiles">Profile</label>
     <select id="profiles"></select>
-    <button id="load">LOAD</button>
+    <button id="load">Load</button>
     <span id="profileState"></span>
   </div>
 </footer>
@@ -203,7 +203,7 @@ function strip(name, label) {
   element.style.setProperty("--accent", COLORS[name] || "#58a6ff");
   element.innerHTML = `<h2></h2><div class="db"></div>
     <div class="fader"><div class="track"><div class="fill"></div></div><div class="thumb"></div></div>
-    <div class="buttons"><button class="mute">MUTE</button></div>`;
+    <div class="buttons"><button class="mute">Mute</button></div>`;
   element.querySelector("h2").textContent = label;
   element.place = fader(element, name);
   element.querySelector(".mute").onclick = () =>

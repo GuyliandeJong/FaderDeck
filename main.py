@@ -1768,8 +1768,8 @@ class PhoneRemote(QObject):
             token = self.pair(code)
             if token is None:
                 return self.json_answer(403, {
-                    "error": "That code is wrong or has run out. Press PAIR A "
-                    "DEVICE in FaderDeck for a new one."})
+                    "error": "That code is wrong or has run out. Press \"Pair a "
+                    "device\" in FaderDeck for a new one."})
             log.info(f"Phone remote: paired a device at {client}")
             return self.json_answer(200, {"token": token})
 
@@ -2664,7 +2664,7 @@ class ProcessingPanel(QWidget):
 
         tools = QHBoxLayout()
         tools.setContentsMargins(0, 0, 0, 0)
-        self.bypass_button = QPushButton("BYPASS")
+        self.bypass_button = QPushButton("Bypass")
         self.bypass_button.setCheckable(True)
         self.bypass_button.setFixedHeight(26)
         self.bypass_button.setStyleSheet(
@@ -2676,7 +2676,7 @@ class ProcessingPanel(QWidget):
             "so you can compare with and without"
         )
         self.bypass_button.clicked.connect(self.on_bypass_clicked)
-        self.reset_button = QPushButton("RESET")
+        self.reset_button = QPushButton("Reset")
         self.reset_button.setFixedHeight(26)
         self.reset_button.setStyleSheet("QPushButton { padding: 2px 12px; }")
         self.reset_button.setToolTip(
@@ -2737,7 +2737,7 @@ class ProcessingPanel(QWidget):
             "values are replaced when it moves."
         )
         self.amount_notice.setFixedHeight(30)
-        undo = QPushButton("UNDO")
+        undo = QPushButton("Undo")
         undo.setFixedHeight(22)
         undo.setStyleSheet("QPushButton { padding: 1px 10px; font-size: 11px; }")
         undo.setToolTip("Bring back Amount and the advanced values from before")
@@ -3617,25 +3617,13 @@ class StripWidget(QWidget):
         button_layout.setSpacing(5)
 
 
-        self.mute_button = QPushButton(
-
-            "MUTE"
-
-        )
+        self.mute_button = QPushButton("Mute")
         self.mute_button.setFixedHeight(MIXER_BUTTON_HEIGHT)
 
-        self.solo_button = QPushButton(
-
-            "SOLO"
-
-        )
+        self.solo_button = QPushButton("Solo")
         self.solo_button.setFixedHeight(MIXER_BUTTON_HEIGHT)
 
-        self.mono_button = QPushButton(
-
-            "MONO"
-
-        )
+        self.mono_button = QPushButton("Mono")
         self.mono_button.setFixedHeight(MIXER_BUTTON_HEIGHT)
         self.solo_button.setStyleSheet(
             outline_toggle_style(TOGGLE_COLORS["solo"])
@@ -5271,7 +5259,7 @@ class ApplicationControl(QWidget):
         toolbar = QHBoxLayout()
         self.status_label = QLabel("Scanning VoiceMeeter audio sessions...")
         self.status_label.setStyleSheet("color: #8b949e;")
-        refresh_button = QPushButton("REFRESH")
+        refresh_button = QPushButton("Refresh")
         refresh_button.clicked.connect(self.request_refresh)
 
         self.hidden_button = QPushButton()
@@ -5875,6 +5863,63 @@ Sources, +, Audio Input Capture: <i>Voicemeeter Out B3</i> (the sound).</p>
 """
 
 
+WELCOME = True  # greet a new user; the tests switch it off
+
+
+class WelcomeDialog(QDialog):
+    """Shown once, the first time FaderDeck's window opens: not everyone
+    goes looking in the settings, and the streaming setup is where most
+    people should start."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.setWindowTitle("Welcome to FaderDeck")
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(12)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        logo = QLabel()
+        logo.setPixmap(_svg_icon(LOGO_SVG, 40).pixmap(40, 40))
+        title_row.addWidget(logo)
+        title = QLabel("Welcome to FaderDeck")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title_row.addWidget(title, 1)
+        layout.addLayout(title_row)
+
+        text = QLabel(
+            "FaderDeck controls VoiceMeeter Potato for you: a fader, mute and "
+            "routing for your microphone, game, chat and media, without "
+            "opening VoiceMeeter.<br><br>"
+            "<b>Do you stream, or talk in a voice call?</b> Start with the "
+            "streaming setup. In one click it sends your voice to your call "
+            "and your stream, and your game, chat and music to your "
+            "headphones and your stream. Then it tells you what to pick in "
+            "your call program and in OBS."
+        )
+        text.setWordWrap(True)
+        text.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(text)
+
+        later = QLabel("You can open it later from Settings, Microphone.")
+        later.setObjectName("settingsNote")
+        later.setStyleSheet("color: #8ba0b5; font-size: 11px;")
+        layout.addWidget(later)
+
+        buttons = QDialogButtonBox()
+        self.setup_button = buttons.addButton(
+            "Set up for streaming", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        buttons.addButton("Not now", QDialogButtonBox.ButtonRole.RejectRole)
+        self.setup_button.setDefault(True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+
 class StreamSetupDialog(QDialog):
     """Explains the streaming routing and sets it up in one go."""
 
@@ -5912,7 +5957,7 @@ class StreamSetupDialog(QDialog):
         form.addRow(self.name_outputs)
         layout.addLayout(form)
 
-        self.apply_button = QPushButton("APPLY THIS ROUTING")
+        self.apply_button = QPushButton("Apply this routing")
         self.apply_button.setStyleSheet("QPushButton { padding: 6px 14px; font-weight: bold; }")
         self.apply_button.clicked.connect(self.apply)
         self.status = QLabel(
@@ -5931,7 +5976,7 @@ class StreamSetupDialog(QDialog):
         programs.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(programs)
 
-        sound_settings = QPushButton("OPEN WINDOWS SOUND SETTINGS")
+        sound_settings = QPushButton("Open Windows sound settings")
         sound_settings.setToolTip(
             "To give the VoiceMeeter devices names of your own: Recording, "
             "right-click a device, Properties."
@@ -5953,7 +5998,7 @@ class StreamSetupDialog(QDialog):
         )
         self.status.setText(problem or (
             "Done. Your voice is on B1 and B2, the sound on your headphones "
-            "and B3, and the YOU / STREAM switch is in the header. Now pick "
+            "and B3, and the You / Stream switch is in the header. Now pick "
             "the devices below in your programs."
         ))
 
@@ -6047,7 +6092,7 @@ class SettingsDialog(QDialog):
         self.form.addRow("Microphone input", self.mic_input)
         self.add_note("The VoiceMeeter input your microphone is on.")
         self.listen_bus = QComboBox()
-        self.monitor_button = QPushButton("MONITOR")
+        self.monitor_button = QPushButton("Monitor")
         self.monitor_button.setCheckable(True)
         self.monitor_button.setStyleSheet(
             "QPushButton { padding: 4px 12px; }"
@@ -6081,7 +6126,7 @@ class SettingsDialog(QDialog):
         monitor_row.addWidget(self.monitor_button)
         self.form.addRow("Monitor on", monitor_row)
         self.add_note(
-            "MONITOR sends your microphone to this output so you hear "
+            "\"Monitor\" sends your microphone to this output so you hear "
             "yourself; press it again to stop. It works at once. VoiceMeeter "
             "adds a little delay."
         )
@@ -6105,7 +6150,7 @@ class SettingsDialog(QDialog):
         self.on_monitor_level(self.monitor_level.value(), preview=False)
 
         self.add_heading("STREAM")
-        setup_button = QPushButton("SET UP FOR STREAMING…")
+        setup_button = QPushButton("Set up for streaming…")
         setup_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
         setup_button.setToolTip(
             "Explains which output goes where, routes everything in one go, "
@@ -6120,8 +6165,8 @@ class SettingsDialog(QDialog):
         self.add_note(
             "Tick every VoiceMeeter output your stream software records, for "
             "example B2 for your voice and B3 for game, chat and media. Only "
-            "the virtual outputs B1-B3 can reach it. MUTE STREAM "
-            "takes your microphone off them and the STREAM mix sets their "
+            "the virtual outputs B1-B3 can reach it. \"Mute stream\" "
+            "takes your microphone off them and the Stream mix sets their "
             "volumes. Keep B1 for your call program, so voice chat still hears you."
         )
 
@@ -6143,7 +6188,7 @@ class SettingsDialog(QDialog):
         self.sound_check_source.setCurrentIndex(
             max(0, self.sound_check_source.findData(sound_check_device(sources)))
         )
-        self.sound_check_button = QPushButton("RECORD")
+        self.sound_check_button = QPushButton("Record")
         self.sound_check_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.sound_check_button.clicked.connect(self.run_sound_check)
         check_row = QHBoxLayout()
@@ -6151,7 +6196,7 @@ class SettingsDialog(QDialog):
         check_row.addWidget(self.sound_check_button)
         self.form.addRow("Record from", check_row)
         self.sound_check_status = QLabel(
-            "Speak as you do on stream after pressing RECORD."
+            "Speak as you do on stream after pressing \"Record\"."
         )
         self.sound_check_status.setObjectName("settingsNote")
         self.sound_check_status.setWordWrap(True)
@@ -6184,7 +6229,7 @@ class SettingsDialog(QDialog):
                 device + ("…" if len(device) >= 31 else ""), device
             )
         self.sound_device.setCurrentIndex(max(0, self.sound_device.findData(chosen)))
-        self.preview_chime = QPushButton("PREVIEW")
+        self.preview_chime = QPushButton("Preview")
         self.preview_chime.setToolTip("Play the mute chime on this device")
         self.preview_chime.setStyleSheet("QPushButton { padding: 4px 10px; }")
         self.preview_chime.clicked.connect(
@@ -6252,7 +6297,7 @@ class SettingsDialog(QDialog):
         self.check_updates = QCheckBox("Check for updates when FaderDeck starts")
         self.check_updates.setChecked(current["check_updates"])
         self.form.addRow(self.check_updates)
-        check_now = QPushButton("CHECK NOW")
+        check_now = QPushButton("Check now")
         check_now.setStyleSheet("QPushButton { padding: 4px 10px; }")
         check_now.clicked.connect(
             lambda: self.parent().check_for_updates(quiet=False)
@@ -6287,10 +6332,10 @@ class SettingsDialog(QDialog):
             button.changed.connect(self.on_theme_edited)
             self.form.addRow(channel_label(channel), button)
             self.channel_colors[channel] = button
-        save_theme = QPushButton("SAVE AS...")
+        save_theme = QPushButton("Save as…")
         save_theme.setToolTip("Keep these colours as a theme of your own")
         save_theme.clicked.connect(self.save_theme)
-        self.delete_theme_button = QPushButton("DELETE")
+        self.delete_theme_button = QPushButton("Delete")
         self.delete_theme_button.clicked.connect(self.delete_theme)
         theme_row = QHBoxLayout()
         for button in (save_theme, self.delete_theme_button):
@@ -6364,11 +6409,11 @@ class SettingsDialog(QDialog):
             current["api_token"] or secrets.token_urlsafe(16)
         )
         self.api_token.setReadOnly(True)
-        copy_button = QPushButton("COPY")
+        copy_button = QPushButton("Copy")
         copy_button.clicked.connect(
             lambda: QApplication.clipboard().setText(self.api_token.text())
         )
-        new_button = QPushButton("NEW")
+        new_button = QPushButton("New")
         new_button.setToolTip(
             "Make a new token. Programs using the old one stop working."
         )
@@ -6423,7 +6468,7 @@ class SettingsDialog(QDialog):
         )
         self.remote_address.setReadOnly(True)
         self.form.addRow("Address", self.remote_address)
-        self.firewall_button = QPushButton("ALLOW THROUGH FIREWALL")
+        self.firewall_button = QPushButton("Allow through firewall")
         self.firewall_button.setStyleSheet("QPushButton { padding: 4px 10px; }")
         self.firewall_button.setToolTip(
             "Windows asks for permission once, then lets phones and tablets "
@@ -6441,9 +6486,9 @@ class SettingsDialog(QDialog):
         self.firewall_job.finished.connect(self.show_firewall_status)
         self.remote_port.valueChanged.connect(self.check_firewall)
         self.check_firewall()
-        pair_button = QPushButton("PAIR A DEVICE")
+        pair_button = QPushButton("Pair a device")
         pair_button.clicked.connect(self.show_pairing_code)
-        forget_button = QPushButton("FORGET PAIRED DEVICES")
+        forget_button = QPushButton("Forget paired devices")
         forget_button.clicked.connect(self.forget_devices)
         # The paired devices belong to the running remote, not to this
         # window: OK only clears them when FORGET was pressed.
@@ -7125,8 +7170,8 @@ class MainWindow(QMainWindow):
         mix_layout.setContentsMargins(0, 0, 0, 0)
         mix_layout.setSpacing(0)
         for mix, text, tip, color in (
-            ("you", "YOU", "The faders set what you hear", "#58a6ff"),
-            ("stream", "STREAM", "The faders set what your stream hears", "#f0883e"),
+            ("you", "You", "The faders set what you hear", "#58a6ff"),
+            ("stream", "Stream", "The faders set what your stream hears", "#f0883e"),
         ):
             button = QPushButton(text)
             button.setCheckable(True)
@@ -7180,7 +7225,7 @@ class MainWindow(QMainWindow):
             "automatically when it starts."
         )
         banner_text.setStyleSheet("color: #f0b6b1; font-weight: bold;")
-        start_button = QPushButton("START VOICEMEETER")
+        start_button = QPushButton("Start VoiceMeeter")
         start_button.setToolTip("Start VoiceMeeter Potato and connect to it")
         start_button.setStyleSheet("QPushButton { padding: 4px 12px; }")
         # Logging in starts VoiceMeeter when it is not running.
@@ -7196,7 +7241,7 @@ class MainWindow(QMainWindow):
         # Mic processing section. Keep it collapsed by default so the main
         # mixer remains the visual focus, while advanced processing stays one click away.
         self.processing_toggle = QToolButton()
-        self.processing_toggle.setText("MIC PROCESSING…")
+        self.processing_toggle.setText("Mic processing…")
         self.processing_toggle.setToolTip(
             "Open the compressor, gate and denoiser in a separate window"
         )
@@ -7288,7 +7333,7 @@ class MainWindow(QMainWindow):
 
         # Mute for the stream only. MONITOR lives in Settings, Microphone,
         # and on a hotkey.
-        self.stream_mute_button = QPushButton("MUTE STREAM")
+        self.stream_mute_button = QPushButton("Mute stream")
         # The microphone icon says what is muted: your voice, not the stream.
         set_mono_icon(self.stream_mute_button, "mic", 14)
         self.stream_mute_button.setCheckable(True)
@@ -7364,11 +7409,11 @@ class MainWindow(QMainWindow):
         self.profile_list = QComboBox()
         profile_buttons = QHBoxLayout()
         profile_buttons.setSpacing(4)
-        self.profile_load_button = QPushButton("LOAD")
+        self.profile_load_button = QPushButton("Load")
         self.profile_load_button.clicked.connect(self.on_profile_load)
-        profile_save_button = QPushButton("SAVE AS…")
+        profile_save_button = QPushButton("Save as…")
         profile_save_button.clicked.connect(self.on_profile_save)
-        self.profile_delete_button = QPushButton("DELETE")
+        self.profile_delete_button = QPushButton("Delete")
         self.profile_delete_button.clicked.connect(self.on_profile_delete)
         for button in (
             self.profile_load_button,
@@ -7385,7 +7430,7 @@ class MainWindow(QMainWindow):
         # the loaded profile, in which case UPDATE saves it back.
         self.profile_status = QLabel(PROFILE_HOLDS)
         self.profile_status.setStyleSheet("color: #8ba0b5; font-size: 11px;")
-        self.profile_update_button = QPushButton("UPDATE")
+        self.profile_update_button = QPushButton("Update")
         self.profile_update_button.setFixedHeight(20)
         self.profile_update_button.setStyleSheet(
             "QPushButton { padding: 0 8px; font-size: 11px; color: #f5b83d; "
@@ -7452,6 +7497,7 @@ class MainWindow(QMainWindow):
         self.connection_timer.timeout.connect(self.check_connection)
         self.connection_timer.start()
 
+        QTimer.singleShot(1200, self.maybe_welcome)
         self.updater = UpdateChecker(self)
         self.updater.found.connect(self.on_update_found)
         self.updater.latest.connect(self.on_update_latest)
@@ -7797,17 +7843,17 @@ class MainWindow(QMainWindow):
         self.preset_list.setToolTip(
             "Saved settings of the compressor, gate and denoiser together"
         )
-        self.preset_load_button = QPushButton("LOAD")
+        self.preset_load_button = QPushButton("Load")
         self.preset_load_button.setToolTip(
             "Replace the compressor, gate and denoiser values with "
-            "this preset. RESET brings back the values from when the "
+            "this preset. \"Reset\" brings back the values from when the "
             "window was opened."
         )
         self.preset_load_button.clicked.connect(self.on_preset_load)
-        save_button = QPushButton("SAVE AS…")
+        save_button = QPushButton("Save as…")
         save_button.setToolTip("Save the current values as a preset")
         save_button.clicked.connect(self.on_preset_save)
-        self.preset_delete_button = QPushButton("DELETE")
+        self.preset_delete_button = QPushButton("Delete")
         self.preset_delete_button.clicked.connect(self.on_preset_delete)
         for button in (
             self.preset_load_button, save_button, self.preset_delete_button
@@ -7928,8 +7974,8 @@ class MainWindow(QMainWindow):
             )
             self.profile_status.setText(f"{name}: changed")
             self.profile_status.setToolTip(
-                f"The mixer no longer matches \u201c{name}\u201d. LOAD brings "
-                "the profile back; UPDATE saves the current state into it."
+                f"The mixer no longer matches \u201c{name}\u201d. \"Load\" brings "
+                "the profile back; \"Update\" saves the current state into it."
             )
         elif time.monotonic() >= self._profile_message_until:
             self.profile_status.setText(
@@ -8083,9 +8129,9 @@ class MainWindow(QMainWindow):
     def update_processing_summary(self):
         """Show each block's Amount under the button and its state on its tab."""
         blocks = (
-            ("Compressor", "COMPRESSOR", self.compressor_control),
-            ("Gate", "GATE", self.gate_control),
-            ("Denoiser", "DENOISER", self.denoiser_control),
+            ("Compressor", "Compressor", self.compressor_control),
+            ("Gate", "Gate", self.gate_control),
+            ("Denoiser", "Denoiser", self.denoiser_control),
         )
         lines = []
         for index, (label, tab, control) in enumerate(blocks):
@@ -8269,9 +8315,9 @@ class MainWindow(QMainWindow):
     def create_processing_controls(self):
         """Make the compressor, gate and denoiser tabs, once each."""
         for attribute, control_class, title in (
-            ("compressor_control", CompressorControl, "COMPRESSOR"),
-            ("gate_control", GateControl, "GATE"),
-            ("denoiser_control", DenoiserControl, "DENOISER"),
+            ("compressor_control", CompressorControl, "Compressor"),
+            ("gate_control", GateControl, "Gate"),
+            ("denoiser_control", DenoiserControl, "Denoiser"),
         ):
             if getattr(self, attribute) is None:
                 setattr(self, attribute, control_class(self.vm))
@@ -8450,6 +8496,7 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        QTimer.singleShot(600, self.maybe_welcome)
 
     def sync_tray(self):
         """Show the Mic mute state on the tray icon and in its menu."""
@@ -8558,6 +8605,21 @@ class MainWindow(QMainWindow):
     # The stream mix.
 
     mix = "you"  # which mix the faders set: "you" or "stream"
+
+    def maybe_welcome(self):
+        """Greet a new user once, when the window is first on screen."""
+        if not WELCOME or setting_bool(self.window_settings, "welcome_shown", False):
+            return
+        if not self.isVisible() or self.isMinimized():
+            return  # started in the tray: show_from_tray asks again
+        self.window_settings.setValue("welcome_shown", True)
+        self.window_settings.sync()
+        if self.run_dialog(WelcomeDialog(self)) == QDialog.DialogCode.Accepted:
+            self.run_dialog(StreamSetupDialog(self, self.vm if self.connected else None))
+
+    def run_dialog(self, dialog):
+        """exec() a dialog. Kept apart so tests can answer it."""
+        return dialog.exec()
 
     def apply_stream_setup(self, headphones, name_outputs=True):
         """The streaming routing in one go: the microphone on B1 (voice

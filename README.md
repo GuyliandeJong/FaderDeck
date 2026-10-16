@@ -14,6 +14,10 @@ Windows may warn that the program is not signed; choose **More info**, then **Ru
 
 Prefer no installer? The release also has **FaderDeck.exe**, which runs as it is. That copy does not update itself.
 
+## First Start
+
+The first time FaderDeck opens, a short welcome recommends the **streaming setup** (also under Settings, Microphone): one click sends your voice to your call and your stream and your sound to your headphones and your stream, and it tells you what to pick in your call program and OBS.
+
 ## Preview
 
 ![FaderDeck interface](screenshots/faderdeck.png)
@@ -35,7 +39,7 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 
 ### Stream Mix
 
-Give your viewers a different mix than you hear: music quieter on stream, game louder for you. Once your stream has an output of its own (Settings, Microphone, Your stream hears), a **YOU / STREAM** switch appears in the header. The faders then set what you hear or what your stream hears. Setup profiles keep both mixes, and the phone remote has its own switch.
+Give your viewers a different mix than you hear: music quieter on stream, game louder for you. Once your stream has an output of its own (Settings, Microphone, Your stream hears), a **You / Stream** switch appears in the header. The faders then set what you hear or what your stream hears. Setup profiles keep both mixes, and the phone remote has its own switch.
 
 For this, your stream must take its sound from VoiceMeeter's outputs only. A setup that works well:
 
@@ -45,7 +49,7 @@ For this, your stream must take its sound from VoiceMeeter's outputs only. A set
 | B2 | your microphone | OBS, as the microphone source |
 | B3 | Game, Chat and Media | OBS, as the sound source (instead of Desktop Audio or application capture) |
 
-**Settings, Microphone, SET UP FOR STREAMING** does all of this in one click and lists what to pick in Windows, Discord and OBS, by the names Windows gives the VoiceMeeter devices. By hand: tick B2 and B3 under Settings, Microphone, Your stream hears. Mute stream then takes your voice off B2 while Discord keeps it, the STREAM mix sets the volumes on B2 and B3, and in OBS your voice and the game sound stay separate sources with their own filters and recording tracks. In the STREAM mix, a channel that reaches none of the stream's outputs says "not sent to B2 or B3".
+**Settings, Microphone, Set up for streaming** does all of this in one click and lists what to pick in Windows, Discord and OBS, by the names Windows gives the VoiceMeeter devices. By hand: tick B2 and B3 under Settings, Microphone, Your stream hears. Mute stream then takes your voice off B2 while Discord keeps it, the Stream mix sets the volumes on B2 and B3, and in OBS your voice and the game sound stay separate sources with their own filters and recording tracks. In the Stream mix, a channel that reaches none of the stream's outputs says "not sent to B2 or B3".
 
 FaderDeck does this with VoiceMeeter's volume per output. VoiceMeeter's own main faders then no longer show the volumes; moving one there resets the stream mix of that channel.
 
@@ -119,11 +123,11 @@ A hotkey is taken from every other program while FaderDeck runs, so pick combina
 Use a phone or tablet on your home network as a mixing console: a fader per channel, mute, monitor, mute stream and your setup profiles, in your own channel names and colours. It works in any browser, on Android, iPhone and tablets, and needs nothing installed.
 
 1. In Settings, Remote control, tick **Allow phones and tablets on my home network**.
-2. Press **ALLOW THROUGH FIREWALL** and say yes to the Windows prompt. Without it, Windows blocks the phone and the page times out.
-3. Open the address shown there on the phone, press **PAIR A DEVICE** on the PC and type the code.
+2. Press **Allow through firewall** and say yes to the Windows prompt. Without it, Windows blocks the phone and the page times out.
+3. Open the address shown there on the phone, press **Pair a device** on the PC and type the code.
 4. Use the browser's **Add to home screen** to keep it as an app.
 
-Only paired devices on your own network can control FaderDeck; **FORGET PAIRED DEVICES** removes them all. The page updates itself when FaderDeck is updated.
+Only paired devices on your own network can control FaderDeck; **Forget paired devices** removes them all. The page updates itself when FaderDeck is updated.
 
 ### Stream Deck
 

@@ -833,6 +833,22 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Call")
         self.assertTrue(self.window.mix_box.isVisibleTo(self.window))
 
+    def test_welcome_shows_once_and_can_open_the_setup(self):
+        main.WELCOME = True  # the sandbox puts it back
+        welcome = self.window.maybe_welcome
+        shown = []
+        self.window.run_dialog = lambda dialog: shown.append(type(dialog).__name__) or (
+            main.QDialog.DialogCode.Accepted if isinstance(dialog, main.WelcomeDialog)
+            else main.QDialog.DialogCode.Rejected)
+        welcome()
+        self.assertEqual(shown, [], "not while the window is hidden")
+        self.window.show()
+        welcome()
+        self.assertEqual(shown, ["WelcomeDialog", "StreamSetupDialog"])
+        welcome()
+        self.assertEqual(len(shown), 2, "only once")
+        self.window.hide()
+
     def test_stream_outputs_are_virtual_only(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
         self.assertEqual(list(dialog.stream_outputs), ["B1", "B2", "B3"])
@@ -898,7 +914,7 @@ class MainWindowTest(unittest.TestCase):
             window.processing_summary.text(),
             "Compressor: 3.1\nGate: 2.0\nDenoiser: 2.0",
         )
-        self.assertEqual(window.processing_tabs.tabText(0), "COMPRESSOR")
+        self.assertEqual(window.processing_tabs.tabText(0), "Compressor")
 
         panel = window.compressor_control
         panel.bypass_button.setChecked(True)
@@ -909,13 +925,13 @@ class MainWindowTest(unittest.TestCase):
             window.processing_summary.text(),
             "Compressor: bypassed\nGate: 2.0\nDenoiser: off",
         )
-        self.assertEqual(window.processing_tabs.tabText(0), "COMPRESSOR \u00b7 BYPASSED")
-        self.assertEqual(window.processing_tabs.tabText(2), "DENOISER \u00b7 OFF")
+        self.assertEqual(window.processing_tabs.tabText(0), "Compressor \u00b7 BYPASSED")
+        self.assertEqual(window.processing_tabs.tabText(2), "Denoiser \u00b7 OFF")
 
         panel.bypass_button.setChecked(False)
         panel.on_bypass_clicked(False)
         window.update_processing_summary()
-        self.assertEqual(window.processing_tabs.tabText(0), "COMPRESSOR")
+        self.assertEqual(window.processing_tabs.tabText(0), "Compressor")
 
     def test_start_button_on_the_offline_banner_connects(self):
         window, vm = self.window, self.sandbox.vm
