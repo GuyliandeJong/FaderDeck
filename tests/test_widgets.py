@@ -827,8 +827,10 @@ class MainWindowTest(unittest.TestCase):
             self.assertEqual((strip.A2, strip.B1, strip.B2, strip.B3), (True, False, False, True))
         self.assertEqual(self.window.stream_outputs_setting(), ["B2", "B3"])
         self.assertEqual(self.window.listen_bus_setting(), "A2")
-        self.assertEqual(self.window.strips["Game"].route_buttons["B3"].text(), "Sound")
-        self.assertEqual(self.window.strips["Game"].route_buttons["A2"].text(), "Phones")
+        self.assertEqual(self.window.strips["Game"].route_buttons["B3"].text(), "Str. mix")
+        self.assertEqual(self.window.strips["Game"].route_buttons["A2"].text(), "Hear")
+        self.assertEqual(self.window.strips["Mic"].route_buttons["B2"].text(), "Str. mic")
+        self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Call")
         self.assertTrue(self.window.mix_box.isVisibleTo(self.window))
 
     def test_stream_outputs_are_virtual_only(self):

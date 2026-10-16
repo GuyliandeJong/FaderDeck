@@ -2100,7 +2100,7 @@ def route_name(vm, output, settings=None):
     """(button text, tooltip) for a routing button.
 
     "B2" means little unless you know VoiceMeeter. A name given in FaderDeck
-    ("Voice") comes first, then one given in VoiceMeeter; the code and, for
+    ("Call") comes first, then one given in VoiceMeeter; the code and, for
     a hardware output, its device are in the tooltip.
     """
     hardware = output in HARDWARE_OUTPUTS
@@ -5836,7 +5836,10 @@ class StripLevelWorker(QObject):
 # Discord and OBS under names such as "Voicemeeter Out B2" and cannot tell
 # which is which, or why. This window explains it, routes it in one go, and
 # says what to pick in each program, by the names Windows shows by default.
-STREAM_SETUP_NAMES = {"B1": "Discord", "B2": "Voice", "B3": "Sound"}
+# Each name says what pressing the routing button does: you hear the channel,
+# it goes to your voice call, or to the stream as its mic or into its mix.
+STREAM_SETUP_HEAR = "Hear"
+STREAM_SETUP_NAMES = {"B1": "Call", "B2": "Str. mic", "B3": "Str. mix"}
 
 STREAM_SETUP_STEPS = """
 <p style="margin-top:0"><b>How it works.</b> VoiceMeeter's <b>A outputs</b> are devices
@@ -5902,7 +5905,7 @@ class StreamSetupDialog(QDialog):
         )
         form.addRow("Your headphones are on", self.headphones)
         self.name_outputs = QCheckBox(
-            "Name the outputs in FaderDeck: Phones, Discord, Voice, Sound"
+            "Name the routing buttons for what they do: Hear, Call, Str. mic, Str. mix"
         )
         self.name_outputs.setChecked(True)
         form.addRow(self.name_outputs)
@@ -6226,7 +6229,7 @@ class SettingsDialog(QDialog):
             self.form.addRow(label, edit)
         self.add_note(
             "Shown on the routing buttons instead of A1 or B2, for example "
-            "Phones, Discord, Voice, Sound. Leave empty to keep the code."
+            "Hear, Call, Str. mic, Str. mix. Leave empty to keep the code."
         )
 
         self.add_heading("WINDOW")
@@ -8581,7 +8584,7 @@ class MainWindow(QMainWindow):
         settings.setValue("stream_bus", "B2,B3")
         settings.setValue("listen_bus", headphones)
         if name_outputs:
-            for output, name in {headphones: "Phones", **STREAM_SETUP_NAMES}.items():
+            for output, name in {headphones: STREAM_SETUP_HEAR, **STREAM_SETUP_NAMES}.items():
                 settings.setValue(f"output_name_{output}", name)
         settings.sync()
         self.refresh_outputs()
