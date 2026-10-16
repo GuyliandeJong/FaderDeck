@@ -816,7 +816,7 @@ class ColorButton(QPushButton):
 # Updates. FaderDeck asks GitHub for its latest release. An update is that
 # release's installer, checked against the SHA-256 that GitHub publishes for
 # it before it runs.
-APP_VERSION = "1.11.0"
+APP_VERSION = "1.12.0"
 UPDATE_URL = (
     "https://api.github.com/repos/GuyliandeJong/FaderDeck/releases/latest"
 )
@@ -5821,7 +5821,8 @@ class SettingsDialog(QDialog):
         self.form.addRow(theme_row)
         self.add_note(
             "Changes show at once. Cancel puts the colours back. The accent "
-            "replaces every blue in the window."
+            "colours the highlights; the background colour the window and "
+            "its greys."
         )
         self.show_theme(self.original_theme)
 

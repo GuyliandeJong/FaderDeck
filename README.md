@@ -49,7 +49,7 @@ Under Settings, Appearance you choose how FaderDeck looks, and every change show
 - A colour of your own for each channel, to match your setup
 - **Save as** keeps your colours as a theme of your own, to switch back to later
 
-![FaderDeck theme](screenshots/themes.png)
+![All built-in themes](screenshots/themes-overview.jpg)
 
 ![Appearance settings](screenshots/settings-appearance.png)
 
