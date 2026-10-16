@@ -205,6 +205,14 @@ Every colour in `main.py` is written for the dark theme. A theme is a translatio
 - The page carries `PAGE_VERSION` (a hash of remote.html, filled in when served) and reloads itself when `/state` reports another one.
 - Windows Firewall: ALLOW THROUGH FIREWALL runs `firewall_rule_command()` through `run_powershell_as_admin()` (ShellExecuteEx with "runas": the UAC prompt). The rule is named "FaderDeck phone remote" and allows `firewall_program()` (FaderDeck.exe, or the base Python behind a venv) on the port, private profile only. Its status is read with Get-NetFirewall* cmdlets (not netsh, whose text is localized) on a background thread (`BackgroundJob`). Tests replace `firewall_allows`.
 
+## Stream Mix and Monitor Level (v1.13.0)
+
+- A VoiceMeeter strip has its own `gain` and a `gainlayer[bus]` per output. Writing `gain` (even the same value) sets every layer to it: tested on the live mixer, 2026-10-14.
+- `StripWidget.layered()` is true once there is a stream output (`stream_bus`) or an offset. Then the fader writes layers through `set_mix_gain`: YOU = every layer but the stream's (plus `offsets`), STREAM = the stream's layer. `mix_gain` reads back from a layer that is neither. Without either, it is the strip's `gain`, as before.
+- `offsets` is the Mic strip's monitor level: the monitor output gets the YOU volume plus that many dB (Settings, `monitor_level`, 0 to -30).
+- Profiles store `gain` (YOU) and, with a stream output, `stream_gain`. `/api/gain` takes `mix=`; the phone remote sends its own choice.
+- `set_mix` resets `_last_local_gain_change` so the fader shows the other mix at once (the echo guard would hide it for half a second).
+
 ## Logo
 
 The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.

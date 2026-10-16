@@ -33,6 +33,12 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 - Reconnects by itself when VoiceMeeter is closed and started again
 - A draggable divider between the mixer and the lower panels
 
+### Stream Mix
+
+Give your viewers a different mix than you hear: music quieter on stream, game louder for you. Once your stream has an output of its own (Settings, Microphone, Your stream hears), a **YOU / STREAM** switch appears in the header. The faders then set what you hear or what your stream hears. Setup profiles keep both mixes, and the phone remote has its own switch.
+
+FaderDeck does this with VoiceMeeter's volume per output. VoiceMeeter's own main faders then no longer show the volumes; moving one there resets the stream mix of that channel.
+
 ### Compact View
 
 A button in the header shrinks the window to the four channels with fader, meters, level and Mute. It fits in 520×300, remembers its own size and place, and FaderDeck starts in the view it was closed in. Hotkeys and profiles keep working.
@@ -70,6 +76,8 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 - **Hold to mute**: hold a hotkey to cough or sneeze without being heard
 - **Monitor**: hear your own microphone on your headphones
 - **Mute stream**: mute your microphone for the stream only, while voice chat still hears you
+- **Monitor level**: hear yourself quieter than others hear you (Settings, Microphone)
+- **Sound check**: record five seconds of your voice with the mic processing applied, as voice chat and your stream hear it, and hear it back (Settings, Microphone)
 
 Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord.
 
@@ -254,7 +262,7 @@ FaderDeck can be controlled by other programs on the same computer over HTTP. Sw
 | `GET /api/state` | connection, loaded profile, and gain, mute, solo, mono and routing of every channel |
 | `GET /api/profiles` | the setup profiles and which one is loaded |
 | `POST /api/mute/mic?state=toggle` | mute a channel: `on`, `off` or `toggle` |
-| `POST /api/gain/game?step=-1` | move a fader by decibels, or set it with `db=-6` |
+| `POST /api/gain/game?step=-1` | move a fader by decibels, or set it with `db=-6`; add `mix=stream` for the stream mix |
 | `POST /api/profile/Streaming` | load a setup profile |
 | `POST /api/profile?step=next` | load the `next` or `previous` profile |
 | `POST /api/monitor?state=toggle` | hear your own microphone: `on`, `off` or `toggle` |
@@ -354,14 +362,13 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check.
 
 Next, roughly in this order:
 
-1. A separate stream mix: other volumes for your viewers than for you
-2. A Stream Deck plugin
-3. Support for VoiceMeeter Banana and the standard edition
-4. MIDI controllers as physical faders
+1. A Stream Deck plugin
+2. Support for VoiceMeeter Banana and the standard edition
+3. MIDI controllers as physical faders
 
 Postponed: a signed EXE, so Windows does not warn about it. It needs a paid code-signing certificate.
 
