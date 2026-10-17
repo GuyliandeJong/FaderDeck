@@ -1495,19 +1495,10 @@ class ApiServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-class LocalApi(QObject):
-    """A small HTTP server that is reachable from this computer only.
-
-    It listens on 127.0.0.1, so nothing on the network can connect. Every
-    request needs the token from the settings window. Requests coming from a
-    web page (they carry an Origin header) and requests addressed to any
-    other host name are refused, so a site open in a browser cannot reach
-    the mixer either.
-
-    Requests arrive on server threads. They are passed to the GUI thread
-    through call_requested and wait there for the answer; nothing in this
-    class touches a widget or VoiceMeeter.
-    """
+class HttpService(QObject):
+    """A small HTTP server on a thread of its own. A subclass answers the
+    requests in serve(handler, method); they come in on server threads and
+    reach the GUI thread through call_requested."""
 
     call_requested = Signal(object)
 
@@ -1515,13 +1506,11 @@ class LocalApi(QObject):
         super().__init__(parent)
         self.server = None
         self.thread = None
-        self.token = ""
         self.port = 0
 
-    def start(self, port, token):
-        """Start listening. Raises OSError when the port cannot be used."""
-        self.stop()
-        api = self
+    def listen(self, host, port, name):
+        """Start serving. Raises OSError when the port cannot be used."""
+        service = self
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "FaderDeck"
@@ -1530,18 +1519,17 @@ class LocalApi(QObject):
                 pass
 
             def do_GET(self):
-                api.serve(self, "GET")
+                service.serve(self, "GET")
 
             def do_POST(self):
-                api.serve(self, "POST")
+                service.serve(self, "POST")
 
-        self.server = ApiServer(("127.0.0.1", int(port)), Handler)
+        self.server = ApiServer((host, int(port)), Handler)
         self.port = self.server.server_address[1]
-        self.token = token
         self.thread = threading.Thread(
             target=self.server.serve_forever,
             kwargs={"poll_interval": 0.1},  # stop() then returns quickly
-            name="FaderDeck-LocalApi",
+            name=name,
             daemon=True,
         )
         self.thread.start()
@@ -1555,6 +1543,31 @@ class LocalApi(QObject):
             server.server_close()
         if thread is not None:
             thread.join(timeout=1.0)
+
+
+class LocalApi(HttpService):
+    """A small HTTP server that is reachable from this computer only.
+
+    It listens on 127.0.0.1, so nothing on the network can connect. Every
+    request needs the token from the settings window. Requests coming from a
+    web page (they carry an Origin header) and requests addressed to any
+    other host name are refused, so a site open in a browser cannot reach
+    the mixer either.
+
+    Requests arrive on server threads. They are passed to the GUI thread
+    through call_requested and wait there for the answer; nothing in this
+    class touches a widget or VoiceMeeter.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.token = ""
+
+    def start(self, port, token):
+        """Start listening. Raises OSError when the port cannot be used."""
+        self.stop()
+        self.token = token
+        self.listen("127.0.0.1", port, "FaderDeck-LocalApi")
 
     def serve(self, handler, method):
         try:
@@ -1661,22 +1674,18 @@ def logo_png(size):
     return bytes(data)
 
 
-class PhoneRemote(QObject):
+class PhoneRemote(HttpService):
     """Serves the remote page and its requests to devices on the home network.
 
     Like LocalApi, requests are answered on the GUI thread through
     call_requested; a newly paired device is announced through paired.
     """
 
-    call_requested = Signal(object)
     paired = Signal(str)  # the hash of a new device token
 
     def __init__(self, files, parent=None):
         super().__init__(parent)
         self.files = files  # path -> (content type, bytes)
-        self.server = None
-        self.thread = None
-        self.port = 0
         self.devices = set()
         self.lock = threading.Lock()
         self.code = ""
@@ -1686,41 +1695,9 @@ class PhoneRemote(QObject):
     def start(self, port, devices, host="0.0.0.0"):
         """Start listening on every network. Raises OSError on a busy port."""
         self.stop()
-        remote = self
-
-        class Handler(BaseHTTPRequestHandler):
-            server_version = "FaderDeck"
-
-            def log_message(self, *args):
-                pass
-
-            def do_GET(self):
-                remote.serve(self, "GET")
-
-            def do_POST(self):
-                remote.serve(self, "POST")
-
-        self.server = ApiServer((host, int(port)), Handler)
-        self.port = self.server.server_address[1]
         with self.lock:
             self.devices = set(devices)
-        self.thread = threading.Thread(
-            target=self.server.serve_forever,
-            kwargs={"poll_interval": 0.1},
-            name="FaderDeck-PhoneRemote",
-            daemon=True,
-        )
-        self.thread.start()
-
-    def stop(self):
-        server, thread = self.server, self.thread
-        self.server = self.thread = None
-        self.port = 0
-        if server is not None:
-            server.shutdown()
-            server.server_close()
-        if thread is not None:
-            thread.join(timeout=1.0)
+        self.listen(host, port, "FaderDeck-PhoneRemote")
 
     def set_devices(self, devices):
         with self.lock:
