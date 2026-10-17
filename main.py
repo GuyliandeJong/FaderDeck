@@ -34,7 +34,6 @@ from PySide6.QtGui import QDesktopServices, QBrush, QColor, QDrag, QImage, QFont
 from PySide6.QtSvg import QSvgRenderer
 
 from PySide6.QtWidgets import (
-
     QApplication,
     QCheckBox,
     QComboBox,
@@ -2256,7 +2255,6 @@ class VUMeter(QProgressBar):
         super().__init__()
         self._label = label
 
-
         self.setOrientation(Qt.Orientation.Vertical)
 
         # Keep the progress-bar value itself in dBFS. 0 dBFS is the top.
@@ -2266,7 +2264,6 @@ class VUMeter(QProgressBar):
 
         self.setValue(-60)
 
-
         self.setTextVisible(False)
 
         self.setMinimumWidth(NORMAL_METER_WIDTH)
@@ -2274,7 +2271,6 @@ class VUMeter(QProgressBar):
 
         # Height is flexible: the Mic meters follow the fader length.
         self.setMinimumHeight(40)
-
 
         # Vertical meters should rise from the bottom as the signal increases.
         self.setInvertedAppearance(False)
@@ -3445,7 +3441,6 @@ class StripWidget(QWidget):
 
         self.strip = vm.strip[strip_index]
 
-
         colors = STRIP_COLORS.get(name, STRIP_COLORS["Mic"])
         accent = colors["accent"]
         border = colors["border"]
@@ -3460,11 +3455,9 @@ class StripWidget(QWidget):
 
         self.setMinimumWidth(0)
 
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(1)
-
 
         self._build_header(
             accent, border, header_color, layout, name, strip_index
@@ -3550,7 +3543,6 @@ class StripWidget(QWidget):
             -6000,
 
             1200,
-
         )
         # Fader units are 0.01 dB. One wheel notch and the arrow keys move
         # 0.1 dB; Shift+wheel and Page Up/Down move 1 dB for bigger jumps.
@@ -3574,7 +3566,6 @@ class StripWidget(QWidget):
         )
 
         self.fader.setValue(
-
             int(
                 self.strip.gain
                 * 100
@@ -3583,33 +3574,25 @@ class StripWidget(QWidget):
 
         self.fader.valueChanged.connect(
             self.on_fader_changed
-
         )
-
 
         # The fader is centered in the card; the two input meters sit to
         # its left.
         layout.addWidget(MicFaderArea(self.fader, self.vu_meters), 1)
-
 
         # Gain readout
         layout.addSpacing(FADER_TO_GAIN_GAP)
 
         self.gain_label = QLabel()
 
-
         self.gain_label.setAlignment(
-
             Qt.AlignmentFlag.AlignCenter
-
         )
         self.gain_label.setStyleSheet(
             "color: #e6edf3; font-size: 14px; font-weight: bold;"
         )
 
-
         self.update_gain_label()
-
 
         layout.addWidget(
             self.gain_label
@@ -3622,7 +3605,6 @@ class StripWidget(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(5)
-
 
         self.mute_button = QPushButton("Mute")
         self.mute_button.setFixedHeight(MIXER_BUTTON_HEIGHT)
@@ -3968,7 +3950,6 @@ class StripWidget(QWidget):
             log.error(
                 f"Failed to set {self.name} mono: "
                 f"{type(e).__name__}: {e}"
-
             )
 
 
@@ -3994,7 +3975,6 @@ class StripWidget(QWidget):
 
             gain = self.mix_gain()
 
-
             # The event observer may report a stale value immediately after a
             # local wheel/drag update. Ignore that gain echo briefly; later
             # events still reconcile external VoiceMeeter changes normally.
@@ -4003,9 +3983,7 @@ class StripWidget(QWidget):
                 self.fader.setValue(int(round(gain * 100)))
                 self.fader.blockSignals(False)
 
-
             self.update_gain_label()
-
 
             mute = self.strip.mute
             solo = self.strip.solo
@@ -7141,18 +7119,14 @@ class MainWindow(QMainWindow):
         # Before any strip or processing control exists.
         set_mic_strip(self.window_settings.value("mic_strip", 0))
 
-
         # Qt bridge for VoiceMeeter's background event thread.
 
         self.vm_bridge = VMEventBridge()
         self.mic_level_thread = None
         self.mic_level_worker = None
 
-
         self.vm_bridge.event_received.connect(
-
             self.on_vm_event
-
         )
 
         # Keep the visual VU meters updating independently of VoiceMeeter's
@@ -7163,11 +7137,8 @@ class MainWindow(QMainWindow):
         self.level_timer.timeout.connect(self.update_mixer_levels)
         self.level_timer.start()
 
-
         self.setWindowTitle(
-
             "FaderDeck"
-
         )
 
         # Compact default size fits the open desktop area beside monitoring
@@ -7178,7 +7149,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(*WINDOW_MIN_SIZE)
         self.restore_window_geometry()
 
-
         self._apply_window_style()
 
         central = QWidget()
@@ -7187,13 +7157,10 @@ class MainWindow(QMainWindow):
         )
 
         main_layout = QVBoxLayout(
-
             central
-
         )
         main_layout.setContentsMargins(9, 9, 9, 9)
         main_layout.setSpacing(4)
-
 
         self._build_header(main_layout)
         self._build_mixer_area(main_layout)
@@ -7203,7 +7170,6 @@ class MainWindow(QMainWindow):
     def _apply_window_style(self):
         """The dark style sheet of the whole window."""
         self.setStyleSheet(
-
             """
             QMainWindow {
                 background: #0d1117;
@@ -7308,7 +7274,6 @@ class MainWindow(QMainWindow):
         """Logo, name, connection status and the header buttons."""
         header = QHBoxLayout()
 
-
         logo_mark = QLabel()
         logo_mark.setFixedSize(26, 26)
         logo_mark.setPixmap(_svg_icon(LOGO_SVG, 26).pixmap(26, 26))
@@ -7321,14 +7286,11 @@ class MainWindow(QMainWindow):
         )
 
         self.status_label = QLabel(
-
             "● Disconnected"
         )
         self.status_label.setStyleSheet(
             "color: #f85149; font-weight: bold;"
-
         )
-
 
         header.setSpacing(7)
         header.addWidget(logo_mark)
@@ -7463,7 +7425,6 @@ class MainWindow(QMainWindow):
             "QToolButton:checked { background: #1b2f3b; border-color: #35a7ff; }"
         )
         self.processing_toggle.clicked.connect(self.toggle_processing)
-
 
         self.compressor_control = None
         self.gate_control = None
@@ -7971,9 +7932,7 @@ class MainWindow(QMainWindow):
                 index,
             )
 
-
             self.strips[name] = widget
-
 
             widget.setMinimumHeight(MIXER_CARD_MIN_HEIGHT)
             widget.set_compact(self.compact)
@@ -7982,9 +7941,7 @@ class MainWindow(QMainWindow):
                 QSizePolicy.Policy.Expanding,
             )
             self.mixer_layout.addWidget(
-
                 widget
-
             )
 
 
@@ -9584,7 +9541,6 @@ class MainWindow(QMainWindow):
                 )
             return
 
-
         if self.application_control is not None:
             self.application_control.close()
         if self.mute_badge is not None:
@@ -9676,7 +9632,6 @@ def main(arguments=()):
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(
         sys.argv
-
     )
 
     # Use the bundled FaderDeck icon for the application and all windows.
@@ -9692,7 +9647,6 @@ def main(arguments=()):
     base_font = QFont("Segoe UI")
     base_font.setPointSize(9)
     app.setFont(base_font)
-
 
     # With a tray icon the program lives on while its window is hidden.
     app.setQuitOnLastWindowClosed(False)
