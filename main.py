@@ -1106,7 +1106,20 @@ class _WaveOutCaps(ctypes.Structure):
     ]
 
 
+class _WaveInCaps(ctypes.Structure):
+    _fields_ = [
+        ("wMid", ctypes.wintypes.WORD),
+        ("wPid", ctypes.wintypes.WORD),
+        ("vDriverVersion", ctypes.c_uint),
+        ("szPname", ctypes.c_wchar * 32),
+        ("dwFormats", ctypes.wintypes.DWORD),
+        ("wChannels", ctypes.wintypes.WORD),
+        ("wReserved1", ctypes.wintypes.WORD),
+    ]
+
+
 def _winmm():
+    """winmm with the play (waveOut) and record (waveIn) calls declared."""
     winmm = ctypes.WinDLL("winmm")
     handle = ctypes.c_void_p
     for name, argtypes in (
@@ -1117,11 +1130,21 @@ def _winmm():
         ("waveOutWrite", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
         ("waveOutUnprepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
         ("waveOutClose", (handle,)),
+        ("waveInGetDevCapsW", (ctypes.c_size_t, ctypes.POINTER(_WaveInCaps), ctypes.c_uint)),
+        ("waveInOpen", (ctypes.POINTER(handle), ctypes.c_uint, ctypes.POINTER(_WaveFormat),
+                        ctypes.c_size_t, ctypes.c_size_t, ctypes.wintypes.DWORD)),
+        ("waveInPrepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveInAddBuffer", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveInStart", (handle,)),
+        ("waveInReset", (handle,)),
+        ("waveInUnprepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
+        ("waveInClose", (handle,)),
     ):
         function = getattr(winmm, name)
         function.argtypes = argtypes
         function.restype = ctypes.c_uint
     winmm.waveOutGetNumDevs.restype = ctypes.c_uint
+    winmm.waveInGetNumDevs.restype = ctypes.c_uint
     return winmm
 
 
@@ -1187,42 +1210,9 @@ def play_samples(data, device=""):
     threading.Thread(target=guarded, name="FaderDeckSound", daemon=True).start()
 
 
-class _WaveInCaps(ctypes.Structure):
-    _fields_ = [
-        ("wMid", ctypes.wintypes.WORD),
-        ("wPid", ctypes.wintypes.WORD),
-        ("vDriverVersion", ctypes.c_uint),
-        ("szPname", ctypes.c_wchar * 32),
-        ("dwFormats", ctypes.wintypes.DWORD),
-        ("wChannels", ctypes.wintypes.WORD),
-        ("wReserved1", ctypes.wintypes.WORD),
-    ]
-
-
-def _winmm_in():
-    winmm = ctypes.WinDLL("winmm")
-    handle = ctypes.c_void_p
-    for name, argtypes in (
-        ("waveInGetDevCapsW", (ctypes.c_size_t, ctypes.POINTER(_WaveInCaps), ctypes.c_uint)),
-        ("waveInOpen", (ctypes.POINTER(handle), ctypes.c_uint, ctypes.POINTER(_WaveFormat),
-                        ctypes.c_size_t, ctypes.c_size_t, ctypes.wintypes.DWORD)),
-        ("waveInPrepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
-        ("waveInAddBuffer", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
-        ("waveInStart", (handle,)),
-        ("waveInReset", (handle,)),
-        ("waveInUnprepareHeader", (handle, ctypes.POINTER(_WaveHeader), ctypes.c_uint)),
-        ("waveInClose", (handle,)),
-    ):
-        function = getattr(winmm, name)
-        function.argtypes = argtypes
-        function.restype = ctypes.c_uint
-    winmm.waveInGetNumDevs.restype = ctypes.c_uint
-    return winmm
-
-
 def recording_devices():
     """Names of the devices Windows can record from (cut at 31 characters)."""
-    winmm = _winmm_in()
+    winmm = _winmm()
     names = []
     for index in range(winmm.waveInGetNumDevs()):
         caps = _WaveInCaps()
@@ -1257,7 +1247,7 @@ def sound_check_device(names, output="B1"):
 def record_samples(device, seconds):
     """Record mono 16-bit samples from a device, by name. Waits: call it
     off the GUI thread. Raises OSError when the device cannot be opened."""
-    winmm = _winmm_in()
+    winmm = _winmm()
     names = recording_devices()
     if device not in names:
         raise OSError(f"{device or 'No device'} is not connected")
