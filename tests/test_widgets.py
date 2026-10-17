@@ -4,6 +4,12 @@ import json
 import unittest
 
 from fakes import COMPRESSOR, FakeSettings, Sandbox, main, pump
+import applications
+import core
+import dialogs
+import processing
+import themes
+import sound
 
 
 def compressor_state(vm):
@@ -135,9 +141,9 @@ class ProcessingPanelTest(unittest.TestCase):
     def test_time_sliders_are_logarithmic_and_cover_the_range(self):
         panel = self.panel
         self.assertEqual(panel._from_slider("release", 0), 0.0)
-        self.assertEqual(panel._from_slider("release", main.TIME_SLIDER_STEPS), 5000.0)
-        self.assertEqual(panel._from_slider("attack", main.TIME_SLIDER_STEPS), 200.0)
-        middle = panel._from_slider("release", main.TIME_SLIDER_STEPS // 2)
+        self.assertEqual(panel._from_slider("release", processing.TIME_SLIDER_STEPS), 5000.0)
+        self.assertEqual(panel._from_slider("attack", processing.TIME_SLIDER_STEPS), 200.0)
+        middle = panel._from_slider("release", processing.TIME_SLIDER_STEPS // 2)
         self.assertLess(middle, 500.0, "half the track must not already be seconds")
         for value in (5.0, 150.0, 1000.0):
             back = panel._from_slider("release", panel._to_slider("release", value))
@@ -185,9 +191,9 @@ class HiddenApplicationsTest(unittest.TestCase):
         hidden = lambda bus: control._is_hidden({"bus": bus, "hide_key": r"c:\apps\thing.exe"})
         self.assertTrue(hidden("Chat"))
         self.assertFalse(hidden("Game"))
-        control.on_hide_requested(r"c:\apps\thing.exe", main.ALL_CHANNELS, True)
+        control.on_hide_requested(r"c:\apps\thing.exe", core.ALL_CHANNELS, True)
         self.assertTrue(hidden("Game") and hidden("Media"))
-        control.on_hide_requested(r"c:\apps\thing.exe", main.ALL_CHANNELS, False)
+        control.on_hide_requested(r"c:\apps\thing.exe", core.ALL_CHANNELS, False)
         self.assertFalse(hidden("Chat"))
 
 
@@ -204,13 +210,13 @@ class MovedApplicationTest(unittest.TestCase):
         }
 
     def test_the_silent_duplicate_is_dropped(self):
-        worker = main.ApplicationAudioWorker()
+        worker = applications.ApplicationAudioWorker()
         found = {"old": self.entry("Game", False), "new": self.entry("Chat", True)}
         worker._drop_stale_sessions(found)
         self.assertEqual(list(found), ["new"])
 
     def test_still_playing_on_the_old_channel_is_marked_as_moving(self):
-        worker = main.ApplicationAudioWorker()
+        worker = applications.ApplicationAudioWorker()
         worker._pending_moves[("player.exe", r"c:\player\player.exe")] = {
             "target": "Chat", "deadline": main.time.monotonic() + 60, "name": "Player",
         }
@@ -308,17 +314,17 @@ class MainWindowTest(unittest.TestCase):
 
     def test_hotkey_toggles_the_mic_mute(self):
         window, mic = self.window, self.sandbox.vm.strip[0]
-        window.on_hotkey(main.HOTKEY_MIC_MUTE)
+        window.on_hotkey(core.HOTKEY_MIC_MUTE)
         self.assertTrue(mic.mute)
         self.assertTrue(window.strips["Mic"].mute_button.isChecked())
-        window.on_hotkey(main.HOTKEY_MIC_MUTE)
+        window.on_hotkey(core.HOTKEY_MIC_MUTE)
         self.assertFalse(mic.mute)
         window.on_hotkey(999)
         self.assertFalse(mic.mute)
 
     def test_every_channel_has_its_own_mute_hotkey(self):
         window, vm = self.window, self.sandbox.vm
-        for name, (hotkey_id, _key, _default) in main.MUTE_HOTKEYS.items():
+        for name, (hotkey_id, _key, _default) in core.MUTE_HOTKEYS.items():
             with self.subTest(name=name):
                 strip = vm.strip[main.STRIPS[name]]
                 window.on_hotkey(hotkey_id)
@@ -415,9 +421,9 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(dialog.light.isChecked())
         dialog.channel_colors["Game"].set_color("#00aa00")
         dialog.on_theme_edited()
-        self.assertEqual(dialog.theme.currentText(), main.CUSTOM_THEME)
+        self.assertEqual(dialog.theme.currentText(), themes.CUSTOM_THEME)
         self.assertIn("#00aa00", self.window.strips["Game"].name_label.styleSheet())
-        dialog.themes["Mine"] = main.clean_theme(dialog.theme_value(), "Mine")
+        dialog.themes["Mine"] = themes.clean_theme(dialog.theme_value(), "Mine")
         dialog.show_theme(dialog.themes["Mine"])
         self.assertEqual(dialog.values()["theme"]["name"], "Mine")
         self.assertTrue(dialog.delete_theme_button.isEnabled())
@@ -648,9 +654,9 @@ class MainWindowTest(unittest.TestCase):
 
     def test_sound_check_records_the_processed_mic_and_plays_it_back(self):
         recorded, played = [], []
-        saved = main.record_samples, main.play_samples
-        main.record_samples = lambda device, seconds: recorded.append((device, seconds)) or b"\x01\x00" * 10
-        main.play_samples = lambda data, device="": played.append((data, device))
+        saved = sound.record_samples, sound.play_samples
+        sound.record_samples = lambda device, seconds: recorded.append((device, seconds)) or b"\x01\x00" * 10
+        sound.play_samples = lambda data, device="": played.append((data, device))
         try:
             dialog = main.SettingsDialog(self.window, self.window.current_settings())
             self.assertEqual(dialog.sound_check_source.currentData(),
@@ -662,8 +668,8 @@ class MainWindowTest(unittest.TestCase):
                 pump(0.02)
             pump(0.1)
         finally:
-            main.record_samples, main.play_samples = saved
-        self.assertEqual(recorded, [("Voicemeeter Out B1 (VB-Audio Vo", main.SOUND_CHECK_SECONDS)])
+            sound.record_samples, sound.play_samples = saved
+        self.assertEqual(recorded, [("Voicemeeter Out B1 (VB-Audio Vo", sound.SOUND_CHECK_SECONDS)])
         self.assertEqual(len(played), 1)
         self.assertIn("Playing back", dialog.sound_check_status.text())
         self.assertTrue(dialog.sound_check_button.isEnabled())
@@ -691,7 +697,7 @@ class MainWindowTest(unittest.TestCase):
         main.QApplication.processEvents()
         for index in range(dialog.tabs.count()):
             page = dialog.tabs.widget(index)
-            if not isinstance(page, main.QScrollArea) or dialog.tabs.tabText(index) == "Hotkeys":
+            if not isinstance(page, applications.QScrollArea) or dialog.tabs.tabText(index) == "Hotkeys":
                 continue
             dialog.tabs.setCurrentIndex(index)
             main.QApplication.processEvents()
@@ -704,7 +710,7 @@ class MainWindowTest(unittest.TestCase):
     def test_settings_window_refuses_unusable_and_double_hotkeys(self):
         dialog = main.SettingsDialog(self.window, self.window.current_settings())
         self.assertEqual(dialog.hotkey_problem(), "")
-        sequence = main.QKeySequence
+        sequence = dialogs.QKeySequence
         game = dialog.hotkey_edits["hotkey_game_mute"]
         game.setKeySequence(sequence("Ctrl+Shift+M"))
         self.assertIn("more than one", dialog.hotkey_problem())
@@ -749,7 +755,7 @@ class MainWindowTest(unittest.TestCase):
 
         window.strips["Chat"].route_buttons["B1"].click()      # hidden, still works
         self.assertFalse(vm.strip[6].B1)
-        window.on_hotkey(main.MUTE_HOTKEYS["Game"][0])
+        window.on_hotkey(core.MUTE_HOTKEYS["Game"][0])
         self.assertTrue(vm.strip[5].mute)
         self.assertTrue(window.apply_profile("Main"))
         self.assertTrue(vm.strip[6].B1)
@@ -804,14 +810,14 @@ class MainWindowTest(unittest.TestCase):
 
     def test_routing_buttons_use_your_names_then_voicemeeters(self):
         vm, settings = self.sandbox.vm, self.window.window_settings
-        self.assertEqual(main.route_name(vm, "A2"), ("A2", "A2 (hardware output, Headset)"))
+        self.assertEqual(core.route_name(vm, "A2"), ("A2", "A2 (hardware output, Headset)"))
         vm.bus[5].label = "Stream"
-        self.assertEqual(main.route_name(vm, "B1")[0], "Stream")
+        self.assertEqual(core.route_name(vm, "B1")[0], "Stream")
         vm.bus[0].label = "Headphones Left"
-        self.assertEqual(main.route_name(vm, "A1")[0], "Headpho\u2026")
+        self.assertEqual(core.route_name(vm, "A1")[0], "Headpho\u2026")
         settings.setValue("output_name_B1", "Discord")
-        self.assertEqual(main.route_name(vm, "B1")[0], "Discord", "yours comes first")
-        self.assertIn("B1", main.route_name(vm, "B1")[1], "the code stays in the tooltip")
+        self.assertEqual(core.route_name(vm, "B1")[0], "Discord", "yours comes first")
+        self.assertIn("B1", core.route_name(vm, "B1")[1], "the code stays in the tooltip")
         self.window.refresh_outputs()
         self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Discord")
 
@@ -1007,7 +1013,7 @@ class MainWindowTest(unittest.TestCase):
     def test_hotkey_does_nothing_while_disconnected(self):
         self.sandbox.running = False
         self.window.check_connection()
-        self.window.on_hotkey(main.HOTKEY_MIC_MUTE)
+        self.window.on_hotkey(core.HOTKEY_MIC_MUTE)
         self.assertFalse(self.sandbox.vm.strip[0].mute)
 
     def test_settings_defaults_and_storage(self):
@@ -1441,14 +1447,14 @@ class NameTest(unittest.TestCase):
         return window
 
     def test_the_program_is_left_out_of_the_application_list(self):
-        self.assertIn("faderdeck.exe", main.OWN_EXECUTABLES)
+        self.assertIn("faderdeck.exe", core.OWN_EXECUTABLES)
 
     def test_names_shown_to_the_user(self):
         window = self.open()
         self.assertEqual(window.windowTitle(), "FaderDeck")
-        self.assertEqual(main.SETTINGS_NAME, "FaderDeck")
-        self.assertTrue(main.log_file_path().endswith("faderdeck.log"))
-        self.assertIn("FaderDeck", main.SINGLE_INSTANCE_NAME)
+        self.assertEqual(core.SETTINGS_NAME, "FaderDeck")
+        self.assertTrue(core.log_file_path().endswith("faderdeck.log"))
+        self.assertIn("FaderDeck", core.SINGLE_INSTANCE_NAME)
 
 
 class CloseToTrayTest(unittest.TestCase):

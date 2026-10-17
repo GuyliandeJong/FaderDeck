@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 
 from fakes import FakeSettings, Sandbox, main, pump
+import web
 
 TOKEN = "test-token"
 
@@ -110,7 +111,7 @@ class PhoneRemoteTest(unittest.TestCase):
         data = json.dumps(body).encode() if body is not None else (b"" if method == "POST" else None)
         request = urllib.request.Request(url, method=method, data=data)
         if token:
-            request.add_header(main.API_TOKEN_HEADER, token)
+            request.add_header(web.API_TOKEN_HEADER, token)
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         result = {}
@@ -170,13 +171,13 @@ class PhoneRemoteTest(unittest.TestCase):
         mute = self.request("POST", "/remote/api/mute/mic?state=on", token=token)
         self.assertEqual(json.loads(mute["body"]), {"channel": "Mic", "mute": True})
         stored = json.loads(self.window.window_settings.value("remote_devices"))
-        self.assertEqual(stored, [main.token_hash(token)])
+        self.assertEqual(stored, [web.token_hash(token)])
         self.assertNotIn(token, self.window.window_settings.value("remote_devices"))
 
     def test_guessing_ends_the_code(self):
         code = self.remote.new_code()
         wrong = "000000" if code != "000000" else "111111"
-        for _ in range(main.REMOTE_PAIR_TRIES):
+        for _ in range(web.REMOTE_PAIR_TRIES):
             self.assertEqual(self.pair(wrong)[0], 403)
         self.assertEqual(self.pair(code)[0], 403, "too many guesses")
 
@@ -233,7 +234,7 @@ class ApiServerTest(unittest.TestCase):
         url = f"http://127.0.0.1:{self.port}{path}"
         request = urllib.request.Request(url, method=method, data=b"" if method == "POST" else None)
         if token is not None:
-            request.add_header(main.API_TOKEN_HEADER, token)
+            request.add_header(web.API_TOKEN_HEADER, token)
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         if host:

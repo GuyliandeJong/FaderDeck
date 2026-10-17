@@ -1,4 +1,4 @@
-"""Build faderdeck.ico from the logo drawing in main.py (LOGO_SVG).
+"""Build faderdeck.ico from the logo drawing in themes.py (LOGO_SVG).
 
 The window header draws the same SVG, so the two cannot drift apart. Run this
 after changing the drawing:
@@ -18,7 +18,7 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, Qt
 from PySide6.QtGui import QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
-import main
+import themes
 
 # Windows picks the closest size for the title bar, taskbar, tray and Explorer.
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
@@ -29,7 +29,7 @@ def render(size):
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    QSvgRenderer(QByteArray(main.LOGO_SVG.encode("utf-8"))).render(
+    QSvgRenderer(QByteArray(themes.LOGO_SVG.encode("utf-8"))).render(
         painter, QRectF(0, 0, size, size)
     )
     painter.end()

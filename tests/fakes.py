@@ -38,6 +38,20 @@ def pump(seconds=0.05):
         time.sleep(0.005)
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def project_modules():
+    """main and the modules next to it."""
+    found = []
+    for module in list(sys.modules.values()):
+        path = getattr(module, "__file__", None) or ""
+        # PySide6 names one of its own modules by a bare file name.
+        if os.path.isfile(path) and os.path.dirname(os.path.abspath(path)) == ROOT:
+            found.append(module)
+    return found
+
+
 class FakeSettings:
     """In-memory QSettings. Every instance shares one store, like the real
     one."""
@@ -241,12 +255,16 @@ class Sandbox:
         return self
 
     def _patch(self, name, value):
-        self._saved[name] = getattr(main, name)
-        setattr(main, name, value)
+        """Replace name in every FaderDeck module that has it: a module that
+        imported it holds its own reference."""
+        for module in project_modules():
+            if hasattr(module, name):
+                self._saved[(module, name)] = getattr(module, name)
+                setattr(module, name, value)
 
     def __exit__(self, *exc):
-        for name, value in self._saved.items():
-            setattr(main, name, value)
+        for (module, name), value in self._saved.items():
+            setattr(module, name, value)
         main.STRIPS.clear()
         main.STRIPS.update(self._saved_strips)
 

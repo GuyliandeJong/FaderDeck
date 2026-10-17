@@ -25,9 +25,29 @@ Dependencies are listed in `requirements.txt`.
 - VoiceMeeter Potato 3.1.2.2
 - VS Code / PowerShell
 
+## Source Layout
+
+Since v1.15.0 the code is split into modules beside `main.py`:
+
+| File | What is in it |
+|---|---|
+| `main.py` | `MainWindow` and `main()`: the window, connecting, profiles, tray, hotkeys, API calls |
+| `core.py` | logging, settings, VoiceMeeter detection, channels and outputs, hotkey parsing, single instance, shared styles |
+| `themes.py` | icons, the logo, themes and light mode |
+| `updates.py` | `APP_VERSION` and the automatic updates |
+| `sound.py` | the mute chime, playing and recording, the sound check |
+| `web.py` | the local API, the phone remote and its firewall rule |
+| `widgets.py` | meters, sliders, faders, the splitter grip, the mute badge |
+| `processing.py` | the compressor, gate and denoiser panel |
+| `strips.py` | the channel strips and their level worker |
+| `applications.py` | the applications panel and its audio worker |
+| `dialogs.py` | settings, streaming setup, welcome, VoiceMeeter missing |
+
+Each module imports only from the ones above it in this list (`core` from none), so there are no import cycles. Keep it that way: a new module goes where its imports allow.
+
 ## Development Rules
 
-- The primary source file is always `main.py`.
+- `main.py` is the entry point; the code is split by topic (see Source Layout).
 - Do not create renamed variants such as `main_final.py`, `main_popup.py`, etc.
 - Prefer complete files when providing code changes.
 - Make incremental changes and test each logical change.
@@ -182,7 +202,7 @@ The program was called VMStreamer up to v1.4.0 and FaderDeck from v1.5.0. VB-Aud
 
 ## Themes (v1.6.0)
 
-Every colour in `main.py` is written for the dark theme. A theme is a translation of those colours, applied where they reach Qt: `QWidget.setStyleSheet` (patched once at import), the module's own `QColor` subclass for `QColor("#rrggbb")`, and `translate_colors()` for the drawn icons. The default theme translates nothing.
+Every colour in the code is written for the dark theme. A theme is a translation of those colours, applied where they reach Qt: `QWidget.setStyleSheet` (patched once at import), the module's own `QColor` subclass for `QColor("#rrggbb")`, and `translate_colors()` for the drawn icons. The default theme translates nothing.
 
 - Live switching: each widget keeps the style sheet it was given in the `themeSource` property; `apply_theme()` translates every one again. Icons shown with `set_mono_icon()` are redrawn the same way. A colour turned into a `QColor` once at build time and kept would not follow a switch: create it where it is painted.
 - A channel colour replaces that channel's three `STRIP_COLORS` values, so those values may appear nowhere else. A test checks this. `PANEL_BORDER`, `ALERT_BORDER` and `COMPRESSOR_MARK` exist for that reason: they look the same but are one step off.
@@ -214,11 +234,11 @@ Every colour in `main.py` is written for the dark theme. A theme is a translatio
 
 ## Logo
 
-The mark is drawn once, as `LOGO_SVG` in `main.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.
+The mark is drawn once, as `LOGO_SVG` in `themes.py`: three white faders on a blue-to-purple tile. The header shows it next to the name, which `Wordmark` paints: "Fader" in white and "Deck" in the tile's gradient (`LOGO_GRADIENT`). `faderdeck.ico` is generated from the same drawing by `tools/make_icon.py`; run it after changing the drawing, and commit the icon.
 
 ## Tests
 
-`tests/` holds unit tests on the standard library's `unittest`; run them with `python -m unittest discover -s tests` before committing a change to `main.py`. `tests/fakes.py` provides a fake mixer (`FakeVM`), an in-memory `QSettings` and a `Sandbox` that swaps them into `main`, so a real `MainWindow` can be built on Qt's offscreen platform without VoiceMeeter.
+`tests/` holds unit tests on the standard library's `unittest`; run them with `python -m unittest discover -s tests` before committing a change. `tests/fakes.py` provides a fake mixer (`FakeVM`), an in-memory `QSettings` and a `Sandbox` that swaps them into every FaderDeck module that uses them (`project_modules()`), so a real `MainWindow` can be built on Qt's offscreen platform without VoiceMeeter.
 
 The fake mixer copies one behaviour of the real one on purpose: changing Amount replaces the advanced values. The bypass bug was invisible to a fake that did not do this.
 
@@ -343,7 +363,7 @@ Icon:
 
 `faderdeck.ico`
 
-`main.py` uses a resource helper for source and PyInstaller execution:
+`core.py` has a resource helper for source and PyInstaller execution:
 
 ```python
 def resource_path(filename):
@@ -373,7 +393,7 @@ PyInstaller must retain both:
 
 The first sets the Windows EXE icon; the second embeds the ICO so `main.py` can load it from `_MEIPASS`.
 
-Do not add `--collect-all PySide6`: it bundles every Qt module and makes the EXE about 245 MB. PyInstaller's own PySide6 hooks collect what `main.py` imports.
+Do not add `--collect-all PySide6`: it bundles every Qt module and makes the EXE about 245 MB. PyInstaller's own PySide6 hooks collect what the code imports.
 
 Output:
 

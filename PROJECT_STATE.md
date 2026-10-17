@@ -7,7 +7,7 @@ Repository: https://github.com/GuylianDeJong/FaderDeck
 
 ## Primary Source
 
-`main.py` is the authoritative application source filename. Do not create renamed `main_*` variants.
+`main.py` is the entry point. The code is split by topic into modules beside it; HANDOVER.md (Source Layout) says what goes where. Do not create renamed `main_*` variants.
 
 ## Environment
 
@@ -223,4 +223,4 @@ Do not blindly commit every untracked file.
 
 ## Next Session
 
-Keep the released behaviour stable. Run and verify the existing application before starting a new feature. Make incremental changes and keep `main.py` as the single primary source file.
+Keep the released behaviour stable. Run and verify the existing application before starting a new feature. Make incremental changes and keep each change in the module its topic belongs to.

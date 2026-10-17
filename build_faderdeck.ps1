@@ -102,9 +102,9 @@ if (-not $iscc) {
     Write-Host "Inno Setup 6 was not found, so no installer was built."
     return
 }
-$match = Select-String -LiteralPath (Join-Path $projectDir "main.py") -Pattern '^APP_VERSION = "(.+)"'
+$match = Select-String -LiteralPath (Join-Path $projectDir "updates.py") -Pattern '^APP_VERSION = "(.+)"'
 if (-not $match) {
-    throw "APP_VERSION was not found in main.py."
+    throw "APP_VERSION was not found in updates.py."
 }
 $version = $match.Matches[0].Groups[1].Value
 & $iscc /Q "/DAppVersion=$version" (Join-Path $projectDir "installer\faderdeck.iss")

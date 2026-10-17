@@ -16,7 +16,7 @@ from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
-import main
+import themes
 
 PLUGIN = os.path.join(ROOT, "streamdeck", "com.faderdeck.streamdeck.sdPlugin", "imgs")
 ICON_GREY = "#d7e1eb"  # the colour the icons are drawn in
@@ -33,7 +33,7 @@ ACTIONS = {
 
 def svg(name, colour):
     return QSvgRenderer(QByteArray(
-        main.MONO_ICONS[name].replace(ICON_GREY, colour).encode("utf-8")
+        themes.MONO_ICONS[name].replace(ICON_GREY, colour).encode("utf-8")
     ))
 
 
@@ -71,7 +71,7 @@ def logo(size):
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    QSvgRenderer(QByteArray(main.LOGO_SVG.encode("utf-8"))).render(
+    QSvgRenderer(QByteArray(themes.LOGO_SVG.encode("utf-8"))).render(
         painter, QRectF(0, 0, size, size)
     )
     painter.end()

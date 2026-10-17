@@ -325,7 +325,7 @@ The resulting executable will be located at:
 dist\FaderDeck.exe
 ```
 
-With [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, the script then also builds the installer, `dist\FaderDeck-Setup.exe`, from `installer\faderdeck.iss`. Its version is `APP_VERSION` in `main.py`.
+With [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, the script then also builds the installer, `dist\FaderDeck-Setup.exe`, from `installer\faderdeck.iss`. Its version is `APP_VERSION` in `updates.py`.
 
 ## Troubleshooting
 
@@ -339,14 +339,15 @@ FaderDeck writes errors to a log file, which is the place to look when something
 
 ```text
 FaderDeck/
-├── main.py                   application source
+├── main.py                   the main window and start-up
+├── core.py, themes.py, …     the rest of the program, by topic (see HANDOVER.md)
 ├── faderdeck_launcher.py    entry point of the packaged EXE
 ├── build_faderdeck.ps1      builds dist\FaderDeck.exe
 ├── requirements.txt
 ├── tests/                    unit tests (no VoiceMeeter needed)
 ├── faderdeck.ico
 ├── screenshots/              pictures used in this README
-├── tools/make_icon.py        rebuilds faderdeck.ico from the logo in main.py
+├── tools/make_icon.py        rebuilds faderdeck.ico from the logo in themes.py
 ├── HANDOVER.md
 ├── PROJECT_STATE.md
 └── README.md
@@ -365,7 +366,7 @@ FaderDeck currently works with **VoiceMeeter Potato** and uses the following cha
 | Chat | Virtual Input 2 (AUX) | VoiceMeeter VAIO AUX |
 | Media | Virtual Input 3 (VAIO3) | VoiceMeeter VAIO3 |
 
-The microphone's hardware input (1 to 5) can be chosen in Settings and is used after a restart. The Game, Chat and Media mapping is fixed in `main.py` (`STRIPS`).
+The microphone's hardware input (1 to 5) can be chosen in Settings and is used after a restart. The Game, Chat and Media mapping is fixed in `core.py` (`STRIPS`).
 
 Windows applications routed through these VoiceMeeter devices are automatically detected and displayed in the corresponding FaderDeck section.
 
