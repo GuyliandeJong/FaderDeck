@@ -267,14 +267,6 @@ class ApiServerTest(unittest.TestCase):
         status, body = self.request("GET", "/api/state")
         self.assertEqual(body["channels"]["Mic"]["mute"], True)
 
-    def test_the_header_from_before_the_rename_still_works(self):
-        status, _ = self.request(
-            "GET", "/api/state", token=None,
-            headers={main.LEGACY_API_TOKEN_HEADER: TOKEN},
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(main.API_TOKEN_HEADER, "X-FaderDeck-Token")
-
     def test_token_may_be_given_in_the_address(self):
         status, _ = self.request("GET", f"/api/state?token={TOKEN}", token=None)
         self.assertEqual(status, 200)

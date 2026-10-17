@@ -39,19 +39,17 @@ def pump(seconds=0.05):
 
 
 class FakeSettings:
-    """In-memory QSettings. Instances with the same name share one store,
-    like the real one. `store` is the program's own; `old_store` is what an
-    installation from before the rename left behind."""
+    """In-memory QSettings. Every instance shares one store, like the real
+    one."""
 
     store = {}
-    old_store = {}
 
     def __init__(self, organization=None, application=None):
-        self._old = organization == main.OLD_SETTINGS_NAME
+        pass
 
     @property
     def _data(self):
-        return FakeSettings.old_store if self._old else FakeSettings.store
+        return FakeSettings.store
 
     def value(self, key, default=None):
         return self._data.get(key, default)
@@ -224,7 +222,6 @@ class Sandbox:
     def __enter__(self):
         FakeSettings.store = {}
         self._patch("WELCOME", False)  # no dialog may wait for a click in a test
-        FakeSettings.old_store = {}
         self._patch("QSettings", FakeSettings)
         self._patch("PYCAW_AVAILABLE", False)
         self._patch("voicemeeter_is_running", lambda: self.running)

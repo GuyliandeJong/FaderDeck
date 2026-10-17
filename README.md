@@ -1,6 +1,6 @@
 # FaderDeck
 
-*Formerly VMStreamer. Renamed in v1.5.0 so it is not mistaken for VB-Audio's own VM-Streamer View; your settings carry over.*
+*Formerly VMStreamer. Renamed in v1.5.0 so it is not mistaken for VB-Audio's own VM-Streamer View.*
 
 A modern, lightweight control panel for **VoiceMeeter Potato**, designed for streamers and content creators.
 

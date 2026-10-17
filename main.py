@@ -510,34 +510,13 @@ STRIPS = {
 
 # The Mic strip is the only strip with processing controls and a VU meter.
 
-# The program was called VMStreamer up to v1.4.0. Its settings (hotkeys,
-# profiles, presets, hidden applications, window places) are stored per
-# name, so they are copied to the new name once. The old ones are left
-# alone, so an older version still finds its own.
 SETTINGS_NAME = "FaderDeck"
-OLD_SETTINGS_NAME = "VMStreamer"
 # Executables that are this program: not listed as an application.
-OWN_EXECUTABLES = ("faderdeck.exe", "vmstreamer.exe")
+OWN_EXECUTABLES = ("faderdeck.exe",)
 
 
 def app_settings():
     return QSettings(SETTINGS_NAME, SETTINGS_NAME)
-
-
-def migrate_settings():
-    """Copy the settings saved under the old name, the first time only."""
-    new = app_settings()
-    if new.allKeys():
-        return False
-    old = QSettings(OLD_SETTINGS_NAME, OLD_SETTINGS_NAME)
-    keys = old.allKeys()
-    for key in keys:
-        new.setValue(key, old.value(key))
-    new.setValue("migrated_from", OLD_SETTINGS_NAME if keys else "")
-    new.sync()
-    if keys:
-        log.info(f"Copied {len(keys)} settings from {OLD_SETTINGS_NAME}")
-    return bool(keys)
 
 
 def setting_bool(settings, key, default):
@@ -1486,7 +1465,6 @@ def ask_running_instance_to_quit(name=SINGLE_INSTANCE_NAME):
 # settings window.
 API_DEFAULT_PORT = 8765
 API_TOKEN_HEADER = "X-FaderDeck-Token"
-LEGACY_API_TOKEN_HEADER = "X-VMStreamer-Token"  # accepted from v1.4.0 scripts
 
 
 class ApiCall:
@@ -1607,7 +1585,6 @@ class LocalApi(QObject):
 
         supplied = (
             handler.headers.get(API_TOKEN_HEADER)
-            or handler.headers.get(LEGACY_API_TOKEN_HEADER)
             or params.pop("token", "")
         )
         if not self.token or not hmac.compare_digest(
@@ -5472,17 +5449,7 @@ class ApplicationControl(QWidget):
                 current.add(self._hide_id(bus, stable_hide_key(key)))
             self._hidden_needs_save = current != stored
             return current
-
-        # Migrate the older global list. Previously a hidden application was
-        # hidden on every channel, so keep exactly that behaviour once.
-        legacy = self._parse_hidden_setting(
-            self.settings.value("hidden_applications", "")
-        )
-        return {
-            self._hide_id(bus, stable_hide_key(key))
-            for key in legacy
-            for bus in self.BUS_NAMES
-        }
+        return set()
 
     def _save_hidden_applications(self):
         self.settings.setValue(
@@ -7191,7 +7158,6 @@ class MainWindow(QMainWindow):
         self.vm_install_state = voicemeeter_install_state()
         self._missing_shown = False
         self.strips = {}
-        migrate_settings()
         self.window_settings = app_settings()
         # Before any strip or processing control exists.
         set_mic_strip(self.window_settings.value("mic_strip", 0))
@@ -9752,7 +9718,6 @@ def main(arguments=()):
     # With a tray icon the program lives on while its window is hidden.
     app.setQuitOnLastWindowClosed(False)
 
-    migrate_settings()  # the theme is read before the window does this
     apply_theme(theme_settings(app_settings()))
     window = MainWindow()
 

@@ -179,14 +179,7 @@ The local API (`LocalApi`, `ApiServer`, `MainWindow.handle_api_call`) is off by 
 
 ## Name
 
-The program was called VMStreamer up to v1.4.0 and FaderDeck from v1.5.0. VB-Audio ships its own "VM-Streamer View", and the old name was too close to it. What still carries the old name, on purpose:
-
-- `OLD_SETTINGS_NAME`: `migrate_settings()` copies the QSettings saved under "VMStreamer" to "FaderDeck" the first time the new name has none. The old settings are not deleted.
-- `OWN_EXECUTABLES`: both `faderdeck.exe` and `vmstreamer.exe` are left out of the application lists.
-- `LEGACY_API_TOKEN_HEADER`: the local API still accepts `X-VMStreamer-Token`.
-- The project folder on disk and the earlier releases and tags.
-
-The single-instance name changed with the rename, so an old VMStreamer and FaderDeck can run side by side and will then fight over the hotkeys. Quit the old one first.
+The program was called VMStreamer up to v1.4.0 and FaderDeck from v1.5.0. VB-Audio ships its own "VM-Streamer View", and the old name was too close to it. Since v1.15.0 nothing carries the old name any more: the code that copied VMStreamer's settings, accepted the `X-VMStreamer-Token` header and hid `vmstreamer.exe` was removed. No release before v1.7.0 was ever downloaded, so it only served the developer's own PC, which was migrated long ago.
 
 ## Themes (v1.6.0)
 
