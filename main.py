@@ -6147,13 +6147,20 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        # A combo box asks to be as wide as its longest item (a device name),
+        # which pushed the rows past the window's edge. Shrink and elide.
+        for combo in self.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            combo.setMinimumContentsLength(12)
         self.fit_tabs()
 
     def tab_content_height(self, page):
         """Height a tab's content needs at the window's width. Wrapped
         notes are taller in a narrow window than Qt's rough estimate."""
         content = page.widget() if isinstance(page, QScrollArea) else page
-        width = max(page.width(), self.width() - 50, 300)
+        width = max(self.width() - 60, 300)  # the page's own width is 640 until shown
         layout = content.layout()
         if layout is not None and layout.hasHeightForWidth():
             return layout.totalHeightForWidth(width)
