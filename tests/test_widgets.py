@@ -387,6 +387,7 @@ class MainWindowTest(unittest.TestCase):
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
                           "theme", "themes", "check_updates", "mute_sound",
+                          "mute_overlay", "tray_mute_icon",
                           "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget",
                           *(f"output_name_{o}" for o in main.ALL_OUTPUTS),
@@ -832,6 +833,44 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(self.window.strips["Mic"].route_buttons["B2"].text(), "Str. mic")
         self.assertEqual(self.window.strips["Mic"].route_buttons["B1"].text(), "Call")
         self.assertTrue(self.window.mix_box.isVisibleTo(self.window))
+
+    def test_mute_badge_and_tray_icon_follow_the_mic(self):
+        window = self.window
+        mic = window.strips["Mic"]
+        settings = window.window_settings
+        self.assertTrue(window.connected)
+        settings.setValue("mute_overlay", True)
+        mic.mute_button.setChecked(True)
+        window.sync_tray()
+        self.addCleanup(lambda: window.mute_badge and window.mute_badge.close())
+        self.assertTrue(window.mute_badge.isVisible())
+        self.assertEqual(window.mute_badge.state, "muted")
+        if window.tray is not None:
+            self.assertEqual(window.tray.icon().cacheKey(),
+                             window.tray_icons["muted"].cacheKey())
+            settings.setValue("tray_mute_icon", False)
+            window.sync_tray()
+            self.assertEqual(window.tray.icon().cacheKey(),
+                             window.tray_icons[None].cacheKey())
+        settings.setValue("mute_overlay", False)
+        window.sync_tray()
+        self.assertFalse(window.mute_badge.isVisible(), "switched off")
+        settings.setValue("mute_overlay", True)
+        mic.mute_button.setChecked(False)
+        window.sync_tray()
+        self.assertFalse(window.mute_badge.isVisible(), "unmuted")
+
+    def test_mute_badge_keeps_its_place_on_screen(self):
+        badge = main.MuteBadge()
+        self.addCleanup(badge.close)
+        badge.set_state("muted")
+        area = main.QApplication.primaryScreen().availableGeometry()
+        badge.place(None)
+        self.assertEqual(badge.y(), area.top() + 24)
+        badge.place(main.QPoint(area.right() - 5, area.top() + 50))
+        self.assertEqual(badge.x(), area.right() - badge.width(), "kept on the screen")
+        badge.place(main.QPoint(-99999, -99999))
+        self.assertEqual(badge.y(), area.top() + 24, "off every screen: top centre")
 
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"

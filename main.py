@@ -28,7 +28,7 @@ from logging.handlers import RotatingFileHandler
 from urllib.parse import parse_qs, unquote, urlsplit
 
 
-from PySide6.QtCore import (QUrl, Qt, Signal, QObject, QTimer, QRectF, QBuffer, QIODevice, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
+from PySide6.QtCore import (QPoint, QUrl, Qt, Signal, QObject, QTimer, QRectF, QBuffer, QIODevice, QFileInfo, QThread, QSettings, Slot, QMetaObject, QAbstractNativeEventFilter, QByteArray, QSize, QMimeData, QPointF, qInstallMessageHandler)
 from PySide6.QtGui import QDesktopServices, QBrush, QColor, QDrag, QImage, QFont, QFontMetricsF, QIcon, QKeySequence, QLinearGradient, QPainter, QPen, QPixmap
 
 from PySide6.QtSvg import QSvgRenderer
@@ -230,6 +230,17 @@ def reference_eye_icon(size=20):
 
 
 MONO_ICONS = {
+    "mic_off": """
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+             viewBox="0 0 24 24">
+          <rect x="8.2" y="3.2" width="7.6" height="11.6" rx="3.8"
+                fill="none" stroke="#d7e1eb" stroke-width="1.8"/>
+          <path d="M5.5 11.5v1.1a6.5 6.5 0 0 0 13 0v-1.1
+                   M12 19.1v2.1 M8.5 21.2h7 M4 3l16 18"
+                fill="none" stroke="#d7e1eb" stroke-width="1.8"
+                stroke-linecap="round"/>
+        </svg>
+    """,
     "compact": """
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
              viewBox="0 0 24 24">
@@ -5964,6 +5975,122 @@ class VoicemeeterMissingDialog(QDialog):
         layout.addWidget(buttons)
 
 
+# What the mute badge and the tray icon show: (text, colour) per state.
+MUTE_INDICATORS = {
+    "muted": ("Mic muted", "#f85149"),
+    "stream": ("Not on stream", "#f0883e"),
+}
+
+
+def mute_indicator_state(mic_muted, stream_muted):
+    """Which warning the badge and the tray icon show: "muted", "stream" or
+    None for nothing. stream_muted is None when no stream output is set."""
+    if mic_muted:
+        return "muted"  # nobody hears you: the bigger warning wins
+    if stream_muted:
+        return "stream"  # None (no stream output set) is no warning
+    return None
+
+
+def badged_icon(icon, colour, size=32):
+    """The tray icon with a coloured dot holding a crossed-out microphone."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.drawPixmap(0, 0, icon.pixmap(size, size))
+    dot = size * 0.62
+    box = QRectF(size - dot, size - dot, dot, dot)
+    painter.setPen(QPen(QColor("#0d1117"), size * 0.06))
+    painter.setBrush(QColor(colour))
+    painter.drawEllipse(box.adjusted(1, 1, -1, -1))
+    mic = dot * 0.62
+    QSvgRenderer(QByteArray(
+        MONO_ICONS["mic_off"].replace("#d7e1eb", "#ffffff").encode("utf-8")
+    )).render(painter, QRectF(box.center().x() - mic / 2,
+                              box.center().y() - mic / 2, mic, mic))
+    painter.end()
+    return QIcon(pixmap)
+
+
+class MuteBadge(QWidget):
+    """A small label that stays on top of other windows while the
+    microphone is muted. It never takes the focus, so a game keeps the
+    keyboard. Drag it to move it; moved() reports where it was left."""
+
+    moved = Signal(object)
+
+    def __init__(self):
+        super().__init__(
+            None,
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setToolTip("FaderDeck. Drag to move; turn it off in Settings, Microphone.")
+        self.state = None
+        self._grab = None
+        font = QFont(self.font())
+        font.setPointSize(11)
+        font.setBold(True)
+        self.setFont(font)
+        self.icon = _svg_icon(MONO_ICONS["mic_off"].replace("#d7e1eb", "#ffffff"), 18)
+
+    def set_state(self, state):
+        self.state = state
+        text = MUTE_INDICATORS[state][0]
+        width = QFontMetricsF(self.font()).horizontalAdvance(text)
+        self.setFixedSize(int(width) + 58, 38)
+        self.update()
+
+    def place(self, point=None):
+        """Put it at point when that is on a screen; else top centre."""
+        screen = QApplication.screenAt(point) if point is not None else None
+        if screen is None:
+            area = QApplication.primaryScreen().availableGeometry()
+            self.move(area.center().x() - self.width() // 2, area.top() + 24)
+        else:
+            area = screen.availableGeometry()
+            self.move(
+                min(max(point.x(), area.left()), area.right() - self.width()),
+                min(max(point.y(), area.top()), area.bottom() - self.height()),
+            )
+
+    def paintEvent(self, _event):
+        if self.state is None:
+            return
+        text, colour = MUTE_INDICATORS[self.state]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        fill = QColor(colour)
+        fill.setAlpha(235)
+        painter.setPen(QPen(QColor(0, 0, 0, 90), 1))
+        painter.setBrush(fill)
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 19, 19)
+        self.icon.paint(painter, 14, 10, 18, 18)
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(QRectF(40, 0, self.width() - 52, self.height()),
+                         Qt.AlignmentFlag.AlignVCenter, text)
+        painter.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._grab = event.globalPosition().toPoint() - self.pos()
+
+    def mouseMoveEvent(self, event):
+        if self._grab is not None:
+            self.move(event.globalPosition().toPoint() - self._grab)
+
+    def mouseReleaseEvent(self, _event):
+        if self._grab is not None:
+            self._grab = None
+            self.moved.emit(self.pos())
+
+
 class WelcomeDialog(QDialog):
     """Shown once, the first time FaderDeck's window opens: not everyone
     goes looking in the settings, and the streaming setup is where most
@@ -6350,6 +6477,22 @@ class SettingsDialog(QDialog):
         self.mute_sound.toggled.connect(self.update_chime_hint)
         self.sound_device.currentIndexChanged.connect(self.update_chime_hint)
         self.update_chime_hint()
+
+        self.add_heading("MUTE INDICATOR")
+        self.mute_overlay = QCheckBox(
+            "Show a badge on screen while the microphone is muted"
+        )
+        self.mute_overlay.setChecked(current["mute_overlay"])
+        self.form.addRow(self.mute_overlay)
+        self.tray_mute_icon = QCheckBox("Show the mute state on the tray icon")
+        self.tray_mute_icon.setChecked(current["tray_mute_icon"])
+        self.form.addRow(self.tray_mute_icon)
+        self.add_note(
+            "Red: your microphone is muted. Orange: you are muted for the "
+            "stream only, your call still hears you. The badge stays on top "
+            "of other windows and games in borderless or windowed mode; "
+            "drag it where you want it."
+        )
 
         self.form = self.add_tab("General", scrolling=True)
         self.tabs.tabBar().moveTab(1, 0)  # General first
@@ -6944,6 +7087,8 @@ class SettingsDialog(QDialog):
             "start_minimized": self.start_minimized.isChecked(),
             "check_updates": self.check_updates.isChecked(),
             "mute_sound": self.mute_sound.isChecked(),
+            "mute_overlay": self.mute_overlay.isChecked(),
+            "tray_mute_icon": self.tray_mute_icon.isChecked(),
             "mute_sound_device": self.sound_device.currentData(),
             "api_enabled": self.api_enabled.isChecked(),
             "api_port": self.api_port.value(),
@@ -7563,6 +7708,8 @@ class MainWindow(QMainWindow):
         # being closed to the tray.
         self._quitting = False
         self.tray = None
+        self.tray_icons = {}  # state -> icon, made on first use
+        self.mute_badge = None
         self.create_tray()
         # Windows is shutting down or the user is signing out: do not answer
         # that by hiding in the tray, which would hold the shutdown up.
@@ -8622,11 +8769,21 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(600, self.maybe_welcome)
 
     def sync_tray(self):
-        """Show the Mic mute state on the tray icon and in its menu."""
+        """Show the Mic mute state on the tray icon and in its menu, and
+        on the mute badge."""
         self.sync_mic_shortcuts()
+        listening, stream_muted = self.mic_shortcut_state()
+        mic = self.strips.get("Mic")
+        state = None
+        if self.connected:
+            state = mute_indicator_state(
+                bool(mic is not None and mic.mute_button.isChecked()),
+                stream_muted,
+            )
+        self.sync_mute_badge(state)
         if self.tray is None:
             return
-        listening, stream_muted = self.mic_shortcut_state()
+        self.sync_tray_icon(state)
         self.tray_listen_action.setChecked(listening)
         self.tray_listen_action.setEnabled(self.connected)
         self.tray_stream_action.setChecked(bool(stream_muted))
@@ -8638,6 +8795,47 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(
             "FaderDeck — microphone muted" if muted else "FaderDeck"
         )
+
+    def sync_tray_icon(self, state):
+        if not setting_bool(self.window_settings, "tray_mute_icon", True):
+            state = None
+        if state not in self.tray_icons:
+            base = QApplication.instance().windowIcon()
+            if base.isNull():
+                base = QIcon(resource_path("faderdeck.ico"))
+            self.tray_icons[state] = (
+                base if state is None
+                else badged_icon(base, MUTE_INDICATORS[state][1])
+            )
+        if self.tray.icon().cacheKey() != self.tray_icons[state].cacheKey():
+            self.tray.setIcon(self.tray_icons[state])
+
+    def sync_mute_badge(self, state):
+        if not setting_bool(self.window_settings, "mute_overlay", False):
+            state = None
+        if state is None:
+            if self.mute_badge is not None:
+                self.mute_badge.hide()
+            return
+        if self.mute_badge is None:
+            self.mute_badge = MuteBadge()
+            self.mute_badge.moved.connect(self.save_badge_place)
+            self.mute_badge.set_state(state)
+            self.mute_badge.place(self.saved_badge_place())
+        elif self.mute_badge.state != state:
+            self.mute_badge.set_state(state)
+        self.mute_badge.show()
+        self.mute_badge.raise_()
+
+    def saved_badge_place(self):
+        try:
+            x, y = str(self.window_settings.value("mute_overlay_pos", "")).split(",")
+            return QPoint(int(x), int(y))
+        except ValueError:
+            return None
+
+    def save_badge_place(self, point):
+        self.window_settings.setValue("mute_overlay_pos", f"{point.x()},{point.y()}")
 
     def close_to_tray_enabled(self):
         return self.tray is not None and setting_bool(
@@ -8685,6 +8883,8 @@ class MainWindow(QMainWindow):
             "start_minimized": setting_bool(settings, "start_minimized", False),
             "check_updates": setting_bool(settings, "check_updates", True),
             "mute_sound": setting_bool(settings, "mute_sound", True),
+            "mute_overlay": setting_bool(settings, "mute_overlay", False),
+            "tray_mute_icon": setting_bool(settings, "tray_mute_icon", True),
             "mute_sound_device": str(settings.value("mute_sound_device", "") or ""),
             "api_enabled": setting_bool(settings, "api_enabled", False),
             "api_port": self.api_port_setting(),
@@ -9442,6 +9642,10 @@ class MainWindow(QMainWindow):
 
         if self.application_control is not None:
             self.application_control.close()
+        if self.mute_badge is not None:
+            self.mute_badge.close()
+            self.mute_badge.deleteLater()
+            self.mute_badge = None
 
         if hasattr(self, "level_timer"):
             self.level_timer.stop()

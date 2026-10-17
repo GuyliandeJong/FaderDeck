@@ -287,6 +287,16 @@ class SoundCheckTest(unittest.TestCase):
                          "never a hardware output or the raw mic")
 
 
+class MuteIndicatorTest(unittest.TestCase):
+    def test_mic_mute_wins_and_no_stream_set_is_no_warning(self):
+        state = main.mute_indicator_state
+        self.assertEqual(state(True, True), "muted")
+        self.assertEqual(state(True, None), "muted")
+        self.assertEqual(state(False, True), "stream")
+        self.assertIsNone(state(False, False))
+        self.assertIsNone(state(False, None))
+
+
 class VoicemeeterInstallTest(unittest.TestCase):
     def state(self, files, registered=True):
         import tempfile
