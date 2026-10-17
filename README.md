@@ -241,7 +241,6 @@ Application audio monitoring uses a dedicated sampling loop to keep the interfac
 - voicemeeter-api
 - pycaw
 - comtypes
-- psutil
 - winappaudiorouter (moving applications between channels)
 
 ## Running From Source

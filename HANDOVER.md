@@ -18,7 +18,6 @@ Current release: `v1.0.2` (published/latest)
 - voicemeeter-api 2.7.2
 - pycaw
 - comtypes
-- psutil
 - winappaudiorouter
 - PyInstaller
 

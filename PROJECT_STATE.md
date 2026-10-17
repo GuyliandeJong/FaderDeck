@@ -17,7 +17,6 @@ Repository: https://github.com/GuylianDeJong/FaderDeck
 - voicemeeter-api 2.7.2
 - pycaw
 - comtypes
-- psutil
 - winappaudiorouter
 - PyInstaller
 
