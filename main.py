@@ -6223,6 +6223,7 @@ class SettingsDialog(QDialog):
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
 
+        self._build_microphone_tab(current, vm)
         self._build_general_tab(current, vm)
         self._build_appearance_tab(current)
         self._build_hotkeys_tab(current)
@@ -6279,9 +6280,8 @@ class SettingsDialog(QDialog):
         # Only grow: a status line that changed must not make it jump smaller.
         self.resize(max(self.width(), 560), max(wanted, self.minimumHeight(), self.height()))
 
-    def _build_general_tab(self, current, vm):
-        """A Microphone tab (input, listening, stream, chime) and a General
-        tab (channel names, window, updates)."""
+    def _build_microphone_tab(self, current, vm):
+        """Input, monitor, stream, sound check, chime and mute indicator."""
         self.form = self.add_tab("Microphone", scrolling=True)
         self.add_heading("INPUT")
         self.mic_input = QComboBox()
@@ -6461,6 +6461,8 @@ class SettingsDialog(QDialog):
             "drag it where you want it."
         )
 
+    def _build_general_tab(self, current, vm):
+        """Channel names, output names, window and updates."""
         self.form = self.add_tab("General", scrolling=True)
         self.tabs.tabBar().moveTab(1, 0)  # General first
         self.add_heading("CHANNEL NAMES")
