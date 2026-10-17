@@ -18,6 +18,8 @@ Prefer no installer? The release also has **FaderDeck.exe**, which runs as it is
 
 The first time FaderDeck opens, a short welcome recommends the **streaming setup** (also under Settings, Microphone): one click sends your voice to your call and your stream and your sound to your headphones and your stream, and it tells you what to pick in your call program and OBS.
 
+Without VoiceMeeter Potato installed, FaderDeck says so instead, explains the install and the restart it needs, and links to the download page.
+
 ## Preview
 
 ![FaderDeck interface](screenshots/faderdeck.png)
@@ -93,9 +95,10 @@ Save your whole setup under a name and load it again with one click: gain, mute,
 - **Monitor**: hear your own microphone on your headphones
 - **Mute stream**: mute your microphone for the stream only, while voice chat still hears you
 - **Monitor level**: hear yourself quieter than others hear you (Settings, Microphone)
+- **Mute indicator**: a small badge on screen while you are muted, red for muted and orange when only the stream does not hear you; drag it where you want it. Off by default (Settings, Microphone)
 - **Sound check**: record five seconds of your voice with the mic processing applied, as voice chat and your stream hear it, and hear it back (Settings, Microphone)
 
-Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for Discord (see Stream Mix for a full setup).
+Monitor is a button in Settings, Microphone, under the microphone input. Mute stream is a button under Mic Processing. Both are also in the tray menu and on the phone remote, and Mute stream has a hotkey. Choose under Settings, Microphone which output you monitor on and which one your stream hears. Mute stream only works when your stream software takes the microphone from an output of its own: in OBS, use VoiceMeeter Out B2 for the microphone and keep B1 for your call program (see Stream Mix for a full setup).
 
 ![Microphone settings](screenshots/settings-microphone.png)
 
@@ -116,6 +119,7 @@ A hotkey is taken from every other program while FaderDeck runs, so pick combina
 
 - Closing the window keeps FaderDeck running in the tray; click the icon to show it again
 - The tray menu has Show, Mute microphone and Quit
+- The tray icon gets a red dot while the microphone is muted, orange while only the stream is muted (can be turned off in Settings, Microphone)
 - Hold Shift while closing the window to quit at once
 - Optional: start minimised to the tray
 - Starting FaderDeck a second time shows the running one instead of opening another
@@ -386,12 +390,13 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check, a Stream Deck plugin.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check, a Stream Deck plugin, a streaming setup, a mute indicator on screen and in the tray.
 
 Next, roughly in this order:
 
-1. Support for VoiceMeeter Banana and the standard edition
-2. MIDI controllers as physical faders
+1. More channels than Game, Chat and Media, through VB-CABLE on VoiceMeeter's free hardware inputs
+2. Support for VoiceMeeter Banana and the standard edition
+3. MIDI controllers as physical faders
 
 Postponed: a signed EXE, so Windows does not warn about it. It needs a paid code-signing certificate.
 
