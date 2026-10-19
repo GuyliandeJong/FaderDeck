@@ -389,10 +389,11 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog.tabs.tabText(0), "General")
         self.assertEqual(dialog.tabs.tabText(1), "Microphone")
         self.assertEqual(dialog.tabs.tabText(3), "Hotkeys")
+        self.assertEqual(dialog.tabs.tabText(5), "Soundboard")
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
-                          "theme", "themes", "check_updates", "mute_sound",
+                          "theme", "themes", "check_updates", "mute_sound", "soundboard",
                           "mute_overlay", "tray_mute_icon",
                           "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget",

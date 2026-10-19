@@ -1,6 +1,7 @@
 """Sounds through Windows' winmm: the mute chime, playing and recording,
 and the sound check."""
 
+import json
 import math
 import array
 import ctypes
@@ -10,6 +11,8 @@ import time
 import threading
 
 from core import log
+from PySide6.QtCore import QObject, QUrl
+from PySide6.QtMultimedia import QSoundEffect
 
 
 # Mute sounds: two soft notes, falling when the microphone is muted and
@@ -279,3 +282,43 @@ def play_mute_sound(muted, device=""):
             MUTE_SOUND_NOTES[muted], **MUTE_SOUND_SHAPE
         )
     play_samples(_mute_sounds[muted], device)
+
+# The soundboard: short WAV clips at a hotkey, played on the Media channel's
+# VoiceMeeter input so the routing decides who hears them.
+SOUNDBOARD_PADS = 8
+SOUNDBOARD_HOTKEY_BASE = 200  # hotkey ids; core.HOTKEYS stays below
+SOUNDBOARD_CHANNEL = "Media"
+
+
+def soundboard_pads(raw):
+    """The stored pads: up to 8 {"name", "file", "hotkey"} dicts."""
+    try:
+        pads = json.loads(raw) if isinstance(raw, str) and raw else raw
+    except ValueError:
+        pads = []
+    if not isinstance(pads, list):
+        return []
+    return [
+        {key: str(pad.get(key) or "") for key in ("name", "file", "hotkey")}
+        for pad in pads if isinstance(pad, dict)
+    ][:SOUNDBOARD_PADS]
+
+
+class Soundboard(QObject):
+    """Plays WAV files on one output device without blocking: QSoundEffect
+    loads and plays on Qt's own audio thread."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.effects = {}  # path -> QSoundEffect, kept so it plays to the end
+
+    def play(self, path, device=None):
+        effect = self.effects.get(path)
+        if effect is None:
+            effect = QSoundEffect(self)
+            effect.setSource(QUrl.fromLocalFile(path))
+            self.effects[path] = effect
+        if device is not None and effect.audioDevice() != device:
+            effect.setAudioDevice(device)
+        effect.stop()
+        effect.play()  # starts once loaded, when the file is new
