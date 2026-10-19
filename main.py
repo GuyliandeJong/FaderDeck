@@ -21,7 +21,7 @@ from PySide6.QtCore import (
     QSize,
     qInstallMessageHandler,
 )
-from PySide6.QtGui import QDesktopServices, QFont, QIcon
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -43,10 +43,18 @@ from PySide6.QtWidgets import (
 )
 
 from core import (
+    _qt_message_handler,
+    acquire_single_instance,
     ALERT_BORDER,
     ALL_OUTPUTS,
+    app_settings,
     APPLICATION_PANEL_HEIGHT,
     APPLICATION_PANEL_MIN_HEIGHT,
+    ask_running_instance_to_quit,
+    ask_running_instance_to_show,
+    available_outputs,
+    BackgroundJob,
+    channel_label,
     CHANNEL_NAME_KEYS,
     COMPACT_DEFAULT_SIZE,
     COMPACT_MIN_SIZE,
@@ -55,41 +63,35 @@ from core import (
     HARDWARE_INPUTS,
     HARDWARE_OUTPUTS,
     HEADER_BUTTON_STYLE,
-    HOTKEYS,
     HotkeyFilter,
+    HOTKEYS,
+    load_voicemeeterlib,
+    log,
     MIXER_CARD_MIN_HEIGHT,
     MOD_NOREPEAT,
+    output_label,
+    output_name,
     PANEL_BORDER,
+    parse_hotkey,
     PROFILE_HOLDS,
     PROFILE_PROCESSING,
+    profile_states_match,
+    PYCAW_AVAILABLE,
+    resource_path,
     ROUTE_BUS,
+    set_mic_strip,
+    setting_bool,
+    setup_logging,
     SMALL_HEADING_STYLE,
     STRIPS,
     VIRTUAL_OUTPUTS,
     VMEventBridge,
     VMObserver,
     VOICEMEETER_DOWNLOAD_URL,
-    WINDOW_DEFAULT_SIZE,
-    WINDOW_MIN_SIZE,
-    _qt_message_handler,
-    acquire_single_instance,
-    app_settings,
-    ask_running_instance_to_quit,
-    ask_running_instance_to_show,
-    available_outputs,
-    channel_label,
-    load_voicemeeterlib,
-    log,
-    output_label,
-    output_name,
-    parse_hotkey,
-    profile_states_match,
-    resource_path,
-    set_mic_strip,
-    setting_bool,
-    setup_logging,
     voicemeeter_install_state,
     voicemeeter_is_running,
+    WINDOW_DEFAULT_SIZE,
+    WINDOW_MIN_SIZE,
 )
 from themes import (
     LOGO_SVG,
@@ -127,7 +129,7 @@ from widgets import (
 )
 from processing import CompressorControl, DenoiserControl, GateControl
 from strips import StripLevelWorker, StripWidget
-from applications import ApplicationControl
+from applications import ApplicationControl, make_default_output
 from dialogs import (
     STREAM_SETUP_HEAR,
     STREAM_SETUP_NAMES,
@@ -654,6 +656,7 @@ class MainWindow(QMainWindow):
         # being closed to the tray.
         self._quitting = False
         self.tray = None
+        self.default_output_job = None
         self.tray_icons = {}  # state -> icon, made on first use
         self.mute_badge = None
         self.create_tray()
@@ -973,6 +976,16 @@ class MainWindow(QMainWindow):
             )
 
             self.strips[name] = widget
+            if name in ApplicationControl.BUS_NAMES and PYCAW_AVAILABLE:
+                # Right-click on the channel's header.
+                action = QAction("Make this Windows' default output", widget.strip_header)
+                action.triggered.connect(
+                    lambda _checked=False, bus=name: self.set_default_output(bus)
+                )
+                widget.strip_header.addAction(action)
+                widget.strip_header.setContextMenuPolicy(
+                    Qt.ContextMenuPolicy.ActionsContextMenu
+                )
 
             widget.setMinimumHeight(MIXER_CARD_MIN_HEIGHT)
             widget.set_compact(self.compact)
@@ -1856,6 +1869,29 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.apply_settings(dialog.values())
+
+    def set_default_output(self, bus):
+        if self.default_output_job is None:
+            self.default_output_job = BackgroundJob(self)
+            self.default_output_job.finished.connect(self.on_default_output_set)
+        self._default_output_bus = bus
+        self.default_output_job.start(make_default_output, bus)
+
+    def on_default_output_set(self, device):
+        if device is None:  # the job logged why
+            QMessageBox.warning(
+                self, "FaderDeck",
+                f"Windows did not take {channel_label(self._default_output_bus)} "
+                "as its default output. Is its VoiceMeeter device enabled in "
+                "Windows' sound settings?",
+            )
+            return
+        log.info(f"Windows' default output is now {device}")
+        if self.tray is not None:
+            self.tray.showMessage(
+                "FaderDeck", f"Windows plays through {device} now.",
+                self.tray.icon(), 3000,
+            )
 
     def refresh_channel_names(self):
         """Show the channel names from the settings on the strips and lists."""

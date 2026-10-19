@@ -296,6 +296,20 @@ class SoundCheckTest(unittest.TestCase):
                          "never a hardware output or the raw mic")
 
 
+class DefaultOutputTest(unittest.TestCase):
+    def test_each_channel_finds_its_own_device_by_its_name(self):
+        devices = [
+            ("speakers", "Speakers (Focusrite USB Audio)"),
+            ("game", "Game (VB-Audio Voicemeeter VAIO)"),
+            ("aux", "Voicemeeter AUX Input (VB-Audio Voicemeeter AUX VAIO)"),
+            ("vaio3", "Voicemeeter VAIO3 Input (VB-Audio Voicemeeter VAIO3)"),
+        ]
+        self.assertEqual(
+            [applications.playback_device_id(devices, bus) for bus in ("Game", "Chat", "Media")],
+            ["game", "aux", "vaio3"])
+        self.assertIsNone(applications.playback_device_id(devices[:1], "Game"))
+
+
 class MuteIndicatorTest(unittest.TestCase):
     def test_mic_mute_wins_and_no_stream_set_is_no_warning(self):
         state = main.mute_indicator_state
