@@ -392,7 +392,7 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check, a Stream Deck plugin, a streaming setup, a mute indicator on screen and in the tray.
 
-Next, roughly in this order:
+Next, roughly in this order (worked out in [FEATURE_PLANS.md](FEATURE_PLANS.md)):
 
 1. More channels than Game, Chat and Media, through VB-CABLE on VoiceMeeter's free hardware inputs
 2. Support for VoiceMeeter Banana and the standard edition
