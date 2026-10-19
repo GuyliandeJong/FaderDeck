@@ -150,6 +150,7 @@ class FakeStrip:
         self.mute = False
         self.solo = False
         self.mono = False
+        self.limit = 12
         self.A1 = True
         self.A2 = False
         self.A3 = False
@@ -168,6 +169,8 @@ class FakeStrip:
 
 class FakeBus:
     def __init__(self, device=""):
+        self.levels = FakeLevels(8)
+        self.levels.all = self.levels.prefader
         self.label = ""
         self.device = FakeDevice()
         self.device.name = device

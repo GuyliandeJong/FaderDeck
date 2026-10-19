@@ -655,6 +655,9 @@ class StripWidget(QWidget):
             )
 
 
+CLIP_DB = -1.0  # a stream output at or above this is about to distort
+
+
 class StripLevelWorker(QObject):
     """Read the level of every strip on a dedicated worker thread.
 
@@ -663,6 +666,7 @@ class StripLevelWorker(QObject):
     """
 
     levels_received = Signal(str, float, float)  # strip name, left, right
+    clipped = Signal(str)  # a stream output, at most twice a second
     error = Signal(str)
     finished = Signal()
 
@@ -671,6 +675,10 @@ class StripLevelWorker(QObject):
         self.vm = vm
         self.timer = None
         self._last_levels = {}
+        # (output, bus index) pairs to watch; set from the GUI thread, which
+        # only ever replaces the whole tuple.
+        self.clip_buses = ()
+        self._last_clip = {}
 
     @Slot()
     def start(self):
@@ -714,6 +722,13 @@ class StripLevelWorker(QObject):
                 if pair != self._last_levels.get(name):
                     self._last_levels[name] = pair
                     self.levels_received.emit(name, pair[0], pair[1])
+            now = time.monotonic()
+            for output, index in self.clip_buses:
+                levels = self.vm.bus[index].levels.all
+                if max(levels, default=-200.0) >= CLIP_DB:
+                    if now - self._last_clip.get(output, 0.0) >= 0.5:
+                        self._last_clip[output] = now
+                        self.clipped.emit(output)
         except Exception as exc:
             self.error.emit(
                 f"Level worker read failed: {type(exc).__name__}: {exc}"

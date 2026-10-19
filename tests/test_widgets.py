@@ -392,7 +392,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
-                          "theme", "themes", "check_updates", "mute_sound",
+                          "theme", "themes", "check_updates", "mute_sound", "clip_guard",
                           "mute_overlay", "tray_mute_icon",
                           "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget",
@@ -877,6 +877,32 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(badge.x(), area.right() - badge.width(), "kept on the screen")
         badge.place(main.QPoint(-99999, -99999))
         self.assertEqual(badge.y(), area.top() + 24, "off every screen: top centre")
+
+    def test_clip_guard_limits_the_virtual_channels_and_warns(self):
+        vm, window = self.sandbox.vm, self.window
+        window.window_settings.setValue("clip_guard", True)
+        window.window_settings.setValue("stream_bus", "B3")
+        window.apply_stream_mix()
+        self.assertEqual([vm.strip[i].limit for i in (0, 5, 6, 7)], [12, -1, -1, -1])
+        vm.strip[6].limit = -6  # the user's own limit on Chat
+        window.window_settings.setValue("clip_guard", False)
+        window.apply_stream_mix()
+        self.assertEqual([vm.strip[i].limit for i in (5, 6, 7)], [12, -6, 12])
+
+        worker = main.StripLevelWorker(vm)
+        worker.clip_buses = (("B3", 7),)
+        heard = []
+        worker.clipped.connect(heard.append)
+        worker.read_levels()
+        self.assertEqual(heard, [], "silence")
+        vm.bus[7].levels.all = (-20.0, -0.5) + (-200.0,) * 6
+        worker.read_levels()
+        worker.read_levels()  # within half a second: no second warning
+        self.assertEqual(heard, ["B3"])
+        window.on_stream_clipped("B3")
+        self.assertIn("clipping", window.status_label.text())
+        window.end_clip_warning()
+        self.assertIn("Connected", window.status_label.text())
 
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"
