@@ -8,6 +8,7 @@ import applications
 import core
 import processing
 import sound
+import strips
 import themes
 import web
 import updates
@@ -294,6 +295,17 @@ class SoundCheckTest(unittest.TestCase):
         self.assertEqual(pick(renamed), "Microphone (VB-Audio Voicemeete")
         self.assertEqual(pick(["Voicemeeter Out A1 (VB-Audio Vo", "Focusrite"]), "",
                          "never a hardware output or the raw mic")
+
+
+class DuckingTest(unittest.TestCase):
+    def test_down_at_once_and_back_in_steps(self):
+        self.assertEqual(strips.next_duck(0.0, True, -12), -12.0)
+        steps, duck = [], -12.0
+        while duck:
+            duck = strips.next_duck(duck, False, -12)
+            steps.append(duck)
+        self.assertEqual(steps, [-9.0, -6.0, -3.0, 0.0])
+        self.assertEqual(strips.next_duck(-3.0, True, -12), -12.0, "talking again")
 
 
 class MuteIndicatorTest(unittest.TestCase):
