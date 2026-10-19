@@ -2,6 +2,7 @@
 the Windows Firewall rule the phone remote needs."""
 
 import sys
+import base64
 import concurrent.futures
 import ctypes
 import ctypes.wintypes
@@ -19,19 +20,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from PySide6.QtCore import (
-    Qt,
-    Signal,
+    QBuffer,
+    QByteArray,
+    QIODevice,
     QObject,
     QRectF,
-    QBuffer,
-    QIODevice,
-    QByteArray,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
 )
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
 from core import log
 from themes import LOGO_SVG
+from PySide6.QtWebSockets import QWebSocket
+from PySide6.QtNetwork import QAbstractSocket
 
 
 # Local API: lets other programs on this PC (a Stream Deck plugin, an OBS
@@ -117,6 +122,73 @@ class HttpService(QObject):
             server.server_close()
         if thread is not None:
             thread.join(timeout=1.0)
+
+
+# OBS. obs-websocket (built into OBS 28 and newer) tells FaderDeck when
+# the program scene changes; a profile with that scene's name is loaded.
+OBS_DEFAULT_PORT = 4455
+OBS_SCENE_EVENTS = 1 << 2  # obs-websocket's "Scenes" event subscription
+
+
+def obs_authentication(password, salt, challenge):
+    """obs-websocket v5's answer to its Hello: two rounds of SHA-256."""
+    secret = base64.b64encode(hashlib.sha256((password + salt).encode()).digest()).decode()
+    return base64.b64encode(hashlib.sha256((secret + challenge).encode()).digest()).decode()
+
+
+class ObsLink(QObject):
+    """Follows OBS's program scene. Runs on the GUI thread without blocking
+    (QWebSocket is asynchronous) and tries again every 10 seconds while
+    OBS is closed."""
+
+    scene_changed = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.url = ""
+        self.password = ""
+        self.socket = QWebSocket()
+        self.socket.textMessageReceived.connect(self.on_message)
+        self.retry = QTimer(self)
+        self.retry.setInterval(10000)
+        self.retry.timeout.connect(self.open)
+
+    def start(self, port, password):
+        self.stop()
+        self.url = f"ws://127.0.0.1:{int(port)}"
+        self.password = password
+        self.retry.start()
+        self.open()
+
+    def stop(self):
+        self.retry.stop()
+        self.url = ""
+        self.socket.abort()
+
+    def open(self):
+        if self.url and self.socket.state() == QAbstractSocket.SocketState.UnconnectedState:
+            self.socket.open(QUrl(self.url))
+
+    def on_message(self, text):
+        try:
+            message = json.loads(text)
+            op, data = message.get("op"), message.get("d") or {}
+        except (ValueError, AttributeError):
+            return
+        if op == 0:  # Hello: identify, with the password when OBS asks
+            identify = {"rpcVersion": 1, "eventSubscriptions": OBS_SCENE_EVENTS}
+            auth = data.get("authentication")
+            if auth:
+                identify["authentication"] = obs_authentication(
+                    self.password, auth.get("salt", ""), auth.get("challenge", "")
+                )
+            self.socket.sendTextMessage(json.dumps({"op": 1, "d": identify}))
+        elif op == 2:
+            log.info("OBS: connected")
+        elif op == 5 and data.get("eventType") == "CurrentProgramSceneChanged":
+            scene = (data.get("eventData") or {}).get("sceneName")
+            if scene:
+                self.scene_changed.emit(str(scene))
 
 
 class LocalApi(HttpService):

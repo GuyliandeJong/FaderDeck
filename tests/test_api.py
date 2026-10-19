@@ -1,6 +1,7 @@
 """The local API: what it does, and who it refuses."""
 
 import json
+import types
 import threading
 import unittest
 import urllib.error
@@ -91,6 +92,31 @@ class ApiLogicTest(unittest.TestCase):
     def test_off_by_default(self):
         self.assertIsNone(self.window.local_api.server)
         self.assertFalse(self.window.current_settings()["api_enabled"])
+
+
+class ObsLinkTest(unittest.TestCase):
+    def test_the_answer_matches_the_obs_websocket_docs(self):
+        self.assertEqual(
+            web.obs_authentication(
+                "supersecretpassword",
+                "lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI=",
+                "+IxH4CnCiqpX1rM9scsNynZzbOe4KhDeYcTNS3PDaeY="),
+            "1Ct943GAT+6YQUUX47Ia/ncufilbe6+oD6lY+5kaCu4=")
+
+    def test_hello_is_answered_and_scene_changes_are_reported(self):
+        link = web.ObsLink()
+        sent, scenes = [], []
+        link.socket = types.SimpleNamespace(sendTextMessage=sent.append)
+        link.password = "pw"
+        link.scene_changed.connect(scenes.append)
+        link.on_message(json.dumps({"op": 0, "d": {"authentication": {"salt": "s", "challenge": "c"}}}))
+        identify = json.loads(sent[0])
+        self.assertEqual(identify["op"], 1)
+        self.assertEqual(identify["d"]["authentication"], web.obs_authentication("pw", "s", "c"))
+        link.on_message(json.dumps({"op": 5, "d": {"eventType": "CurrentProgramSceneChanged",
+                                                   "eventData": {"sceneName": "Just chatting"}}}))
+        link.on_message("not json")
+        self.assertEqual(scenes, ["Just chatting"])
 
 
 class PhoneRemoteTest(unittest.TestCase):

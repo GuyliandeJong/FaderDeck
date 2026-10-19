@@ -850,6 +850,24 @@ class SettingsDialog(QDialog):
             "mixer; forget them when in doubt."
         )
 
+        self.add_heading("OBS")
+        self.obs_enabled = QCheckBox("Load the profile named after the OBS scene")
+        self.obs_enabled.setChecked(current["obs_enabled"])
+        self.form.addRow(self.obs_enabled)
+        self.obs_port = QSpinBox()
+        self.obs_port.setRange(1, 65535)
+        self.obs_port.setValue(current["obs_port"])
+        self.form.addRow("Port", self.obs_port)
+        self.obs_password = QLineEdit(current["obs_password"])
+        self.obs_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.form.addRow("Password", self.obs_password)
+        self.add_note(
+            "In OBS: Tools, WebSocket Server Settings, tick Enable and copy "
+            "the password. Then give a profile the exact name of a scene: "
+            "switching to that scene loads it. Scenes without a profile "
+            "change nothing."
+        )
+
     def check_firewall(self):
         self.firewall_status.setText("Checking Windows Firewall…")
         self.firewall_job.start(
@@ -1185,6 +1203,9 @@ class SettingsDialog(QDialog):
             "api_token": self.api_token.text(),
             "remote_enabled": self.remote_enabled.isChecked(),
             "remote_port": self.remote_port.value(),
+            "obs_enabled": self.obs_enabled.isChecked(),
+            "obs_port": self.obs_port.value(),
+            "obs_password": self.obs_password.text(),
             "remote_forget": self.forget_requested,
         }
         values.update(self.hotkey_texts())
