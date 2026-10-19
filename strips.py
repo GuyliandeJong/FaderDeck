@@ -6,45 +6,91 @@ import time
 
 from PySide6.QtCore import Qt, Signal, QObject, QTimer, Slot
 from PySide6.QtWidgets import (
+    QDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from core import (
     ALL_OUTPUTS,
+    app_settings,
+    available_outputs,
     CHANNEL_FADER_MIN_HEIGHT,
     CHANNEL_HEADER_HEIGHT,
+    channel_label,
     COMPACT_CARD_MIN_HEIGHT,
     COMPACT_FADER_WIDTH,
     COMPACT_HEADER_HEIGHT,
     COMPACT_METER_WIDTH,
     FADER_TO_GAIN_GAP,
+    HARDWARE_INPUTS,
+    log,
     MIXER_BUTTON_HEIGHT,
     MIXER_CARD_MIN_HEIGHT,
     NORMAL_METER_WIDTH,
-    ROUTE_BUS,
-    ROUTING_BUTTON_HEIGHT,
-    ROUTING_LABEL_HEIGHT,
-    SMALL_HEADING_STYLE,
-    STRIPS,
-    STRIP_COLORS,
-    TOGGLE_COLORS,
-    app_settings,
-    available_outputs,
-    channel_label,
-    log,
     outline_toggle_style,
     output_label,
+    ROUTE_BUS,
     route_name,
+    ROUTING_BUTTON_HEIGHT,
+    ROUTING_LABEL_HEIGHT,
     setting_bool,
+    SMALL_HEADING_STYLE,
+    STRIP_COLORS,
+    STRIPS,
+    TOGGLE_COLORS,
 )
 from themes import set_mono_icon
 from sound import play_mute_sound
 from widgets import MicFaderArea, MixerFader, VUMeter
+from PySide6.QtGui import QAction
+
+
+# VoiceMeeter's three tone knobs on a virtual input (EQGain1-3).
+EQ_BANDS = ("bass", "mid", "treble")
+EQ_RANGE = 12.0  # dB either way
+
+
+class ToneDialog(QDialog):
+    """Bass, mid and treble for a virtual channel, sent as they move."""
+
+    def __init__(self, strip_widget):
+        super().__init__(strip_widget)
+        self.strip_widget = strip_widget
+        self.setWindowTitle(f"{strip_widget.name_label.text()}: bass, mid, treble")
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        grid = QGridLayout(self)
+        self.sliders = {}
+        for row, band in enumerate(EQ_BANDS):
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(int(-EQ_RANGE * 2), int(EQ_RANGE * 2))  # half dB steps
+            slider.setMinimumWidth(220)
+            value = QLabel()
+            value.setMinimumWidth(56)
+            slider.valueChanged.connect(
+                lambda steps, band=band, value=value: self.on_moved(band, steps, value)
+            )
+            grid.addWidget(QLabel(band.capitalize()), row, 0)
+            grid.addWidget(slider, row, 1)
+            grid.addWidget(value, row, 2)
+            self.sliders[band] = slider
+            slider.setValue(int(round(strip_widget.eq_value(band) * 2)))
+            self.on_moved(band, slider.value(), value, write=False)
+        flat = QPushButton("Flat")
+        flat.setToolTip("Set all three to 0 dB")
+        flat.clicked.connect(lambda: [s.setValue(0) for s in self.sliders.values()])
+        grid.addWidget(flat, len(EQ_BANDS), 2)
+
+    def on_moved(self, band, steps, label, write=True):
+        db = steps / 2
+        label.setText(f"{db:+.1f} dB")
+        if write:
+            self.strip_widget.set_eq(band, db)
 
 
 class StripWidget(QWidget):
@@ -153,6 +199,12 @@ class StripWidget(QWidget):
         layout.addWidget(strip_header)
         self.strip_header = strip_header
         self.source_label = source_label
+        if self.has_eq():
+            # Right-click on the header.
+            tone = QAction("Bass, mid and treble…", strip_header)
+            tone.triggered.connect(self.open_tone)
+            strip_header.addAction(tone)
+            strip_header.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         self.compact = False
 
     def _build_fader(self, accent, layout, name):
@@ -436,7 +488,28 @@ class StripWidget(QWidget):
         }
         if self.stream_buses:
             state["stream_gain"] = round(self.mix_gain("stream"), 2)
+        if self.has_eq():
+            state["eq"] = {band: self.eq_value(band) for band in EQ_BANDS}
         return state
+
+    def has_eq(self):
+        return self.strip_index >= HARDWARE_INPUTS  # a virtual input
+
+    def eq_value(self, band):
+        try:
+            return round(float(getattr(self.strip, band)), 1)
+        except Exception:
+            return 0.0
+
+    def set_eq(self, band, db):
+        db = min(EQ_RANGE, max(-EQ_RANGE, float(db)))
+        try:
+            setattr(self.strip, band, db)
+        except Exception as e:
+            log.error(f"Failed to set {self.name} {band}: {type(e).__name__}: {e}")
+
+    def open_tone(self):
+        ToneDialog(self).exec()
 
     def apply_profile(self, state):
         """Apply a stored profile_state(). Returns False if it is not usable.
@@ -468,6 +541,11 @@ class StripWidget(QWidget):
                 if button.isChecked() != wanted:
                     button.setChecked(wanted)
                     handler(wanted)
+            # Profiles from before v1.16 have no "eq": the tone stays as it is.
+            for band, db in dict(state.get("eq") or {}).items():
+                if band in EQ_BANDS and math.isfinite(float(db)) and self.has_eq():
+                    if self.eq_value(band) != round(float(db), 1):
+                        self.set_eq(band, db)
             for output, wanted in dict(state.get("routes") or {}).items():
                 button = self.route_buttons.get(output)
                 if button is not None and button.isChecked() != bool(wanted):
