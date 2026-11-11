@@ -701,8 +701,8 @@ class SettingsDialog(QDialog):
         self.form.addRow(backup_row)
         self.add_note(
             "One file with your profiles, presets, names, themes, hotkeys and "
-            "settings, for a new PC or a reinstall. Paired phones and the "
-            "API token stay on this PC."
+            "settings, for a new PC or a reinstall. Paired phones, the API "
+            "token and the OBS password stay on this PC."
         )
 
     def _build_appearance_tab(self, current):

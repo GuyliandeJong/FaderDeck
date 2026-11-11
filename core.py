@@ -189,10 +189,10 @@ def app_settings():
     return QSettings(SETTINGS_NAME, SETTINGS_NAME)
 
 
-# Settings that never leave this PC: the local API's token and the paired
-# phones' token hashes. Window places (QByteArray) are left out too: they
-# belong to this PC's screens.
-BACKUP_SKIPPED = ("api_token", "remote_devices")
+# Settings that never leave this PC: the local API's token, the paired
+# phones' token hashes and the OBS password. Window places (QByteArray) are
+# left out too: they belong to this PC's screens.
+BACKUP_SKIPPED = ("api_token", "remote_devices", "obs_password")
 
 
 def backup_settings(settings, version):

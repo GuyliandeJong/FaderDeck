@@ -911,10 +911,11 @@ class MainWindowTest(unittest.TestCase):
         settings.setValue("channel_name_game", "Shooter")
         settings.setValue("api_token", "secret")
         settings.setValue("remote_devices", '["hash"]')
+        settings.setValue("obs_password", "obs-secret")
         settings.setValue("geometry_v2", core.QByteArray(b"xy"))
         backup = core.backup_settings(settings, "9.9.9")
         self.assertEqual(backup["settings"]["channel_name_game"], "Shooter")
-        for secret in ("api_token", "remote_devices", "geometry_v2"):
+        for secret in ("api_token", "remote_devices", "obs_password", "geometry_v2"):
             self.assertNotIn(secret, backup["settings"])
         _json.dumps(backup, default=str)  # writable as JSON
 
