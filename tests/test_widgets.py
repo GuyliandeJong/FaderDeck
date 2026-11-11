@@ -887,6 +887,20 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(fader.wheel_step, 10, "the wheel stays at 0.1 dB")
         self.assertEqual(fader.pageStep(), 100)
 
+    def test_settings_open_on_the_page_used_last_time(self):
+        opened = []
+        def run(dialog):
+            opened.append(dialog.tabs.tabText(dialog.tabs.currentIndex()))
+            dialog.show_tab("Appearance")  # the user moves to another page
+            return main.QDialog.DialogCode.Rejected
+        main.SettingsDialog.exec = run
+        self.addCleanup(lambda: delattr(main.SettingsDialog, "exec"))
+        self.window.open_settings()
+        self.window.open_settings()
+        self.window.window_settings.setValue("settings_tab", "A page that is gone")
+        self.window.open_settings()
+        self.assertEqual(opened, ["General", "Appearance", "General"])
+
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"
         self.sandbox.running = False

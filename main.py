@@ -1854,7 +1854,11 @@ class MainWindow(QMainWindow):
             self.current_settings(),
             self.vm if self.connected else None,
         )
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        # Open on the page used last time; General the first time.
+        dialog.show_tab(str(self.window_settings.value("settings_tab", "") or "General"))
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        self.window_settings.setValue("settings_tab", dialog.tabs.tabText(dialog.tabs.currentIndex()))
+        if accepted:
             self.apply_settings(dialog.values())
 
     def refresh_channel_names(self):
