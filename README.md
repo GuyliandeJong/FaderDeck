@@ -33,6 +33,8 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 - Fader with a dB scale, and live level meters on every channel
 - Scroll on a fader for 0.1 dB steps (1 dB with Shift); after clicking it, the arrow keys fine-tune by 0.01 dB; double right-click puts it back at 0 dB
 - Mute, Solo and Mono
+- Bass, mid and treble for Game, Chat and Media: right-click the channel's coloured header
+- Make Game, Chat or Media Windows' default output in one click: right-click the channel's header
 - A soft sound when the microphone is muted or unmuted, so you hear it without looking. Choose the device it plays on, such as your headphones, so your stream does not pick it up; or switch it off
 - Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter
 - Your own names for Game, Chat and Media (Settings, General), for example "Music" instead of "Media"
@@ -47,7 +49,7 @@ For this, your stream must take its sound from VoiceMeeter's outputs only. A set
 
 | Output | Carries | Used by |
 | --- | --- | --- |
-| B1 | your microphone | Discord |
+| B1 | your microphone | your call program (Discord, TeamSpeak, Zoom…) |
 | B2 | your microphone | OBS, as the microphone source |
 | B3 | Game, Chat and Media | OBS, as the sound source (instead of Desktop Audio or application capture) |
 
@@ -56,6 +58,33 @@ For this, your stream must take its sound from VoiceMeeter's outputs only. A set
 ![Streaming setup](screenshots/stream-setup.png)
 
 FaderDeck does this with VoiceMeeter's volume per output. VoiceMeeter's own main faders then no longer show the volumes; moving one there resets the stream mix of that channel.
+
+### Ducking
+
+Game and music go quieter by themselves while you talk, and come back after a short pause. Settings, Microphone, Ducking: choose the channels (Game and Media by default) and how much (-12 dB by default). Your faders do not move, and both what you hear and what your stream hears go down. A muted microphone ducks nothing.
+
+### Clip Guard
+
+Settings, Microphone, Stream: **Keep Game, Chat and Media from clipping** turns on VoiceMeeter's limiter for those channels at -1 dB, so a loud game or song does not distort on stream. When a stream output still gets too loud, for example from several channels at once, the status at the top turns red and says which output. A limit you set in VoiceMeeter yourself is left alone when you switch it off.
+
+### Soundboard
+
+Up to eight short clips on hotkeys: alerts, jingles, a laugh track. Settings, Soundboard: give each a name, a sound file (WAV, OGG, MP3 or FLAC) and a hotkey, and try it with Play. Clips play on the Media channel, so its routing decides who hears them: you (Hear), your stream (Str. mix) or both. When ducking lowers Media, clips played while you talk are lowered too.
+
+![Soundboard settings](screenshots/settings-soundboard.png)
+
+### OBS Scenes
+
+Switching scenes in OBS can load a FaderDeck setup profile: give a profile exactly the name of a scene, such as "Just chatting", and switching to that scene loads it. Scenes without a profile change nothing.
+
+1. In OBS: Tools, WebSocket Server Settings, tick **Enable WebSocket server** (OBS 28 or newer).
+2. In FaderDeck: Settings, Remote control, OBS: tick **Load the profile named after the OBS scene** and press **Fill in from OBS**, which reads the port and password from OBS on this PC.
+
+When OBS refuses the password, the tray says so.
+
+### Backup
+
+Settings, General, Backup: **Save to file** writes your profiles, presets, names, themes, hotkeys and settings to one file, for a new PC or a reinstall; **Load from file** puts them back. Paired phones, the API token and the OBS password stay on this PC.
 
 ### Compact View
 
@@ -390,7 +419,7 @@ The core mixer, microphone processing, application routing, live audio meters, a
 
 ## Roadmap
 
-Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check, a Stream Deck plugin, a streaming setup, a mute indicator on screen and in the tray.
+Done so far: reconnect, meters on every channel, global hotkeys for mute, volume and profiles, system tray, settings window, voice presets, setup profiles, single running instance, compact view, remote control, your own channel names, themes with light mode and your own colours, an installer, automatic updates, push to talk and hold to mute, monitor and mute stream, a phone and tablet remote, a separate stream mix, monitor level and sound check, a Stream Deck plugin, a streaming setup, a mute indicator on screen and in the tray, ducking, a clip guard, a soundboard, OBS scenes that load profiles, bass/mid/treble, switching Windows' default output, and backups of your settings.
 
 Next, roughly in this order (worked out in [FEATURE_PLANS.md](FEATURE_PLANS.md)):
 

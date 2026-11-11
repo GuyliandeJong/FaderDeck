@@ -834,12 +834,13 @@ class SettingsDialog(QDialog):
             hotkey = QKeySequenceEdit(QKeySequence(pad["hotkey"]))
             hotkey.setMaximumWidth(120)
             play = QPushButton("Play")
+            play.setFixedWidth(64)
             play.clicked.connect(
                 lambda _=False, button=choose: button.file and self.parent().play_sound(button.file)
             )
             row = QHBoxLayout()
             for widget in (name, choose, hotkey, play):
-                row.addWidget(widget)
+                row.addWidget(widget, 1 if widget is choose else 0)
             self.form.addRow(row)
             self.pads.append((name, choose, hotkey))
 
