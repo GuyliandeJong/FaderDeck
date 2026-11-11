@@ -150,6 +150,7 @@ class FakeStrip:
         self.mute = False
         self.solo = False
         self.mono = False
+        self.bass = self.mid = self.treble = 0.0
         self.A1 = True
         self.A2 = False
         self.A3 = False

@@ -10,6 +10,7 @@ import dialogs
 import processing
 import themes
 import sound
+import strips
 
 
 def compressor_state(vm):
@@ -949,6 +950,27 @@ class MainWindowTest(unittest.TestCase):
         window.on_obs_scene("Just chatting")
         self.assertEqual(window.active_profile, "Just chatting")
         self.assertNotEqual(self.sandbox.vm.strip[5].gainlayer[0].gain, -20.0)
+
+    def test_tone_is_set_live_and_kept_in_profiles(self):
+        game = self.window.strips["Game"]
+        self.assertFalse(self.window.strips["Mic"].has_eq())
+        self.assertEqual(len(game.strip_header.actions()), 1)
+        dialog = strips.ToneDialog(game)
+        dialog.sliders["bass"].setValue(7)  # half dB steps
+        self.assertEqual(self.sandbox.vm.strip[5].bass, 3.5)
+        dialog.sliders["treble"].setValue(-99)  # clamped by the slider
+        self.assertEqual(self.sandbox.vm.strip[5].treble, -12.0)
+        state = game.profile_state()
+        self.assertEqual(state["eq"], {"bass": 3.5, "mid": 0.0, "treble": -12.0})
+        dialog.reject()
+
+        self.sandbox.vm.strip[5].bass = 0.0
+        self.assertTrue(game.apply_profile(state))
+        self.assertEqual(self.sandbox.vm.strip[5].bass, 3.5)
+        del state["eq"]  # a profile from before the tone controls
+        self.sandbox.vm.strip[5].bass = 1.0
+        self.assertTrue(game.apply_profile(state))
+        self.assertEqual(self.sandbox.vm.strip[5].bass, 1.0, "left alone")
 
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"
