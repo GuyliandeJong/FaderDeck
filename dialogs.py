@@ -645,6 +645,24 @@ class SettingsDialog(QDialog):
         update_row.addWidget(check_now)
         self.form.addRow(update_row)
 
+        self.add_heading("BACKUP")
+        save_backup = QPushButton("Save to file…")
+        save_backup.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        save_backup.clicked.connect(lambda: self.parent().save_backup())
+        load_backup = QPushButton("Load from file…")
+        load_backup.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        load_backup.clicked.connect(lambda: self.parent().load_backup(self))
+        backup_row = QHBoxLayout()
+        backup_row.addWidget(save_backup)
+        backup_row.addWidget(load_backup)
+        backup_row.addStretch(1)
+        self.form.addRow(backup_row)
+        self.add_note(
+            "One file with your profiles, presets, names, themes, hotkeys and "
+            "settings, for a new PC or a reinstall. Paired phones and the "
+            "API token stay on this PC."
+        )
+
     def _build_appearance_tab(self, current):
         """Theme, accent and channel colours, and saved themes."""
         self.form = self.add_tab("Appearance")

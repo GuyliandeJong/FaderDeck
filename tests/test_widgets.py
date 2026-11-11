@@ -901,6 +901,44 @@ class MainWindowTest(unittest.TestCase):
         self.window.open_settings()
         self.assertEqual(opened, ["General", "Appearance", "General"])
 
+    def test_a_backup_round_trip_keeps_settings_and_leaves_secrets_out(self):
+        import tempfile, json as _json
+        settings = self.window.window_settings
+        settings.setValue("channel_name_game", "Shooter")
+        settings.setValue("api_token", "secret")
+        settings.setValue("remote_devices", '["hash"]')
+        settings.setValue("geometry_v2", core.QByteArray(b"xy"))
+        backup = core.backup_settings(settings, "9.9.9")
+        self.assertEqual(backup["settings"]["channel_name_game"], "Shooter")
+        for secret in ("api_token", "remote_devices", "geometry_v2"):
+            self.assertNotIn(secret, backup["settings"])
+        _json.dumps(backup, default=str)  # writable as JSON
+
+        backup["settings"]["channel_name_game"] = "Racer"
+        backup["settings"]["api_token"] = "stolen"  # never taken from a file
+        with tempfile.TemporaryDirectory() as folder:
+            path = folder + "/backup.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                _json.dump(backup, handle)
+            main.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (path, ""))
+            self.addCleanup(lambda: delattr(main.QFileDialog, "getOpenFileName"))
+            asked, told = [], []
+            self.window.ask = lambda question: asked.append(question) or main.QMessageBox.StandardButton.Yes
+            self.window.tell = told.append
+            self.window.register_hotkeys = lambda: []  # a running FaderDeck holds them
+            self.window.load_backup()
+        self.assertEqual(settings.value("channel_name_game"), "Racer")
+        self.assertEqual(self.window.strips["Game"].name_label.text(), "Racer")
+        self.assertEqual(settings.value("api_token"), "secret")
+        self.assertIn('"backup.json"', asked[0])
+        self.assertIn("cannot be undone", asked[0])
+        self.assertIn("loaded", told[0])
+
+    def test_a_file_that_is_no_backup_is_refused(self):
+        for bad in ([], {"settings": {}}, {"faderdeck_version": "1", "settings": []}):
+            with self.assertRaises(ValueError):
+                core.backup_values(bad)
+
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"
         self.sandbox.running = False

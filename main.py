@@ -5,6 +5,7 @@ import ctypes
 import ctypes.wintypes
 import hashlib
 import json
+import os
 import re
 import signal
 import subprocess
@@ -25,17 +26,18 @@ from PySide6.QtGui import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
-    QInputDialog,
-    QMessageBox,
+    QDialog,
+    QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
-    QDialog,
     QMenu,
-    QSystemTrayIcon,
-    QPushButton,
+    QMessageBox,
     QProgressDialog,
+    QPushButton,
     QSizePolicy,
+    QSystemTrayIcon,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
@@ -43,10 +45,19 @@ from PySide6.QtWidgets import (
 )
 
 from core import (
+    _qt_message_handler,
+    acquire_single_instance,
     ALERT_BORDER,
     ALL_OUTPUTS,
+    app_settings,
     APPLICATION_PANEL_HEIGHT,
     APPLICATION_PANEL_MIN_HEIGHT,
+    ask_running_instance_to_quit,
+    ask_running_instance_to_show,
+    available_outputs,
+    backup_settings,
+    backup_values,
+    channel_label,
     CHANNEL_NAME_KEYS,
     COMPACT_DEFAULT_SIZE,
     COMPACT_MIN_SIZE,
@@ -55,41 +66,34 @@ from core import (
     HARDWARE_INPUTS,
     HARDWARE_OUTPUTS,
     HEADER_BUTTON_STYLE,
-    HOTKEYS,
     HotkeyFilter,
+    HOTKEYS,
+    load_voicemeeterlib,
+    log,
     MIXER_CARD_MIN_HEIGHT,
     MOD_NOREPEAT,
+    output_label,
+    output_name,
     PANEL_BORDER,
+    parse_hotkey,
     PROFILE_HOLDS,
     PROFILE_PROCESSING,
+    profile_states_match,
+    resource_path,
     ROUTE_BUS,
+    set_mic_strip,
+    setting_bool,
+    setup_logging,
     SMALL_HEADING_STYLE,
     STRIPS,
     VIRTUAL_OUTPUTS,
     VMEventBridge,
     VMObserver,
     VOICEMEETER_DOWNLOAD_URL,
-    WINDOW_DEFAULT_SIZE,
-    WINDOW_MIN_SIZE,
-    _qt_message_handler,
-    acquire_single_instance,
-    app_settings,
-    ask_running_instance_to_quit,
-    ask_running_instance_to_show,
-    available_outputs,
-    channel_label,
-    load_voicemeeterlib,
-    log,
-    output_label,
-    output_name,
-    parse_hotkey,
-    profile_states_match,
-    resource_path,
-    set_mic_strip,
-    setting_bool,
-    setup_logging,
     voicemeeter_install_state,
     voicemeeter_is_running,
+    WINDOW_DEFAULT_SIZE,
+    WINDOW_MIN_SIZE,
 )
 from themes import (
     LOGO_SVG,
@@ -1860,6 +1864,60 @@ class MainWindow(QMainWindow):
         self.window_settings.setValue("settings_tab", dialog.tabs.tabText(dialog.tabs.currentIndex()))
         if accepted:
             self.apply_settings(dialog.values())
+
+    def save_backup(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save FaderDeck settings", "FaderDeck settings.json",
+            "FaderDeck backup (*.json)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(backup_settings(self.window_settings, APP_VERSION),
+                          handle, indent=2, default=str)
+        except OSError as error:
+            QMessageBox.warning(self, "FaderDeck", f"Could not save the backup:\n{error}")
+
+    def load_backup(self, dialog=None):
+        """Replace the settings with a backup's, after asking."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load FaderDeck settings", "", "FaderDeck backup (*.json)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as handle:
+                values = backup_values(json.load(handle))
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "FaderDeck", f"Could not load the backup:\n{error}")
+            return
+        if self.ask(
+            f"Load the settings from \"{os.path.basename(path)}\"?\n\n"
+            "Your current profiles, channel names, themes, hotkeys and other "
+            "settings are replaced by the ones saved in this file. This "
+            "cannot be undone: if you may want your current settings back, "
+            "save them to a file first.\n\n"
+            "Phones you paired stay paired."
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        if dialog is not None:
+            dialog.reject()  # its fields show the old values; first, so its theme undo goes before
+        for key, value in values.items():
+            self.window_settings.setValue(key, value)
+        self.window_settings.sync()
+        self.apply_settings(self.current_settings())
+        self.refresh_profile_list()
+        log.info(f"Loaded {len(values)} settings from a backup")
+        self.tell(f"Your settings were loaded from \"{os.path.basename(path)}\".")
+
+    def tell(self, text):
+        """A message with an OK button. Kept apart so tests can read it."""
+        QMessageBox.information(self, "FaderDeck", text)
+
+    def ask(self, question):
+        """A yes/no question. Kept apart so tests can answer it."""
+        return QMessageBox.question(self, "FaderDeck", question)
 
     def refresh_channel_names(self):
         """Show the channel names from the settings on the strips and lists."""

@@ -12,10 +12,11 @@ from collections import namedtuple
 from logging.handlers import RotatingFileHandler
 
 from PySide6.QtCore import (
-    Signal,
+    QAbstractNativeEventFilter,
+    QByteArray,
     QObject,
     QSettings,
-    QAbstractNativeEventFilter,
+    Signal,
 )
 
 
@@ -184,6 +185,38 @@ OWN_EXECUTABLES = ("faderdeck.exe",)
 
 def app_settings():
     return QSettings(SETTINGS_NAME, SETTINGS_NAME)
+
+
+# Settings that never leave this PC: the local API's token and the paired
+# phones' token hashes. Window places (QByteArray) are left out too: they
+# belong to this PC's screens.
+BACKUP_SKIPPED = ("api_token", "remote_devices")
+
+
+def backup_settings(settings, version):
+    """Every setting worth taking to another PC, ready for JSON."""
+    values = {}
+    for key in settings.allKeys():
+        value = settings.value(key)
+        if key in BACKUP_SKIPPED or isinstance(value, (QByteArray, bytes, bytearray)):
+            continue
+        values[key] = value
+    return {"faderdeck_version": version, "settings": values}
+
+
+def backup_values(backup):
+    """The settings in a loaded backup. Raises ValueError for anything that
+    is not a FaderDeck backup; secrets in it are ignored."""
+    if not (
+        isinstance(backup, dict)
+        and "faderdeck_version" in backup
+        and isinstance(backup.get("settings"), dict)
+    ):
+        raise ValueError("This file is not a FaderDeck backup.")
+    return {
+        key: value for key, value in backup["settings"].items()
+        if isinstance(key, str) and key not in BACKUP_SKIPPED
+    }
 
 
 def setting_bool(settings, key, default):
