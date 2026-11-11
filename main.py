@@ -5,6 +5,7 @@ import ctypes
 import ctypes.wintypes
 import hashlib
 import json
+import os
 import re
 import signal
 import subprocess
@@ -1888,8 +1889,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "FaderDeck", f"Could not load the backup:\n{error}")
             return
         if self.ask(
-            f"Replace your settings with the {len(values)} from this backup? "
-            "Your profiles, names, themes and hotkeys become the backup's."
+            f"Load the settings from \"{os.path.basename(path)}\"?\n\n"
+            "Your current profiles, channel names, themes, hotkeys and other "
+            "settings are replaced by the ones saved in this file. This "
+            "cannot be undone: if you may want your current settings back, "
+            "save them to a file first.\n\n"
+            "Phones you paired stay paired."
         ) != QMessageBox.StandardButton.Yes:
             return
         if dialog is not None:
@@ -1900,6 +1905,11 @@ class MainWindow(QMainWindow):
         self.apply_settings(self.current_settings())
         self.refresh_profile_list()
         log.info(f"Loaded {len(values)} settings from a backup")
+        self.tell(f"Your settings were loaded from \"{os.path.basename(path)}\".")
+
+    def tell(self, text):
+        """A message with an OK button. Kept apart so tests can read it."""
+        QMessageBox.information(self, "FaderDeck", text)
 
     def ask(self, question):
         """A yes/no question. Kept apart so tests can answer it."""

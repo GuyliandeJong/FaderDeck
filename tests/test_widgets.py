@@ -899,12 +899,17 @@ class MainWindowTest(unittest.TestCase):
                 _json.dump(backup, handle)
             main.QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (path, ""))
             self.addCleanup(lambda: delattr(main.QFileDialog, "getOpenFileName"))
-            self.window.ask = lambda question: main.QMessageBox.StandardButton.Yes
+            asked, told = [], []
+            self.window.ask = lambda question: asked.append(question) or main.QMessageBox.StandardButton.Yes
+            self.window.tell = told.append
             self.window.register_hotkeys = lambda: []  # a running FaderDeck holds them
             self.window.load_backup()
         self.assertEqual(settings.value("channel_name_game"), "Racer")
         self.assertEqual(self.window.strips["Game"].name_label.text(), "Racer")
         self.assertEqual(settings.value("api_token"), "secret")
+        self.assertIn('"backup.json"', asked[0])
+        self.assertIn("cannot be undone", asked[0])
+        self.assertIn("loaded", told[0])
 
     def test_a_file_that_is_no_backup_is_refused(self):
         for bad in ([], {"settings": {}}, {"faderdeck_version": "1", "settings": []}):
