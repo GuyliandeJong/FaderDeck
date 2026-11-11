@@ -408,7 +408,9 @@ class SettingsDialog(QDialog):
         if screen is not None:
             wanted = min(wanted, screen.availableGeometry().height() - 60)
         # Only grow: a status line that changed must not make it jump smaller.
-        self.resize(max(self.width(), 560), max(wanted, self.minimumHeight(), self.height()))
+        # Wide enough that every tab's name shows, without scroll arrows.
+        tabs_width = self.tabs.tabBar().sizeHint().width() + 40
+        self.resize(max(self.width(), 560, tabs_width), max(wanted, self.minimumHeight(), self.height()))
 
     def _build_microphone_tab(self, current, vm):
         """Input, monitor, stream, sound check, chime and mute indicator."""
@@ -514,6 +516,7 @@ class SettingsDialog(QDialog):
         chosen = set(current["ducking_channels"].split(","))
         self.ducking_channels = {}
         duck_row = QHBoxLayout()
+        duck_row.setSpacing(16)
         for name in ("Game", "Chat", "Media"):
             box = QCheckBox(channel_label(name))
             box.setChecked(name in chosen)
@@ -524,6 +527,7 @@ class SettingsDialog(QDialog):
         self.ducking_db = QSpinBox()
         self.ducking_db.setRange(-30, -3)
         self.ducking_db.setSuffix(" dB")
+        self.ducking_db.setMaximumWidth(100)
         self.ducking_db.setValue(int(current["ducking_db"]))
         self.form.addRow("By", self.ducking_db)
         self.add_note(
