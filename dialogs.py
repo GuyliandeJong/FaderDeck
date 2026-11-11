@@ -499,6 +499,31 @@ class SettingsDialog(QDialog):
             "output still gets too loud, the status at the top turns red."
         )
 
+        self.add_heading("DUCKING")
+        self.ducking = QCheckBox("Lower other sound while you talk")
+        self.ducking.setChecked(current["ducking"])
+        self.form.addRow(self.ducking)
+        chosen = set(current["ducking_channels"].split(","))
+        self.ducking_channels = {}
+        duck_row = QHBoxLayout()
+        for name in ("Game", "Chat", "Media"):
+            box = QCheckBox(channel_label(name))
+            box.setChecked(name in chosen)
+            self.ducking_channels[name] = box
+            duck_row.addWidget(box)
+        duck_row.addStretch(1)
+        self.form.addRow("Lower", duck_row)
+        self.ducking_db = QSpinBox()
+        self.ducking_db.setRange(-30, -3)
+        self.ducking_db.setSuffix(" dB")
+        self.ducking_db.setValue(int(current["ducking_db"]))
+        self.form.addRow("By", self.ducking_db)
+        self.add_note(
+            "Your faders do not move: the sound goes down when your "
+            "microphone picks you up and comes back after a short pause. "
+            "Both what you hear and what your stream hears go down."
+        )
+
         self.add_heading("SOUND CHECK")
         self.add_note(
             f"Records {SOUND_CHECK_SECONDS} seconds of your voice with the "
@@ -1256,6 +1281,11 @@ class SettingsDialog(QDialog):
             "check_updates": self.check_updates.isChecked(),
             "mute_sound": self.mute_sound.isChecked(),
             "clip_guard": self.clip_guard.isChecked(),
+            "ducking": self.ducking.isChecked(),
+            "ducking_db": self.ducking_db.value(),
+            "ducking_channels": ",".join(
+                name for name, box in self.ducking_channels.items() if box.isChecked()
+            ),
             "mute_overlay": self.mute_overlay.isChecked(),
             "tray_mute_icon": self.tray_mute_icon.isChecked(),
             "mute_sound_device": self.sound_device.currentData(),

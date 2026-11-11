@@ -134,7 +134,14 @@ from widgets import (
     mute_indicator_state,
 )
 from processing import CompressorControl, DenoiserControl, GateControl
-from strips import CLIP_DB, StripLevelWorker, StripWidget
+from strips import (
+    CLIP_DB,
+    DUCK_HOLD,
+    DUCK_THRESHOLD_DB,
+    next_duck,
+    StripLevelWorker,
+    StripWidget,
+)
 from applications import ApplicationControl, make_default_output
 from dialogs import (
     STREAM_SETUP_HEAR,
@@ -667,6 +674,10 @@ class MainWindow(QMainWindow):
         self.clip_timer.setSingleShot(True)
         self.clip_timer.setInterval(2000)
         self.clip_timer.timeout.connect(self.end_clip_warning)
+        self._last_talk = 0.0
+        self.duck_timer = QTimer(self)
+        self.duck_timer.setInterval(100)
+        self.duck_timer.timeout.connect(self.duck_tick)
         self.tray_icons = {}  # state -> icon, made on first use
         self.mute_badge = None
         self.create_tray()
@@ -1648,6 +1659,46 @@ class MainWindow(QMainWindow):
             strip.set_channel_levels((left, right))
         if name == "Mic" and self.mic_level_bar is not None:
             self.mic_level_bar.set_level(max(left, right))
+        if name == "Mic" and max(left, right) > DUCK_THRESHOLD_DB:
+            self._last_talk = time.monotonic()
+
+    def duck_tick(self):
+        """Every 100 ms while ducking is on: lower or restore the chosen
+        channels after the mic."""
+        talking = time.monotonic() - self._last_talk < DUCK_HOLD
+        mic = self.strips.get("Mic")
+        if mic is not None and mic.mute_button.isChecked():
+            talking = False  # a muted mic is not heard, so nothing ducks
+        amount, channels = self.ducking_setting()
+        for name, strip in self.strips.items():
+            wanted = next_duck(strip.duck, talking, amount) if name in channels else 0.0
+            if self.connected and wanted != strip.duck:
+                strip.set_duck(wanted)
+
+    def ducking_setting(self):
+        """(dB, channel names), or (0, ()) when ducking is off."""
+        if not setting_bool(self.window_settings, "ducking", False):
+            return 0.0, ()
+        try:
+            amount = float(self.window_settings.value("ducking_db", -12) or -12)
+        except (TypeError, ValueError):
+            amount = -12.0
+        channels = str(self.window_settings.value("ducking_channels", "Game,Media") or "")
+        return (
+            min(-3.0, max(-30.0, amount)),
+            tuple(n for n in channels.split(",") if n in ApplicationControl.BUS_NAMES),
+        )
+
+    def apply_ducking(self):
+        """Run the ducking timer only while ducking is on; restore at once
+        when it goes off."""
+        if self.ducking_setting()[1]:
+            self.duck_timer.start()
+        else:
+            self.duck_timer.stop()
+            for strip in self.strips.values():
+                if strip.duck and self.connected:
+                    strip.set_duck(0.0)
 
 
     # The normal and the compact view each remember their own size and place.
@@ -1854,6 +1905,9 @@ class MainWindow(QMainWindow):
             "check_updates": setting_bool(settings, "check_updates", True),
             "mute_sound": setting_bool(settings, "mute_sound", True),
             "clip_guard": setting_bool(settings, "clip_guard", False),
+            "ducking": setting_bool(settings, "ducking", False),
+            "ducking_db": self.ducking_setting()[0] or -12.0,
+            "ducking_channels": str(settings.value("ducking_channels", "Game,Media") or ""),
             "mute_overlay": setting_bool(settings, "mute_overlay", False),
             "tray_mute_icon": setting_bool(settings, "tray_mute_icon", True),
             "mute_sound_device": str(settings.value("mute_sound_device", "") or ""),
@@ -2074,6 +2128,7 @@ class MainWindow(QMainWindow):
             strip.set_mix(buses, self.mix)
         self.set_monitor_level()
         self.apply_clip_guard()
+        self.apply_ducking()
         if hasattr(self, "mix_box"):
             self.mix_box.setVisible(bool(buses))
             for mix, button in self.mix_buttons.items():
@@ -2781,6 +2836,10 @@ class MainWindow(QMainWindow):
                 self.vm.observer.remove(self.vm_observer)
             except Exception:
                 pass
+        self.duck_timer.stop()
+        for strip in self.strips.values():
+            if strip.duck and self.connected:
+                strip.set_duck(0.0)  # never leave VoiceMeeter lowered
         self.release_vm()
         self.vm = None
 

@@ -93,6 +93,19 @@ class ToneDialog(QDialog):
             self.strip_widget.set_eq(band, db)
 
 
+DUCK_THRESHOLD_DB = -40.0  # the mic above this counts as talking
+DUCK_HOLD = 0.6  # seconds of silence before the sound comes back
+DUCK_RELEASE_DB = 3.0  # dB back per step (a step is 100 ms)
+
+
+def next_duck(current, talking, amount):
+    """The duck after one step: down at once while talking, back up a
+    step at a time after. current and amount are negative dB or 0."""
+    if talking:
+        return float(amount)
+    return min(0.0, current + DUCK_RELEASE_DB)
+
+
 class StripWidget(QWidget):
 
     def __init__(
@@ -425,9 +438,21 @@ class StripWidget(QWidget):
     # Outputs that get the YOU volume plus an offset in dB: the Mic strip's
     # monitor output, so you can hear yourself quieter than others hear you.
     offsets = {}
+    # dB taken off every output while ducking; the faders and profiles
+    # never see it.
+    duck = 0.0
 
     def layered(self):
-        return bool(self.stream_buses) or bool(self.offsets)
+        return bool(self.stream_buses) or bool(self.offsets) or bool(self.duck)
+
+    def set_duck(self, db):
+        """Lower every output by -db dB (0: not ducked), faders unmoved."""
+        gains = {"you": self.mix_gain("you")}
+        if self.stream_buses:
+            gains["stream"] = self.mix_gain("stream")
+        self.duck = float(db)
+        for mix, gain in gains.items():
+            self.set_mix_gain(gain, mix)
 
     def set_mix(self, stream_buses, mix):
         self.stream_buses = tuple(stream_buses)
@@ -453,13 +478,13 @@ class StripWidget(QWidget):
                 if self.route_buttons.get(output) is not None
                 and self.route_buttons[output].isChecked()
             ]
-            return self.strip.gainlayer[(routed or self.stream_buses)[0]].gain
+            return self.strip.gainlayer[(routed or self.stream_buses)[0]].gain - self.duck
         # Any output that is neither the stream's nor offset carries YOU.
         own = next(
             bus for bus in range(len(self.strip.gainlayer))
             if bus not in self.stream_buses and bus not in self.offsets
         )
-        return self.strip.gainlayer[own].gain
+        return self.strip.gainlayer[own].gain - self.duck
 
     def set_mix_gain(self, gain, mix=None):
         mix = mix or self.mix
@@ -467,11 +492,11 @@ class StripWidget(QWidget):
             self.strip.gain = gain
         elif mix == "stream" and self.stream_buses:
             for bus in self.stream_buses:
-                self.strip.gainlayer[bus].gain = gain
+                self.strip.gainlayer[bus].gain = min(12.0, max(-60.0, gain + self.duck))
         else:
             for bus, layer in enumerate(self.strip.gainlayer):
                 if bus not in self.stream_buses:
-                    level = gain + self.offsets.get(bus, 0.0)
+                    level = gain + self.offsets.get(bus, 0.0) + self.duck
                     layer.gain = min(12.0, max(-60.0, level))
 
     def profile_state(self):

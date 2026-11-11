@@ -394,6 +394,7 @@ class MainWindowTest(unittest.TestCase):
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
                           "theme", "themes", "check_updates", "mute_sound", "clip_guard",
+                          "ducking", "ducking_db", "ducking_channels",
                           "mute_overlay", "tray_mute_icon",
                           "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget", "obs_enabled", "obs_port", "obs_password",
@@ -997,6 +998,40 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("clipping", window.status_label.text())
         window.end_clip_warning()
         self.assertIn("Connected", window.status_label.text())
+
+    def test_ducking_lowers_the_chosen_channels_while_talking(self):
+        vm, window = self.sandbox.vm, self.window
+        settings = window.window_settings
+        settings.setValue("ducking", True)
+        settings.setValue("ducking_db", -12)
+        settings.setValue("ducking_channels", "Game")
+        window.apply_stream_mix()
+        self.assertTrue(window.duck_timer.isActive())
+        game = window.strips["Game"]
+        before = [layer.gain for layer in vm.strip[5].gainlayer]
+
+        window.on_levels_received("Mic", -20.0, -22.0)  # talking
+        window.duck_tick()
+        self.assertEqual([l.gain for l in vm.strip[5].gainlayer], [g - 12 for g in before])
+        self.assertEqual(game.mix_gain("you"), before[0], "the fader does not move")
+        self.assertEqual(vm.strip[6].gainlayer[0].gain, 0.0, "Chat was not chosen")
+
+        window._last_talk -= 5  # a long pause
+        for _ in range(4):
+            window.duck_tick()
+        self.assertEqual([l.gain for l in vm.strip[5].gainlayer], before)
+
+        window.strips["Mic"].mute_button.setChecked(True)
+        window.on_levels_received("Mic", -20.0, -22.0)
+        window.duck_tick()
+        self.assertEqual(game.duck, 0.0, "a muted mic ducks nothing")
+        window.strips["Mic"].mute_button.setChecked(False)
+
+        window.duck_tick()
+        settings.setValue("ducking", False)
+        window.apply_stream_mix()
+        self.assertEqual(game.duck, 0.0, "switched off: restored at once")
+        self.assertFalse(window.duck_timer.isActive())
 
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"

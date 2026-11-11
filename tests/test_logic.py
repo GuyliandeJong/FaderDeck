@@ -8,6 +8,7 @@ import applications
 import core
 import processing
 import sound
+import strips
 import themes
 import web
 import updates
@@ -308,6 +309,16 @@ class DefaultOutputTest(unittest.TestCase):
             [applications.playback_device_id(devices, bus) for bus in ("Game", "Chat", "Media")],
             ["game", "aux", "vaio3"])
         self.assertIsNone(applications.playback_device_id(devices[:1], "Game"))
+
+class DuckingTest(unittest.TestCase):
+    def test_down_at_once_and_back_in_steps(self):
+        self.assertEqual(strips.next_duck(0.0, True, -12), -12.0)
+        steps, duck = [], -12.0
+        while duck:
+            duck = strips.next_duck(duck, False, -12)
+            steps.append(duck)
+        self.assertEqual(steps, [-9.0, -6.0, -3.0, 0.0])
+        self.assertEqual(strips.next_duck(-3.0, True, -12), -12.0, "talking again")
 
 
 class MuteIndicatorTest(unittest.TestCase):
