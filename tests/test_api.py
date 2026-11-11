@@ -119,6 +119,38 @@ class ObsLinkTest(unittest.TestCase):
         self.assertEqual(scenes, ["Just chatting"])
 
 
+class ObsSetupTest(unittest.TestCase):
+    def test_a_refused_password_is_reported_once_and_retrying_stops(self):
+        from PySide6.QtWebSockets import QWebSocketProtocol
+        link = web.ObsLink()
+        link.url = "ws://127.0.0.1:4455"
+        link.retry.start()
+        refused = []
+        link.refused.connect(lambda: refused.append(True))
+        link.socket = types.SimpleNamespace(closeCode=lambda: QWebSocketProtocol.CloseCode(4009))
+        link.on_closed()
+        self.assertEqual(refused, [True])
+        self.assertFalse(link.retry.isActive())
+        link.retry.start()
+        link.socket = types.SimpleNamespace(closeCode=lambda: QWebSocketProtocol.CloseCode.CloseCodeGoingAway)
+        link.on_closed()  # OBS closed: keep trying
+        self.assertTrue(link.retry.isActive())
+        link.retry.stop()
+
+    def test_the_password_is_read_from_obs_own_settings(self):
+        import tempfile, os
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as appdata:
+            folder = os.path.join(appdata, "obs-studio", "plugin_config", "obs-websocket")
+            os.makedirs(folder)
+            with open(os.path.join(folder, "config.json"), "w", encoding="utf-8") as handle:
+                json.dump({"server_port": 4460, "server_password": "abc", "auth_required": True}, handle)
+            with mock.patch.dict(os.environ, {"APPDATA": appdata}):
+                self.assertEqual(web.obs_config()["server_password"], "abc")
+            with mock.patch.dict(os.environ, {"APPDATA": os.path.join(appdata, "nothing")}):
+                self.assertEqual(web.obs_config(), {})
+
+
 class PhoneRemoteTest(unittest.TestCase):
     """The phone remote, on the loopback interface so no firewall asks."""
 

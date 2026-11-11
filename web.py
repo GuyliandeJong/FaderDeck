@@ -130,6 +130,23 @@ OBS_DEFAULT_PORT = 4455
 OBS_SCENE_EVENTS = 1 << 2  # obs-websocket's "Scenes" event subscription
 
 
+OBS_AUTH_FAILED = 4009  # obs-websocket's close code for a wrong password
+
+
+def obs_config():
+    """obs-websocket's settings from OBS's own file on this PC, or {}."""
+    path = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "obs-studio", "plugin_config", "obs-websocket", "config.json",
+    )
+    try:
+        with open(path, encoding="utf-8") as handle:
+            config = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
 def obs_authentication(password, salt, challenge):
     """obs-websocket v5's answer to its Hello: two rounds of SHA-256."""
     secret = base64.b64encode(hashlib.sha256((password + salt).encode()).digest()).decode()
@@ -142,6 +159,7 @@ class ObsLink(QObject):
     OBS is closed."""
 
     scene_changed = Signal(str)
+    refused = Signal()  # OBS turned the password down; retrying stops
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -149,6 +167,7 @@ class ObsLink(QObject):
         self.password = ""
         self.socket = QWebSocket()
         self.socket.textMessageReceived.connect(self.on_message)
+        self.socket.disconnected.connect(self.on_closed)
         self.retry = QTimer(self)
         self.retry.setInterval(10000)
         self.retry.timeout.connect(self.open)
@@ -168,6 +187,14 @@ class ObsLink(QObject):
     def open(self):
         if self.url and self.socket.state() == QAbstractSocket.SocketState.UnconnectedState:
             self.socket.open(QUrl(self.url))
+
+    def on_closed(self):
+        # closeCode() is an enum in PySide6, never equal to a plain number.
+        if getattr(self.socket.closeCode(), "value", None) == OBS_AUTH_FAILED and self.url:
+            # Trying the same password every 10 seconds cannot help.
+            log.warning("OBS refused the password; not trying again until it changes")
+            self.retry.stop()
+            self.refused.emit()
 
     def on_message(self, text):
         try:

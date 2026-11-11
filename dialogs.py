@@ -68,11 +68,12 @@ from sound import (
     sound_devices,
 )
 from web import (
-    REMOTE_PAIR_SECONDS,
     firewall_allows,
     firewall_program,
     firewall_rule_command,
     lan_address,
+    obs_config,
+    REMOTE_PAIR_SECONDS,
     run_powershell_as_admin,
 )
 
@@ -726,6 +727,27 @@ class SettingsDialog(QDialog):
             self.form.addRow(label, edit)
             self.hotkey_edits[action.key] = edit
 
+    def fill_in_from_obs(self):
+        config = obs_config()
+        if not config:
+            QMessageBox.information(
+                self, "FaderDeck",
+                "OBS's WebSocket settings were not found on this PC. In OBS, "
+                "open Tools, WebSocket Server Settings once and press Apply.",
+            )
+            return
+        if config.get("server_port"):
+            self.obs_port.setValue(int(config["server_port"]))
+        self.obs_password.setText(
+            str(config.get("server_password", "")) if config.get("auth_required") else ""
+        )
+        if not config.get("server_enabled"):
+            QMessageBox.information(
+                self, "FaderDeck",
+                "Filled in. The WebSocket server is still off in OBS: Tools, "
+                "WebSocket Server Settings, tick Enable WebSocket server.",
+            )
+
     def _build_remote_tab(self, current):
         """The local API: on or off, port, token and examples."""
         self.form = self.add_tab("Remote control", scrolling=True)
@@ -860,7 +882,14 @@ class SettingsDialog(QDialog):
         self.form.addRow("Port", self.obs_port)
         self.obs_password = QLineEdit(current["obs_password"])
         self.obs_password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.form.addRow("Password", self.obs_password)
+        from_obs = QPushButton("Fill in from OBS")
+        from_obs.setToolTip("Read the port and password from OBS's settings on this PC")
+        from_obs.setStyleSheet("QPushButton { padding: 4px 10px; }")
+        from_obs.clicked.connect(self.fill_in_from_obs)
+        password_row = QHBoxLayout()
+        password_row.addWidget(self.obs_password, 1)
+        password_row.addWidget(from_obs)
+        self.form.addRow("Password", password_row)
         self.add_note(
             "In OBS: Tools, WebSocket Server Settings, tick Enable and copy "
             "the password. Then give a profile the exact name of a scene: "

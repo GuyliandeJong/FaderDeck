@@ -684,6 +684,7 @@ class MainWindow(QMainWindow):
         self.restart_phone_remote()
         self.obs_link = ObsLink(self)
         self.obs_link.scene_changed.connect(self.on_obs_scene)
+        self.obs_link.refused.connect(self.on_obs_refused)
         self.restart_obs_link()
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
@@ -2151,6 +2152,15 @@ class MainWindow(QMainWindow):
             self.obs_link.start(current["obs_port"], current["obs_password"])
         else:
             self.obs_link.stop()
+
+    def on_obs_refused(self):
+        if self.tray is not None:
+            self.tray.showMessage(
+                "FaderDeck",
+                "OBS refused the password. Settings, Remote control, OBS: "
+                "press \"Fill in from OBS\".",
+                self.tray.icon(), 8000,
+            )
 
     def on_obs_scene(self, scene):
         """OBS switched scene: load the profile with the same name, if any."""
