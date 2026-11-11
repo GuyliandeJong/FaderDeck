@@ -878,6 +878,15 @@ class MainWindowTest(unittest.TestCase):
         badge.place(main.QPoint(-99999, -99999))
         self.assertEqual(badge.y(), area.top() + 24, "off every screen: top centre")
 
+    def test_arrow_keys_fine_tune_and_the_wheel_moves_a_tenth(self):
+        from PySide6.QtTest import QTest
+        fader = self.window.strips["Game"].fader
+        start = fader.value()
+        QTest.keyClick(fader, main.Qt.Key.Key_Up)
+        self.assertEqual(fader.value() - start, 1, "0.01 dB")
+        self.assertEqual(fader.wheel_step, 10, "the wheel stays at 0.1 dB")
+        self.assertEqual(fader.pageStep(), 100)
+
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"
         self.sandbox.running = False
@@ -935,7 +944,7 @@ class MainWindowTest(unittest.TestCase):
         fader = self.window.strips["Game"].fader
         self.assertEqual(
             (fader.wheel_step, fader.shift_step, fader.singleStep(), fader.pageStep()),
-            (10, 100, 10, 100),
+            (10, 100, 1, 100),  # the arrow keys fine-tune by 0.01 dB
         )
 
     def wheel(self, widget, notches, shift=False):
