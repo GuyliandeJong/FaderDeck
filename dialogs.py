@@ -491,6 +491,14 @@ class SettingsDialog(QDialog):
             "volumes. Keep B1 for your call program, so voice chat still hears you."
         )
 
+        self.clip_guard = QCheckBox("Keep Game, Chat and Media from clipping")
+        self.clip_guard.setChecked(current["clip_guard"])
+        self.form.addRow(self.clip_guard)
+        self.add_note(
+            "Turns on VoiceMeeter's limiter for them at -1 dB. When a stream "
+            "output still gets too loud, the status at the top turns red."
+        )
+
         self.add_heading("SOUND CHECK")
         self.add_note(
             f"Records {SOUND_CHECK_SECONDS} seconds of your voice with the "
@@ -1247,6 +1255,7 @@ class SettingsDialog(QDialog):
             "start_minimized": self.start_minimized.isChecked(),
             "check_updates": self.check_updates.isChecked(),
             "mute_sound": self.mute_sound.isChecked(),
+            "clip_guard": self.clip_guard.isChecked(),
             "mute_overlay": self.mute_overlay.isChecked(),
             "tray_mute_icon": self.tray_mute_icon.isChecked(),
             "mute_sound_device": self.sound_device.currentData(),

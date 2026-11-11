@@ -134,7 +134,7 @@ from widgets import (
     mute_indicator_state,
 )
 from processing import CompressorControl, DenoiserControl, GateControl
-from strips import StripLevelWorker, StripWidget
+from strips import CLIP_DB, StripLevelWorker, StripWidget
 from applications import ApplicationControl, make_default_output
 from dialogs import (
     STREAM_SETUP_HEAR,
@@ -663,6 +663,10 @@ class MainWindow(QMainWindow):
         self._quitting = False
         self.tray = None
         self.default_output_job = None
+        self.clip_timer = QTimer(self)
+        self.clip_timer.setSingleShot(True)
+        self.clip_timer.setInterval(2000)
+        self.clip_timer.timeout.connect(self.end_clip_warning)
         self.tray_icons = {}  # state -> icon, made on first use
         self.mute_badge = None
         self.create_tray()
@@ -1584,6 +1588,7 @@ class MainWindow(QMainWindow):
         self.mic_level_worker.levels_received.connect(
             self.on_levels_received
         )
+        self.mic_level_worker.clipped.connect(self.on_stream_clipped)
         self.mic_level_worker.error.connect(
             lambda message: log.error(message)
         )
@@ -1848,6 +1853,7 @@ class MainWindow(QMainWindow):
             "start_minimized": setting_bool(settings, "start_minimized", False),
             "check_updates": setting_bool(settings, "check_updates", True),
             "mute_sound": setting_bool(settings, "mute_sound", True),
+            "clip_guard": setting_bool(settings, "clip_guard", False),
             "mute_overlay": setting_bool(settings, "mute_overlay", False),
             "tray_mute_icon": setting_bool(settings, "tray_mute_icon", True),
             "mute_sound_device": str(settings.value("mute_sound_device", "") or ""),
@@ -2067,10 +2073,43 @@ class MainWindow(QMainWindow):
         for strip in self.strips.values():
             strip.set_mix(buses, self.mix)
         self.set_monitor_level()
+        self.apply_clip_guard()
         if hasattr(self, "mix_box"):
             self.mix_box.setVisible(bool(buses))
             for mix, button in self.mix_buttons.items():
                 button.setChecked(mix == self.mix)
+
+    def apply_clip_guard(self):
+        """Limit the virtual channels at CLIP_DB while the clip guard is on,
+        and watch the stream's outputs for clipping."""
+        on = setting_bool(self.window_settings, "clip_guard", False)
+        if self.mic_level_worker is not None:
+            self.mic_level_worker.clip_buses = tuple(
+                (output, ROUTE_BUS[output]) for output in self.stream_outputs_setting()
+            )
+        if not self.connected:
+            return
+        for name, strip in self.strips.items():
+            if name not in ApplicationControl.BUS_NAMES:
+                continue
+            try:
+                limit = strip.strip.limit
+                if on and limit != int(CLIP_DB):
+                    strip.strip.limit = int(CLIP_DB)
+                elif not on and limit == int(CLIP_DB):
+                    strip.strip.limit = 12  # VoiceMeeter's "off"; a limit of the user's own stays
+            except Exception as e:
+                log.error(f"Failed to set the {name} limit: {type(e).__name__}: {e}")
+
+    def on_stream_clipped(self, output):
+        self.status_label.setText(f"● Stream clipping on {output_label(output)}")
+        self.status_label.setStyleSheet("color: #f85149; font-weight: bold;")
+        self.clip_timer.start()
+
+    def end_clip_warning(self):
+        if self.connected:
+            self.status_label.setText("● Connected to VoiceMeeter Potato")
+            self.status_label.setStyleSheet("color: #3fb950; font-weight: bold;")
 
     def monitor_level_setting(self):
         try:
