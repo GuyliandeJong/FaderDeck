@@ -22,7 +22,7 @@ from PySide6.QtCore import (
     QSize,
     qInstallMessageHandler,
 )
-from PySide6.QtGui import QDesktopServices, QFont, QIcon
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -57,6 +57,7 @@ from core import (
     available_outputs,
     backup_settings,
     backup_values,
+    BackgroundJob,
     channel_label,
     CHANNEL_NAME_KEYS,
     COMPACT_DEFAULT_SIZE,
@@ -79,6 +80,7 @@ from core import (
     PROFILE_HOLDS,
     PROFILE_PROCESSING,
     profile_states_match,
+    PYCAW_AVAILABLE,
     resource_path,
     ROUTE_BUS,
     set_mic_strip,
@@ -133,7 +135,7 @@ from widgets import (
 )
 from processing import CompressorControl, DenoiserControl, GateControl
 from strips import StripLevelWorker, StripWidget
-from applications import ApplicationControl
+from applications import ApplicationControl, make_default_output
 from dialogs import (
     STREAM_SETUP_HEAR,
     STREAM_SETUP_NAMES,
@@ -660,6 +662,7 @@ class MainWindow(QMainWindow):
         # being closed to the tray.
         self._quitting = False
         self.tray = None
+        self.default_output_job = None
         self.tray_icons = {}  # state -> icon, made on first use
         self.mute_badge = None
         self.create_tray()
@@ -983,6 +986,16 @@ class MainWindow(QMainWindow):
             )
 
             self.strips[name] = widget
+            if name in ApplicationControl.BUS_NAMES and PYCAW_AVAILABLE:
+                # Right-click on the channel's header.
+                action = QAction("Make this Windows' default output", widget.strip_header)
+                action.triggered.connect(
+                    lambda _checked=False, bus=name: self.set_default_output(bus)
+                )
+                widget.strip_header.addAction(action)
+                widget.strip_header.setContextMenuPolicy(
+                    Qt.ContextMenuPolicy.ActionsContextMenu
+                )
 
             widget.setMinimumHeight(MIXER_CARD_MIN_HEIGHT)
             widget.set_compact(self.compact)
@@ -1927,6 +1940,29 @@ class MainWindow(QMainWindow):
     def ask(self, question):
         """A yes/no question. Kept apart so tests can answer it."""
         return QMessageBox.question(self, "FaderDeck", question)
+
+    def set_default_output(self, bus):
+        if self.default_output_job is None:
+            self.default_output_job = BackgroundJob(self)
+            self.default_output_job.finished.connect(self.on_default_output_set)
+        self._default_output_bus = bus
+        self.default_output_job.start(make_default_output, bus)
+
+    def on_default_output_set(self, device):
+        if device is None:  # the job logged why
+            QMessageBox.warning(
+                self, "FaderDeck",
+                f"Windows did not take {channel_label(self._default_output_bus)} "
+                "as its default output. Is its VoiceMeeter device enabled in "
+                "Windows' sound settings?",
+            )
+            return
+        log.info(f"Windows' default output is now {device}")
+        if self.tray is not None:
+            self.tray.showMessage(
+                "FaderDeck", f"Windows plays through {device} now.",
+                self.tray.icon(), 3000,
+            )
 
     def refresh_channel_names(self):
         """Show the channel names from the settings on the strips and lists."""

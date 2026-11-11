@@ -79,6 +79,39 @@ def stable_hide_key(executable_path, app_name=""):
     return "\\".join(parts)
 
 
+def playback_device_id(devices, bus):
+    """The id of the playback device behind a channel; devices are
+    (id, friendly name) pairs."""
+    for device_id, name in devices:
+        if ApplicationControl.bus_for_device(name) == bus:
+            return device_id
+    return None
+
+
+def make_default_output(bus):
+    """Make a channel's VoiceMeeter input the Windows default output, as
+    Windows' own "Set as Default Device" does (not for communications).
+    Uses COM: call it off the GUI thread. Returns the device's name."""
+    import comtypes
+    from pycaw.constants import ERole
+    comtypes.CoInitialize()
+    try:
+        devices = AudioUtilities.GetAllDevices(
+            data_flow=EDataFlow.eRender.value,
+            device_state=DEVICE_STATE.ACTIVE.value,
+        )
+        names = {device.id: device.FriendlyName for device in devices}
+        device_id = playback_device_id(names.items(), bus)
+        if device_id is None:
+            raise LookupError(f"No VoiceMeeter playback device found for {bus}")
+        AudioUtilities.SetDefaultDevice(
+            device_id, roles=[ERole.eConsole, ERole.eMultimedia]
+        )
+        return names[device_id]
+    finally:
+        comtypes.CoUninitialize()
+
+
 class ApplicationAudioWorker(QObject):
     """Own all pycaw/COM work on a dedicated worker thread.
 
