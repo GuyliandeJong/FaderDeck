@@ -70,6 +70,7 @@ from sound import (
     SOUND_CHECK_SECONDS,
     sound_devices,
     SOUNDBOARD_CHANNEL,
+    SOUNDBOARD_FILES,
     SOUNDBOARD_PADS,
     soundboard_pads,
 )
@@ -738,7 +739,7 @@ class SettingsDialog(QDialog):
         self.form = self.add_tab("Soundboard", scrolling=True)
         self.add_heading("SOUNDBOARD")
         self.add_note(
-            f"Short WAV clips at a hotkey. They play on the "
+            f"Short clips (WAV, OGG, MP3) at a hotkey. They play on the "
             f"{channel_label(SOUNDBOARD_CHANNEL)} channel, so its routing "
             "decides who hears them: you, your stream, or both."
         )
@@ -749,7 +750,7 @@ class SettingsDialog(QDialog):
             name = QLineEdit(pad["name"])
             name.setPlaceholderText(f"Sound {index + 1}")
             name.setMaximumWidth(110)
-            choose = QPushButton(os.path.basename(pad["file"]) or "Choose WAV…")
+            choose = QPushButton(os.path.basename(pad["file"]) or "Choose a sound…")
             choose.setToolTip(pad["file"])
             choose.file = pad["file"]
             choose.clicked.connect(lambda _=False, button=choose: self.choose_sound(button))
@@ -766,7 +767,7 @@ class SettingsDialog(QDialog):
             self.pads.append((name, choose, hotkey))
 
     def choose_sound(self, button):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose a sound", "", "WAV sound (*.wav)")
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a sound", "", SOUNDBOARD_FILES)
         if path:
             button.file = path
             button.setText(os.path.basename(path))

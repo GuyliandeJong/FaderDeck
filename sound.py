@@ -12,7 +12,7 @@ import threading
 
 from core import log
 from PySide6.QtCore import QObject, QUrl
-from PySide6.QtMultimedia import QSoundEffect
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 
 # Mute sounds: two soft notes, falling when the microphone is muted and
@@ -283,11 +283,13 @@ def play_mute_sound(muted, device=""):
         )
     play_samples(_mute_sounds[muted], device)
 
-# The soundboard: short WAV clips at a hotkey, played on the Media channel's
+# The soundboard: short clips at a hotkey, played on the Media channel's
 # VoiceMeeter input so the routing decides who hears them.
 SOUNDBOARD_PADS = 8
 SOUNDBOARD_HOTKEY_BASE = 200  # hotkey ids; core.HOTKEYS stays below
 SOUNDBOARD_CHANNEL = "Media"
+# What Qt's FFmpeg backend plays; Windows' own backend could not do OGG.
+SOUNDBOARD_FILES = "Sounds (*.wav *.ogg *.mp3 *.flac)"
 
 
 def soundboard_pads(raw):
@@ -305,20 +307,25 @@ def soundboard_pads(raw):
 
 
 class Soundboard(QObject):
-    """Plays WAV files on one output device without blocking: QSoundEffect
-    loads and plays on Qt's own audio thread."""
+    """Plays sound files on one output device without blocking: QMediaPlayer
+    decodes and plays on Qt's own threads."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.effects = {}  # path -> QSoundEffect, kept so it plays to the end
+        self.players = {}  # path -> QMediaPlayer, kept so it plays to the end
 
     def play(self, path, device=None):
-        effect = self.effects.get(path)
-        if effect is None:
-            effect = QSoundEffect(self)
-            effect.setSource(QUrl.fromLocalFile(path))
-            self.effects[path] = effect
-        if device is not None and effect.audioDevice() != device:
-            effect.setAudioDevice(device)
-        effect.stop()
-        effect.play()  # starts once loaded, when the file is new
+        player = self.players.get(path)
+        if player is None:
+            player = QMediaPlayer(self)
+            player.setAudioOutput(QAudioOutput(player))
+            player.errorOccurred.connect(
+                lambda _error, text, path=path: log.warning(f"Could not play {path}: {text}")
+            )
+            player.setSource(QUrl.fromLocalFile(path))
+            self.players[path] = player
+        output = player.audioOutput()
+        if device is not None and output.device() != device:
+            output.setDevice(device)
+        player.setPosition(0)  # pressed again while playing: start over
+        player.play()  # waits for the file to load, when it is new
