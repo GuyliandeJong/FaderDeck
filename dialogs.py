@@ -1,6 +1,8 @@
 """Dialogs: settings, the streaming setup, the welcome and the window
 for a missing VoiceMeeter."""
 
+import json
+import os
 import secrets
 import subprocess
 
@@ -10,19 +12,20 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
+    QHBoxLayout,
     QInputDialog,
     QKeySequenceEdit,
-    QMessageBox,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
-    QDialog,
+    QMessageBox,
     QPushButton,
     QScrollArea,
-    QSpinBox,
     QSlider,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -60,12 +63,16 @@ from themes import (
 )
 from updates import APP_VERSION
 from sound import (
-    SOUND_CHECK_SECONDS,
     play_mute_sound,
     recording_devices,
     sound_check,
     sound_check_device,
+    SOUND_CHECK_SECONDS,
     sound_devices,
+    SOUNDBOARD_CHANNEL,
+    SOUNDBOARD_FILES,
+    SOUNDBOARD_PADS,
+    soundboard_pads,
 )
 from web import (
     firewall_allows,
@@ -350,6 +357,7 @@ class SettingsDialog(QDialog):
         self._build_appearance_tab(current)
         self._build_hotkeys_tab(current)
         self._build_remote_tab(current)
+        self._build_soundboard_tab(current)
 
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: #f85149;")
@@ -798,6 +806,56 @@ class SettingsDialog(QDialog):
                 "Filled in. The WebSocket server is still off in OBS: Tools, "
                 "WebSocket Server Settings, tick Enable WebSocket server.",
             )
+
+    def _build_soundboard_tab(self, current):
+        """Up to eight clips, each with a name, a WAV file and a hotkey."""
+        self.form = self.add_tab("Soundboard", scrolling=True)
+        self.add_heading("SOUNDBOARD")
+        self.add_note(
+            f"Short clips (WAV, OGG, MP3) at a hotkey. They play on the "
+            f"{channel_label(SOUNDBOARD_CHANNEL)} channel, so its routing "
+            "decides who hears them: you, your stream, or both."
+        )
+        pads = soundboard_pads(current["soundboard"])
+        self.pads = []
+        for index in range(SOUNDBOARD_PADS):
+            pad = pads[index] if index < len(pads) else {"name": "", "file": "", "hotkey": ""}
+            name = QLineEdit(pad["name"])
+            name.setPlaceholderText(f"Sound {index + 1}")
+            name.setMaximumWidth(110)
+            choose = QPushButton(os.path.basename(pad["file"]) or "Choose a sound…")
+            choose.setToolTip(pad["file"])
+            choose.file = pad["file"]
+            choose.clicked.connect(lambda _=False, button=choose: self.choose_sound(button))
+            hotkey = QKeySequenceEdit(QKeySequence(pad["hotkey"]))
+            hotkey.setMaximumWidth(120)
+            play = QPushButton("Play")
+            play.clicked.connect(
+                lambda _=False, button=choose: button.file and self.parent().play_sound(button.file)
+            )
+            row = QHBoxLayout()
+            for widget in (name, choose, hotkey, play):
+                row.addWidget(widget)
+            self.form.addRow(row)
+            self.pads.append((name, choose, hotkey))
+
+    def choose_sound(self, button):
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a sound", "", SOUNDBOARD_FILES)
+        if path:
+            button.file = path
+            button.setText(os.path.basename(path))
+            button.setToolTip(path)
+
+    def soundboard_value(self):
+        return json.dumps([
+            {
+                "name": name.text().strip(),
+                "file": choose.file,
+                "hotkey": hotkey.keySequence().toString(QKeySequence.SequenceFormat.PortableText),
+            }
+            for name, choose, hotkey in self.pads
+            if choose.file or name.text().strip()
+        ])
 
     def _build_remote_tab(self, current):
         """The local API: on or off, port, token and examples."""
@@ -1286,6 +1344,7 @@ class SettingsDialog(QDialog):
             "ducking_channels": ",".join(
                 name for name, box in self.ducking_channels.items() if box.isChecked()
             ),
+            "soundboard": self.soundboard_value(),
             "mute_overlay": self.mute_overlay.isChecked(),
             "tray_mute_icon": self.tray_mute_icon.isChecked(),
             "mute_sound_device": self.sound_device.currentData(),

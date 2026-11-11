@@ -152,6 +152,14 @@ from dialogs import (
     WELCOME,
     WelcomeDialog,
 )
+from sound import (
+    Soundboard,
+    SOUNDBOARD_CHANNEL,
+    SOUNDBOARD_HOTKEY_BASE,
+    SOUNDBOARD_PADS,
+    soundboard_pads,
+)
+from PySide6.QtMultimedia import QMediaDevices
 
 
 class MainWindow(QMainWindow):
@@ -678,6 +686,7 @@ class MainWindow(QMainWindow):
         self.duck_timer = QTimer(self)
         self.duck_timer.setInterval(100)
         self.duck_timer.timeout.connect(self.duck_tick)
+        self.soundboard = Soundboard(self)
         self.tray_icons = {}  # state -> icon, made on first use
         self.mute_badge = None
         self.create_tray()
@@ -1908,6 +1917,7 @@ class MainWindow(QMainWindow):
             "ducking": setting_bool(settings, "ducking", False),
             "ducking_db": self.ducking_setting()[0] or -12.0,
             "ducking_channels": str(settings.value("ducking_channels", "Game,Media") or ""),
+            "soundboard": json.dumps(soundboard_pads(settings.value("soundboard", ""))),
             "mute_overlay": setting_bool(settings, "mute_overlay", False),
             "tray_mute_icon": setting_bool(settings, "tray_mute_icon", True),
             "mute_sound_device": str(settings.value("mute_sound_device", "") or ""),
@@ -2540,6 +2550,17 @@ class MainWindow(QMainWindow):
         current = self.current_settings()
         refused = []
         self.refused_hotkeys = {}  # settings key -> (combination, label)
+        pads = soundboard_pads(current["soundboard"])
+        for index in range(SOUNDBOARD_PADS):
+            user32.UnregisterHotKey(hwnd, SOUNDBOARD_HOTKEY_BASE + index)
+            parsed = parse_hotkey(pads[index]["hotkey"]) if index < len(pads) else None
+            if parsed is None:
+                continue
+            if not user32.RegisterHotKey(
+                hwnd, SOUNDBOARD_HOTKEY_BASE + index, parsed[0] | MOD_NOREPEAT, parsed[1]
+            ):
+                log.warning(f"Could not register {pads[index]['hotkey']} for a sound")
+                refused.append(pads[index]["hotkey"])
         for action in HOTKEYS:
             user32.UnregisterHotKey(hwnd, action.id)
             text = current[action.key]
@@ -2558,15 +2579,37 @@ class MainWindow(QMainWindow):
                 self.refused_hotkeys[action.key] = (text, action.label)
         return refused
 
+    def play_pad(self, index):
+        pads = soundboard_pads(self.window_settings.value("soundboard", ""))
+        if index < len(pads) and pads[index]["file"]:
+            self.play_sound(pads[index]["file"])
+
+    def play_sound(self, path):
+        """Play a clip on the soundboard's channel, or the default output
+        when its VoiceMeeter device is not there."""
+        device = next(
+            (
+                device for device in QMediaDevices.audioOutputs()
+                if ApplicationControl.bus_for_device(device.description()) == SOUNDBOARD_CHANNEL
+            ),
+            None,
+        )
+        self.soundboard.play(path, device)
+
     def unregister_hotkeys(self):
         try:
             hwnd = int(self.winId())
             for action in HOTKEYS:
                 ctypes.windll.user32.UnregisterHotKey(hwnd, action.id)
+            for index in range(SOUNDBOARD_PADS):
+                ctypes.windll.user32.UnregisterHotKey(hwnd, SOUNDBOARD_HOTKEY_BASE + index)
         except Exception:
             pass
 
     def on_hotkey(self, hotkey_id):
+        if 0 <= hotkey_id - SOUNDBOARD_HOTKEY_BASE < SOUNDBOARD_PADS:
+            self.play_pad(hotkey_id - SOUNDBOARD_HOTKEY_BASE)
+            return
         for action in HOTKEYS:
             if action.id != hotkey_id:
                 continue

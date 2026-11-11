@@ -174,8 +174,9 @@ your ears.
 - PySide6 has QtMultimedia. `QSoundEffect` plays WAV with low delay on a
   chosen device (`QMediaDevices.audioOutputs()`); pick the VoiceMeeter input
   of the Media channel, so the routing decides who hears it.
-- WAV only at first. MP3 needs `QMediaPlayer` and Qt's FFmpeg backend, which
-  makes the EXE bigger: measure first.
+- Built on `feat/soundboard` with `QMediaPlayer` and Qt's FFmpeg backend:
+  WAV, OGG, MP3 and FLAC. The user asked for OGG after the first, WAV-only
+  version (`QSoundEffect` reads WAV only).
 - Pads: a list of (name, file, hotkey) in the settings, at most 12.
   `core.HOTKEYS` is a fixed list now; pads need their own hotkey ids
   (start at 200) registered next to it in `MainWindow.register_hotkeys`.
