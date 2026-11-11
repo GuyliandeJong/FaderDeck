@@ -504,9 +504,13 @@ class SettingsDialog(QDialog):
         self.clip_guard = QCheckBox("Keep Game, Chat and Media from clipping")
         self.clip_guard.setChecked(current["clip_guard"])
         self.form.addRow(self.clip_guard)
+        self.add_note("Turns on VoiceMeeter's limiter for them at -1 dB.")
+        self.clip_warning = QCheckBox("Warn when a stream output clips")
+        self.clip_warning.setChecked(current["clip_warning"])
+        self.form.addRow(self.clip_warning)
         self.add_note(
-            "Turns on VoiceMeeter's limiter for them at -1 dB. When a stream "
-            "output still gets too loud, the status at the top turns red."
+            "The status at the top turns red when an output your stream hears "
+            "gets too loud, your microphone's output included."
         )
 
         self.add_heading("DUCKING")
@@ -1344,6 +1348,7 @@ class SettingsDialog(QDialog):
             "check_updates": self.check_updates.isChecked(),
             "mute_sound": self.mute_sound.isChecked(),
             "clip_guard": self.clip_guard.isChecked(),
+            "clip_warning": self.clip_warning.isChecked(),
             "ducking": self.ducking.isChecked(),
             "ducking_db": self.ducking_db.value(),
             "ducking_channels": ",".join(

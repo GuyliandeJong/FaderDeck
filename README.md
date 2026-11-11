@@ -65,7 +65,7 @@ Game and music go quieter by themselves while you talk, and come back after a sh
 
 ### Clip Guard
 
-Settings, Microphone, Stream: **Keep Game, Chat and Media from clipping** turns on VoiceMeeter's limiter for those channels at -1 dB, so a loud game or song does not distort on stream. When a stream output still gets too loud, for example from several channels at once, the status at the top turns red and says which output. A limit you set in VoiceMeeter yourself is left alone when you switch it off.
+Settings, Microphone, Stream: **Keep Game, Chat and Media from clipping** turns on VoiceMeeter's limiter for those channels at -1 dB, so a loud game or song does not distort on stream. When a stream output still gets too loud, for example from several channels at once, the status at the top turns red and says which output; untick **Warn when a stream output clips** if your microphone's output sets it off too often. A limit you set in VoiceMeeter yourself is left alone when you switch it off.
 
 ### Soundboard
 

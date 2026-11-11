@@ -394,7 +394,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(set(dialog.values()) - set(dialog.hotkey_edits),
                          {"mic_strip", "close_to_tray", "start_minimized",
                           "api_enabled", "api_port", "api_token",
-                          "theme", "themes", "check_updates", "mute_sound", "clip_guard",
+                          "theme", "themes", "check_updates", "mute_sound", "clip_guard", "clip_warning",
                           "ducking", "ducking_db", "ducking_channels",
                           "soundboard",
                           "mute_overlay", "tray_mute_icon",
@@ -1001,6 +1001,16 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("clipping", window.status_label.text())
         window.end_clip_warning()
         self.assertIn("Connected", window.status_label.text())
+
+        saved, window.mic_level_worker = window.mic_level_worker, worker
+        try:
+            window.apply_stream_mix()
+            self.assertEqual(worker.clip_buses, (("B3", 7),))
+            window.window_settings.setValue("clip_warning", False)
+            window.apply_stream_mix()
+            self.assertEqual(worker.clip_buses, (), "warning off")
+        finally:
+            window.mic_level_worker = saved
 
     def test_ducking_lowers_the_chosen_channels_while_talking(self):
         vm, window = self.sandbox.vm, self.window

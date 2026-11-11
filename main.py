@@ -1914,6 +1914,7 @@ class MainWindow(QMainWindow):
             "check_updates": setting_bool(settings, "check_updates", True),
             "mute_sound": setting_bool(settings, "mute_sound", True),
             "clip_guard": setting_bool(settings, "clip_guard", False),
+            "clip_warning": setting_bool(settings, "clip_warning", True),
             "ducking": setting_bool(settings, "ducking", False),
             "ducking_db": self.ducking_setting()[0] or -12.0,
             "ducking_channels": str(settings.value("ducking_channels", "Game,Media") or ""),
@@ -2149,9 +2150,10 @@ class MainWindow(QMainWindow):
         and watch the stream's outputs for clipping."""
         on = setting_bool(self.window_settings, "clip_guard", False)
         if self.mic_level_worker is not None:
+            warn = setting_bool(self.window_settings, "clip_warning", True)
             self.mic_level_worker.clip_buses = tuple(
                 (output, ROUTE_BUS[output]) for output in self.stream_outputs_setting()
-            )
+            ) if warn else ()
         if not self.connected:
             return
         for name, strip in self.strips.items():
