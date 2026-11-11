@@ -46,6 +46,8 @@ except Exception:
 def _qt_message_handler(mode, context, message):
     if message == "QFont::setPointSize: Point size <= 0 (-1), must be greater than 0":
         return
+    if message.startswith("Using Qt multimedia with FFmpeg"):
+        return  # an announcement on the first sound played, not a problem
     log.warning(f"Qt: {message}")
 
 
