@@ -1010,6 +1010,11 @@ class SettingsDialog(QDialog):
         self.chime_hint.setVisible(bool(text))
         self.chime_hint.setStyleSheet(f"color: {color}; font-size: 11px;")
 
+    def show_tab(self, title):
+        """Open the page with this title; General when there is none."""
+        titles = [self.tabs.tabText(index) for index in range(self.tabs.count())]
+        self.tabs.setCurrentIndex(titles.index(title if title in titles else "General"))
+
     def add_tab(self, title, scrolling=False):
         """Add a page and return its form layout."""
         page = QWidget()
