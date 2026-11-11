@@ -395,7 +395,7 @@ class MainWindowTest(unittest.TestCase):
                           "theme", "themes", "check_updates", "mute_sound",
                           "mute_overlay", "tray_mute_icon",
                           "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
-                          "remote_enabled", "remote_port", "remote_forget",
+                          "remote_enabled", "remote_port", "remote_forget", "obs_enabled", "obs_port", "obs_password",
                           *(f"output_name_{o}" for o in main.ALL_OUTPUTS),
                           *main.CHANNEL_NAME_KEYS.values()})
 
@@ -938,6 +938,17 @@ class MainWindowTest(unittest.TestCase):
         for bad in ([], {"settings": {}}, {"faderdeck_version": "1", "settings": []}):
             with self.assertRaises(ValueError):
                 core.backup_values(bad)
+
+    def test_an_obs_scene_loads_the_profile_with_its_name(self):
+        window = self.window
+        window.save_profile("Just chatting")
+        self.sandbox.vm.strip[5].gain = -20.0  # every layer, as VoiceMeeter does
+        window.strips["Game"].sync_from_voicemeeter()
+        window.on_obs_scene("Somewhere else")  # no such profile: nothing
+        self.assertEqual(self.sandbox.vm.strip[5].gainlayer[0].gain, -20.0)
+        window.on_obs_scene("Just chatting")
+        self.assertEqual(window.active_profile, "Just chatting")
+        self.assertNotEqual(self.sandbox.vm.strip[5].gainlayer[0].gain, -20.0)
 
     def test_without_voicemeeter_it_explains_and_offers_the_download(self):
         self.sandbox.install_state = "missing"

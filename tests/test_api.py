@@ -1,6 +1,7 @@
 """The local API: what it does, and who it refuses."""
 
 import json
+import types
 import threading
 import unittest
 import urllib.error
@@ -91,6 +92,63 @@ class ApiLogicTest(unittest.TestCase):
     def test_off_by_default(self):
         self.assertIsNone(self.window.local_api.server)
         self.assertFalse(self.window.current_settings()["api_enabled"])
+
+
+class ObsLinkTest(unittest.TestCase):
+    def test_the_answer_matches_the_obs_websocket_docs(self):
+        self.assertEqual(
+            web.obs_authentication(
+                "supersecretpassword",
+                "lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI=",
+                "+IxH4CnCiqpX1rM9scsNynZzbOe4KhDeYcTNS3PDaeY="),
+            "1Ct943GAT+6YQUUX47Ia/ncufilbe6+oD6lY+5kaCu4=")
+
+    def test_hello_is_answered_and_scene_changes_are_reported(self):
+        link = web.ObsLink()
+        sent, scenes = [], []
+        link.socket = types.SimpleNamespace(sendTextMessage=sent.append)
+        link.password = "pw"
+        link.scene_changed.connect(scenes.append)
+        link.on_message(json.dumps({"op": 0, "d": {"authentication": {"salt": "s", "challenge": "c"}}}))
+        identify = json.loads(sent[0])
+        self.assertEqual(identify["op"], 1)
+        self.assertEqual(identify["d"]["authentication"], web.obs_authentication("pw", "s", "c"))
+        link.on_message(json.dumps({"op": 5, "d": {"eventType": "CurrentProgramSceneChanged",
+                                                   "eventData": {"sceneName": "Just chatting"}}}))
+        link.on_message("not json")
+        self.assertEqual(scenes, ["Just chatting"])
+
+
+class ObsSetupTest(unittest.TestCase):
+    def test_a_refused_password_is_reported_once_and_retrying_stops(self):
+        from PySide6.QtWebSockets import QWebSocketProtocol
+        link = web.ObsLink()
+        link.url = "ws://127.0.0.1:4455"
+        link.retry.start()
+        refused = []
+        link.refused.connect(lambda: refused.append(True))
+        link.socket = types.SimpleNamespace(closeCode=lambda: QWebSocketProtocol.CloseCode(4009))
+        link.on_closed()
+        self.assertEqual(refused, [True])
+        self.assertFalse(link.retry.isActive())
+        link.retry.start()
+        link.socket = types.SimpleNamespace(closeCode=lambda: QWebSocketProtocol.CloseCode.CloseCodeGoingAway)
+        link.on_closed()  # OBS closed: keep trying
+        self.assertTrue(link.retry.isActive())
+        link.retry.stop()
+
+    def test_the_password_is_read_from_obs_own_settings(self):
+        import tempfile, os
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as appdata:
+            folder = os.path.join(appdata, "obs-studio", "plugin_config", "obs-websocket")
+            os.makedirs(folder)
+            with open(os.path.join(folder, "config.json"), "w", encoding="utf-8") as handle:
+                json.dump({"server_port": 4460, "server_password": "abc", "auth_required": True}, handle)
+            with mock.patch.dict(os.environ, {"APPDATA": appdata}):
+                self.assertEqual(web.obs_config()["server_password"], "abc")
+            with mock.patch.dict(os.environ, {"APPDATA": os.path.join(appdata, "nothing")}):
+                self.assertEqual(web.obs_config(), {})
 
 
 class PhoneRemoteTest(unittest.TestCase):

@@ -114,11 +114,13 @@ from updates import (
 from web import (
     API_DEFAULT_PORT,
     LocalApi,
+    logo_png,
+    OBS_DEFAULT_PORT,
+    ObsLink,
     PhoneRemote,
     REMOTE_DEFAULT_PORT,
-    REMOTE_PAGE,
-    logo_png,
     remote_manifest,
+    REMOTE_PAGE,
 )
 from widgets import (
     GripSplitter,
@@ -684,6 +686,10 @@ class MainWindow(QMainWindow):
         self.phone_remote.call_requested.connect(self.on_api_call)
         self.phone_remote.paired.connect(self.on_device_paired)
         self.restart_phone_remote()
+        self.obs_link = ObsLink(self)
+        self.obs_link.scene_changed.connect(self.on_obs_scene)
+        self.obs_link.refused.connect(self.on_obs_refused)
+        self.restart_obs_link()
         self.hotkey_filter.window_handle = int(self.winId())
         QApplication.instance().installNativeEventFilter(self.hotkey_filter)
         if self.register_hotkeys() and self.tray is not None:
@@ -1835,6 +1841,9 @@ class MainWindow(QMainWindow):
             "api_enabled": setting_bool(settings, "api_enabled", False),
             "api_port": self.api_port_setting(),
             "remote_enabled": setting_bool(settings, "remote_enabled", False),
+            "obs_enabled": setting_bool(settings, "obs_enabled", False),
+            "obs_port": self.obs_port_setting(),
+            "obs_password": str(settings.value("obs_password", "") or ""),
             "remote_port": self.remote_port_setting(),
             "remote_devices": self.remote_devices_setting(),
             "api_token": str(settings.value("api_token", "") or ""),
@@ -2101,6 +2110,7 @@ class MainWindow(QMainWindow):
         self.sync_tray()
         self.refresh_channel_names()
 
+        self.restart_obs_link()
         problem = self.restart_api() or self.restart_phone_remote()
         if problem:
             QMessageBox.warning(self, "FaderDeck", problem)
@@ -2190,6 +2200,37 @@ class MainWindow(QMainWindow):
             devices.append(device_hash)
         self.window_settings.setValue("remote_devices", json.dumps(devices))
         self.window_settings.sync()
+
+    def obs_port_setting(self):
+        try:
+            port = int(self.window_settings.value("obs_port", OBS_DEFAULT_PORT))
+        except (TypeError, ValueError):
+            port = OBS_DEFAULT_PORT
+        return port if 1 <= port <= 65535 else OBS_DEFAULT_PORT
+
+    def restart_obs_link(self):
+        current = self.current_settings()
+        if current["obs_enabled"]:
+            self.obs_link.start(current["obs_port"], current["obs_password"])
+        else:
+            self.obs_link.stop()
+
+    def on_obs_refused(self):
+        if self.tray is not None:
+            self.tray.showMessage(
+                "FaderDeck",
+                "OBS refused the password. Settings, Remote control, OBS: "
+                "press \"Fill in from OBS\".",
+                self.tray.icon(), 8000,
+            )
+
+    def on_obs_scene(self, scene):
+        """OBS switched scene: load the profile with the same name, if any."""
+        if scene not in self.load_profiles() or not self.connected:
+            return
+        log.info(f"OBS scene {scene}: loading its profile")
+        self.apply_profile(scene)  # only what differs reaches VoiceMeeter
+        self.refresh_profile_list(select=scene)
 
     def restart_phone_remote(self):
         """Start or stop the phone remote to match the settings.
@@ -2650,6 +2691,7 @@ class MainWindow(QMainWindow):
             self.mute_badge.deleteLater()
             self.mute_badge = None
 
+        self.obs_link.stop()
         if hasattr(self, "level_timer"):
             self.level_timer.stop()
 
