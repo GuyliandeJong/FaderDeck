@@ -172,15 +172,15 @@ class StripWidget(QWidget):
 
             1200,
         )
-        # Fader units are 0.01 dB. One wheel notch and the arrow keys move
-        # 0.1 dB; Shift+wheel and Page Up/Down move 1 dB for bigger jumps.
-        self.fader.setSingleStep(10)
+        # Fader units are 0.01 dB. The arrow keys move 0.01 dB for fine
+        # tuning, one wheel notch 0.1 dB; Shift+wheel and Page Up/Down 1 dB.
+        self.fader.setSingleStep(1)
         self.fader.setPageStep(100)
         self.fader.wheel_step = 10
         self.fader.shift_step = 100
         self.fader.setToolTip(
             "Mouse wheel: 0.1 dB, with Shift 1 dB. "
-            "Arrow keys: 0.1 dB. Page Up/Down: 1 dB. "
+            "Arrow keys: 0.01 dB. Page Up/Down: 1 dB. "
             "Double right-click: back to 0 dB."
         )
         self.fader.show_labels = True
