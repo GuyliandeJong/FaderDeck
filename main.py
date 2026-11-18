@@ -1250,8 +1250,23 @@ class MainWindow(QMainWindow):
         if not isinstance(self._profile_reference, dict):
             return False
         return not profile_states_match(
-            self._profile_reference, self.current_profile_state()
+            self.with_listen_mirror(self._profile_reference),
+            self.current_profile_state(),
         )
+
+    def with_listen_mirror(self, profile):
+        """The profile as loading it sets the mixer: the second output's
+        routes follow the first output's (see StripWidget.apply_profile)."""
+        outputs = self.listen_outputs()
+        if not outputs:
+            return profile
+        first, second = outputs
+        result = dict(profile)
+        for name, state in profile.items():
+            routes = state.get("routes") if isinstance(state, dict) else None
+            if isinstance(routes, dict) and first in routes:
+                result[name] = {**state, "routes": {**routes, second: routes[first]}}
+        return result
 
     def refresh_profile_state(self):
         """Show whether the mixer still matches the active profile."""
@@ -2753,14 +2768,16 @@ class MainWindow(QMainWindow):
     def copy_listen_routes(self):
         """Send every VoiceMeeter strip that reaches the monitor output to
         the second output as well, so both play the same; also the inputs
-        FaderDeck shows no channel for."""
+        FaderDeck shows no channel for. Only adds: a route the second
+        output already had stays."""
         outputs = self.listen_outputs()
         if not outputs or not self.connected:
             return
         first, second = outputs
         for index, strip in enumerate(self.vm.strip):
             try:
-                setattr(strip, second, bool(getattr(strip, first)))
+                if getattr(strip, first):
+                    setattr(strip, second, True)
             except Exception as e:
                 log.error(f"Failed to copy the Strip[{index}] route to {second}: {type(e).__name__}: {e}")
         for strip in self.strips.values():

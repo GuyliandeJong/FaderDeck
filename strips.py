@@ -573,7 +573,13 @@ class StripWidget(QWidget):
                 if band in EQ_BANDS and math.isfinite(float(db)) and self.has_eq():
                     if self.eq_value(band) != round(float(db), 1):
                         self.set_eq(band, db)
-            for output, wanted in dict(state.get("routes") or {}).items():
+            routes = dict(state.get("routes") or {})
+            for first, second in self.route_mirror.items():
+                if first in routes:
+                    # A profile saved before the second output was set has
+                    # it off; it follows the first output instead.
+                    routes[second] = routes[first]
+            for output, wanted in routes.items():
                 button = self.route_buttons.get(output)
                 if button is not None and button.isChecked() != bool(wanted):
                     button.setChecked(bool(wanted))

@@ -1014,15 +1014,28 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (False, False))
         self.assertFalse(game.route_buttons["A2"].isChecked())
 
+        game.on_route_clicked("A1", True)
+        old = window.current_profile_state()  # as saved before A2 was set
+        for state in old.values():
+            if "routes" in state:
+                state["routes"]["A2"] = False
+        for name, strip in window.strips.items():
+            strip.apply_profile(old.get(name, {}))
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "A2 follows A1")
+        window.set_active_profile("Old", old)
+        self.assertFalse(window.profile_is_changed(), "an older profile is not changed")
+
         window.window_settings.setValue("monitor_level", -10)
         window.set_monitor_level()
         self.assertEqual(window.strips["Mic"].offsets, {0: -10.0, 1: -10.0})
+        self.assertEqual(vm.strip[0].gainlayer[1].gain, vm.strip[0].gainlayer[0].gain)
 
         window.window_settings.setValue("second_bus", "")
         window.apply_stream_mix()
         self.assertTrue(window.listen_box.isHidden())
-        game.on_route_clicked("A1", True)
-        self.assertFalse(vm.strip[5].A2, "no mirror without a second output")
+        self.assertEqual(window.strips["Mic"].offsets, {0: -10.0}, "A2 back to the mic's own level")
+        game.on_route_clicked("A1", False)
+        self.assertTrue(vm.strip[5].A2, "no mirror without a second output")
 
     def test_clip_guard_limits_the_virtual_channels_and_warns(self):
         vm, window = self.sandbox.vm, self.window
