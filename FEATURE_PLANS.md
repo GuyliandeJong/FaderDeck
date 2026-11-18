@@ -313,9 +313,12 @@ Driving its window is fragile. So VoiceMeeter does the switching instead.
   output only, both.
 - Routes follow: a route to the first output also goes to the second
   (`StripWidget.route_mirror`), so Monitor reaches both; the monitor level
-  is applied to both. Setting a second output for the first time copies the
-  first output's routes for every VoiceMeeter strip, inputs FaderDeck shows
-  no channel for included. A2 stays visible as its own route button.
+  is applied to both. Setting a second output for the first time adds the
+  first output's routes to it for every VoiceMeeter strip, inputs FaderDeck
+  shows no channel for included. A2 stays visible as its own route button.
+- Profiles: loading one (also on an OBS scene switch) sets the second
+  output's routes from the first output's saved routes, because profiles
+  saved before have it off; the "changed" check compares the same way.
 - Not built: the local API / phone remote / Stream Deck actions; a warning
   for a second output without a device (it is no longer offered then).
 
