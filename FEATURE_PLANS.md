@@ -9,7 +9,8 @@ for the least work first.
 Release rule: every merge to main is released as the next minor version.
 
 **Status:** 1–7 shipped in v1.16.0 (tested by hand on the developer's PC).
-Open: 8, 9 and 10.
+Open: 8, 9 and 10. 11 is built on `feat/listen-outputs`, waiting for a
+test with speakers connected.
 
 | # | Feature | Effort | New dependency |
 |---|---|---|---|
@@ -23,6 +24,7 @@ Open: 8, 9 and 10.
 | 8 | More channels through VB-CABLE | large | none |
 | 9 | VoiceMeeter Banana and Standard | large, after 8 | none |
 | 10 | MIDI controllers | medium–large | none (winmm through ctypes) |
+| 11 | Speakers and headphones buttons | small–medium | none |
 
 Done already: mute indicator on screen and in the tray (v1.14.0).
 Postponed: a signed EXE (waits until the developer brings it up). Deferred:
@@ -268,3 +270,59 @@ the loopMIDI port. That covers learn mode, faders and buttons.
 
 **Tests.** The message parser and the CC-to-dB curve as pure functions;
 learn mode with a fake message source.
+
+## 11. Speakers and headphones buttons
+
+**Goal.** Buttons in FaderDeck that switch where you hear sound, without
+opening Focusrite Control 2: "Speakers" and "Headphones" each on or off on
+their own, plus presets "Speakers only", "Headphones only" and "Both". Each
+button shows the real state.
+
+**Why not Focusrite Control 2 itself.** It has no official API (checked
+2026-11-18 on FC2 1.1139, Scarlett 4i4 4th Gen). The only reliable unofficial
+route is its phone-app protocol (AES70/OCP.1 over encrypted WebSockets on
+changing ports, pairing approved in FC2), untested on a 4i4 and liable to
+break with any FC2 update. Direct USB needs FC2 closed and another driver.
+Driving its window is fragile. So VoiceMeeter does the switching instead.
+
+**Setup (one time, by hand; done on the developer's PC 2026-11-18).**
+- Focusrite Control 2: Output 1-2 = Playback 1-2 (speakers); Headphones =
+  Mix A, with Playback 1-2 muted and Playback 3-4 up in Mix A. The Input
+  faders in Mix A are the direct, zero-latency mic and are not switched.
+- VoiceMeeter: A1 = Focusrite USB ASIO (outputs 1-2). System Settings, "OUT
+  A2 PATCH BUS TO A1 ASIO Outputs" = 3, 4. Every strip that goes to A1 also
+  goes to A2, so A1 and A2 carry the same sound.
+- Checked: `Patch.OutA2[i]` reads back 1-based ASIO outputs, 0 = not
+  patched (`[3.0, 4.0, 0, ...]`). A2 levels equal A1 levels; the headphones
+  play through Playback 3-4 with Playback 1-2 muted in Mix A. Not yet checked:
+  speakers on A1 (connected later) and muting A1 or A2 one at a time.
+
+**How (as built on `feat/listen-outputs`).**
+- The first output is the existing monitor output (`listen_bus`, "Monitor
+  on"); one new setting `second_bus` ("Also hear on", Settings, Microphone,
+  default None, so nothing changes until it is set). A button is the bus
+  mute; its state is read back on every VoiceMeeter change (`pdirty`), so a
+  mute clicked in VoiceMeeter shows too.
+- `core.output_device` names an output patched to A1's ASIO device ("Focusrite
+  USB ASIO (outputs 3, 4)", from `Patch.OutA2[i]`, only while
+  `Bus[0].device.type` is 5 = ASIO). Before, A2 without a device was hidden
+  everywhere: route buttons, settings, tooltips.
+- Header: two buttons named after the outputs (rename them in Settings,
+  General), right-click for the presets. Tray: "Hear on" submenu with both
+  switches and the presets. Hotkeys 41-43: monitor output only, second
+  output only, both.
+- Routes follow: a route to the first output also goes to the second
+  (`StripWidget.route_mirror`), so Monitor reaches both; the monitor level
+  is applied to both. Setting a second output for the first time copies the
+  first output's routes for every VoiceMeeter strip, inputs FaderDeck shows
+  no channel for included. A2 stays visible as its own route button.
+- Not built: the local API / phone remote / Stream Deck actions; a warning
+  for a second output without a device (it is no longer offered then).
+
+**Tests.** The ASIO patch makes A2 available; buttons, a preset hotkey,
+presets and a mute changed outside FaderDeck; routes follow to A2 and stop
+following without a second output; the monitor level on both buses. Live
+run against the mixer: A2 found as "Focusrite USB ASIO (outputs 3, 4)",
+buttons "Hear" and "A2" both on, mirror A1 -> A2.
+
+**Effort.** One session. No new dependency.
