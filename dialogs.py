@@ -462,6 +462,21 @@ class SettingsDialog(QDialog):
             "adds a little delay."
         )
         self.listen_bus.currentIndexChanged.connect(self.update_monitor_button)
+        self.second_bus = QComboBox()
+        self.second_bus.addItem("None", "")
+        for output in HARDWARE_OUTPUTS:
+            if output == current["listen_bus"]:
+                continue  # the monitor output itself
+            if output in outputs or output == current["second_bus"]:
+                self.second_bus.addItem(route_name(vm, output)[0], output)
+        self.second_bus.setCurrentIndex(max(0, self.second_bus.findData(current["second_bus"])))
+        self.form.addRow("Also hear on", self.second_bus)
+        self.add_note(
+            "For speakers and headphones on two outputs: buttons at the top "
+            "switch each one on or off; right-click them for presets. Every "
+            "channel you send to the monitor output also goes here. An output "
+            "patched to A1's ASIO device in VoiceMeeter's System Settings counts too."
+        )
         self.update_monitor_button()
         self.original_monitor_level = current["monitor_level"]
         self.monitor_level = QSlider(Qt.Orientation.Horizontal)
@@ -1337,6 +1352,7 @@ class SettingsDialog(QDialog):
         values = {
             "mic_strip": int(self.mic_input.currentData()),
             "listen_bus": self.listen_bus.currentData(),
+            "second_bus": self.second_bus.currentData(),
             "monitor_level": self.monitor_level.value(),
             "stream_bus": ",".join(
                 output for output, box in self.stream_outputs.items() if box.isChecked()

@@ -173,6 +173,7 @@ class FakeBus:
         self.levels = FakeLevels(8)
         self.levels.all = self.levels.prefader
         self.label = ""
+        self.mute = False
         self.device = FakeDevice()
         self.device.name = device
 
@@ -201,6 +202,10 @@ class FakeVM:
         self.thread_running = False
         self.logins = 0
         self.fail_login = False
+        self.params = {}  # what get() reads, such as "Patch.OutA2[0]"
+
+    def get(self, param):
+        return self.params.get(param, 0.0)
 
     def login(self):
         if self.fail_login:

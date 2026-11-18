@@ -356,6 +356,8 @@ class StripWidget(QWidget):
         routing_layout.setHorizontalSpacing(5)
         routing_layout.setVerticalSpacing(2)
         self.route_buttons = {}
+        # {"A1": "A2"}: a route to A1 also goes to A2 (MainWindow.listen_outputs).
+        self.route_mirror = {}
         self.routing_layout = routing_layout
         self.visible_routes = []
         for output in ALL_OUTPUTS:
@@ -587,6 +589,14 @@ class StripWidget(QWidget):
     def on_route_clicked(self, output, checked):
         try:
             setattr(self.strip, output, bool(checked))
+            mirror = self.route_mirror.get(output)
+            if mirror:
+                setattr(self.strip, mirror, bool(checked))
+                button = self.route_buttons.get(mirror)
+                if button is not None:
+                    button.blockSignals(True)
+                    button.setChecked(bool(checked))
+                    button.blockSignals(False)
             self.update_gain_label()  # the stream mix may now reach this channel
         except Exception as exc:
             log.error(

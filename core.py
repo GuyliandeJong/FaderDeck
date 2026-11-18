@@ -302,6 +302,15 @@ def _hotkey_actions():
         actions.append(HotkeyAction(
             hotkey_id, key, "MICROPHONE", label, "", False, action, "Mic",
         ))
+    # Speakers and headphones on two outputs (MainWindow.listen_outputs).
+    for hotkey_id, key, label, preset in (
+        (41, "hotkey_hear_first", "Monitor output only", "first"),
+        (42, "hotkey_hear_second", "Second output only", "second"),
+        (43, "hotkey_hear_both", "Both outputs", "both"),
+    ):
+        actions.append(HotkeyAction(
+            hotkey_id, key, "HEAR ON", label, "", False, "hear", preset,
+        ))
     actions.append(HotkeyAction(
         31, "hotkey_profile_next", "SETUP PROFILES",
         "Next profile", "", False, "profile", 1,
@@ -567,14 +576,37 @@ OUTPUT_NAME_MAX = 8  # more does not fit a routing button
 CLASSIC_OUTPUTS = ("A1", "A2", "A3", "B1", "B2", "B3")  # when the mixer cannot say
 
 
+ASIO_DEVICE_TYPE = 5  # Bus[i].device.type of an ASIO driver
+
+
+def asio_patch(vm, output):
+    """The outputs (1-based) of A1's ASIO device that A2-A5 is patched to in
+    VoiceMeeter's System Settings, or []. A patch only counts while A1 is
+    an ASIO device; 0 means "not patched"."""
+    if output not in HARDWARE_OUTPUTS[1:] or vm is None:
+        return []
+    try:
+        if int(vm.get("Bus[0].device.type")) != ASIO_DEVICE_TYPE:
+            return []
+        channels = [int(vm.get(f"Patch.Out{output}[{i}]")) for i in range(8)]
+    except Exception:
+        return []
+    return [channel for channel in channels if channel > 0]
+
+
 def output_device(vm, output):
-    """The device chosen in VoiceMeeter for a hardware output, or ""."""
+    """The device chosen in VoiceMeeter for a hardware output, or "". An
+    output patched onto A1's ASIO device names that device and its outputs."""
     if output not in HARDWARE_OUTPUTS or vm is None:
         return ""
     try:
-        return str(vm.bus[ROUTE_BUS[output]].device.name or "").strip()
+        name = str(vm.bus[ROUTE_BUS[output]].device.name or "").strip()
     except Exception:
         return ""
+    patch = [] if name else asio_patch(vm, output)
+    if patch:
+        return f"{output_device(vm, 'A1')} (outputs {', '.join(map(str, patch))})"
+    return name
 
 
 def available_outputs(vm):

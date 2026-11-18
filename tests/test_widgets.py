@@ -398,7 +398,7 @@ class MainWindowTest(unittest.TestCase):
                           "ducking", "ducking_db", "ducking_channels",
                           "soundboard",
                           "mute_overlay", "tray_mute_icon",
-                          "mute_sound_device", "listen_bus", "stream_bus", "monitor_level",
+                          "mute_sound_device", "listen_bus", "second_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget", "obs_enabled", "obs_port", "obs_password",
                           *(f"output_name_{o}" for o in main.ALL_OUTPUTS),
                           *main.CHANNEL_NAME_KEYS.values()})
@@ -975,6 +975,54 @@ class MainWindowTest(unittest.TestCase):
         self.sandbox.vm.strip[5].bass = 1.0
         self.assertTrue(game.apply_profile(state))
         self.assertEqual(self.sandbox.vm.strip[5].bass, 1.0, "left alone")
+
+    def test_an_output_patched_to_the_asio_device_counts(self):
+        vm = self.sandbox.vm
+        vm.bus[1].device.name = ""
+        self.assertNotIn("A2", core.available_outputs(vm))
+        vm.params.update({"Patch.OutA2[0]": 3.0, "Patch.OutA2[1]": 4.0})
+        self.assertEqual(core.output_device(vm, "A2"), "", "A1 is not ASIO")
+        vm.params["Bus[0].device.type"] = 5.0
+        self.assertEqual(core.output_device(vm, "A2"), "Speakers (outputs 3, 4)")
+        self.assertIn("A2", core.available_outputs(vm))
+
+    def test_hear_buttons_switch_the_monitor_and_the_second_output(self):
+        vm, window = self.sandbox.vm, self.window
+        window.apply_stream_mix()
+        self.assertTrue(window.listen_box.isHidden(), "no second output set")
+        window.window_settings.setValue("second_bus", "A2")
+        window.copy_listen_routes()
+        self.assertEqual([vm.strip[i].A2 for i in range(8)], [vm.strip[i].A1 for i in range(8)])
+        window.apply_stream_mix()
+        self.assertFalse(window.listen_box.isHidden())
+        first, second = window.listen_buttons
+        self.assertTrue(first.isChecked() and second.isChecked())
+
+        second.click()  # only the headphones go off
+        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True))
+        window.on_hotkey(41)  # monitor output only
+        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True))
+        window.apply_hear_preset("second")
+        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (True, False))
+        self.assertEqual((first.isChecked(), second.isChecked()), (False, True))
+        vm.bus[0].mute = False  # clicked in VoiceMeeter
+        window.on_vm_event("pdirty")
+        self.assertTrue(first.isChecked())
+
+        game = window.strips["Game"]
+        game.on_route_clicked("A1", False)  # the route follows to A2
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (False, False))
+        self.assertFalse(game.route_buttons["A2"].isChecked())
+
+        window.window_settings.setValue("monitor_level", -10)
+        window.set_monitor_level()
+        self.assertEqual(window.strips["Mic"].offsets, {0: -10.0, 1: -10.0})
+
+        window.window_settings.setValue("second_bus", "")
+        window.apply_stream_mix()
+        self.assertTrue(window.listen_box.isHidden())
+        game.on_route_clicked("A1", True)
+        self.assertFalse(vm.strip[5].A2, "no mirror without a second output")
 
     def test_clip_guard_limits_the_virtual_channels_and_warns(self):
         vm, window = self.sandbox.vm, self.window
