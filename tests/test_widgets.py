@@ -1075,6 +1075,8 @@ class MainWindowTest(unittest.TestCase):
         window.apply_stream_mix()
         self.assertEqual(game.held, ())
         self.assertFalse(second.isHidden())
+        game.apply_profile(profile["Game"])
+        self.assertFalse(window.profile_is_changed(), "saved with the switch, still the same")
 
     def test_clip_guard_limits_the_virtual_channels_and_warns(self):
         vm, window = self.sandbox.vm, self.window

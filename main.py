@@ -1256,16 +1256,19 @@ class MainWindow(QMainWindow):
 
     def with_listen_mirror(self, profile):
         """The profile as loading it sets the mixer: the second output's
-        routes follow the first output's (see StripWidget.apply_profile)."""
+        routes follow the first output's (see StripWidget.apply_profile);
+        "second_gain" counts only while the switch keeps volumes per output."""
         outputs = self.listen_outputs()
-        if not outputs:
-            return profile
-        first, second = outputs
         result = dict(profile)
         for name, state in profile.items():
-            routes = state.get("routes") if isinstance(state, dict) else None
-            if isinstance(routes, dict) and first in routes:
-                result[name] = {**state, "routes": {**routes, second: routes[first]}}
+            if not isinstance(state, dict):
+                continue
+            strip = self.strips.get(name)
+            if "second_gain" in state and (strip is None or not strip.listen_buses):
+                state = result[name] = {k: v for k, v in state.items() if k != "second_gain"}
+            routes = state.get("routes")
+            if outputs and isinstance(routes, dict) and outputs[0] in routes:
+                result[name] = {**state, "routes": {**routes, outputs[1]: routes[outputs[0]]}}
         return result
 
     def refresh_profile_state(self):
