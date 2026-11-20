@@ -444,18 +444,39 @@ class StripWidget(QWidget):
     # dB taken off every output while ducking; the faders and profiles
     # never see it.
     duck = 0.0
+    # Speakers and headphones as a switch: (first, second) bus indexes, and
+    # the one that is switched off. The fader leaves that one alone, so each
+    # output keeps its own volume and the fader shows the one that plays.
+    listen_buses = ()
+    held = ()
 
     def layered(self):
-        return bool(self.stream_buses) or bool(self.offsets) or bool(self.duck)
+        return (bool(self.stream_buses) or bool(self.offsets) or bool(self.duck)
+                or bool(self.listen_buses))
+
+    def bus_gain(self, bus):
+        return self.strip.gainlayer[bus].gain - self.duck
+
+    def set_bus_gain(self, bus, gain):
+        self.strip.gainlayer[bus].gain = min(12.0, max(-60.0, gain + self.duck))
+
+    def set_held(self, held):
+        """Leave these buses' volume alone; show the other output's."""
+        self.held = tuple(held)
+        self._last_local_gain_change = 0.0
+        self.sync_from_voicemeeter()
 
     def set_duck(self, db):
         """Lower every output by -db dB (0: not ducked), faders unmoved."""
         gains = {"you": self.mix_gain("you")}
         if self.stream_buses:
             gains["stream"] = self.mix_gain("stream")
+        held = {bus: self.bus_gain(bus) for bus in self.held}
         self.duck = float(db)
         for mix, gain in gains.items():
             self.set_mix_gain(gain, mix)
+        for bus, gain in held.items():
+            self.set_bus_gain(bus, gain)
 
     def set_mix(self, stream_buses, mix):
         self.stream_buses = tuple(stream_buses)
@@ -482,10 +503,13 @@ class StripWidget(QWidget):
                 and self.route_buttons[output].isChecked()
             ]
             return self.strip.gainlayer[(routed or self.stream_buses)[0]].gain - self.duck
-        # Any output that is neither the stream's nor offset carries YOU.
+        # Any output that is neither the stream's nor offset carries YOU;
+        # the listen output that plays first: right after a switch, the
+        # other outputs still have the volume of the one switched off.
         own = next(
-            bus for bus in range(len(self.strip.gainlayer))
+            bus for bus in (*self.listen_buses, *range(len(self.strip.gainlayer)))
             if bus not in self.stream_buses and bus not in self.offsets
+            and bus not in self.held
         )
         return self.strip.gainlayer[own].gain - self.duck
 
@@ -497,8 +521,10 @@ class StripWidget(QWidget):
             for bus in self.stream_buses:
                 self.strip.gainlayer[bus].gain = min(12.0, max(-60.0, gain + self.duck))
         else:
+            # shortcut: outputs other than the two listen outputs (B1, say)
+            # take the level of the one that plays; per output if asked.
             for bus, layer in enumerate(self.strip.gainlayer):
-                if bus not in self.stream_buses:
+                if bus not in self.stream_buses and bus not in self.held:
                     level = gain + self.offsets.get(bus, 0.0) + self.duck
                     layer.gain = min(12.0, max(-60.0, level))
 
@@ -516,6 +542,11 @@ class StripWidget(QWidget):
         }
         if self.stream_buses:
             state["stream_gain"] = round(self.mix_gain("stream"), 2)
+        if self.listen_buses:
+            # Not the output that plays: a switch must not change the profile.
+            first, second = self.listen_buses
+            state["gain"] = round(self.bus_gain(first), 2)
+            state["second_gain"] = round(self.bus_gain(second), 2)
         if self.has_eq():
             state["eq"] = {band: self.eq_value(band) for band in EQ_BANDS}
         return state
@@ -549,13 +580,29 @@ class StripWidget(QWidget):
             wanted = {"you": float(state["gain"])}
             if self.stream_buses and "stream_gain" in state:
                 wanted["stream"] = float(state["stream_gain"])
-            for mix, gain in wanted.items():
+            held = {}  # the switched-off output's own volume
+            if self.listen_buses:
+                first, second = self.listen_buses
+                # A profile without "second_gain" has one volume for both.
+                levels = {first: wanted["you"],
+                          second: float(state.get("second_gain", wanted["you"]))}
+                for bus, gain in levels.items():
+                    if bus in self.held:
+                        held[bus] = gain
+                    else:
+                        wanted["you"] = gain
+            for gain in (*wanted.values(), *held.values()):
                 if not math.isfinite(gain):
                     return False
+            for mix, gain in wanted.items():
                 gain = min(12.0, max(-60.0, gain))
                 # Only what differs is sent to VoiceMeeter.
                 if round(self.mix_gain(mix), 2) != round(gain, 2):
                     self.set_mix_gain(gain, mix)
+            for bus, gain in held.items():
+                gain = min(12.0, max(-60.0, gain))
+                if round(self.bus_gain(bus), 2) != round(gain, 2):
+                    self.set_bus_gain(bus, gain)
             self.fader.blockSignals(True)
             self.fader.setValue(int(round(self.mix_gain() * 100)))
             self.fader.blockSignals(False)

@@ -398,7 +398,7 @@ class MainWindowTest(unittest.TestCase):
                           "ducking", "ducking_db", "ducking_channels",
                           "soundboard",
                           "mute_overlay", "tray_mute_icon",
-                          "mute_sound_device", "listen_bus", "second_bus", "stream_bus", "monitor_level",
+                          "mute_sound_device", "listen_bus", "second_bus", "hear_mode", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget", "obs_enabled", "obs_port", "obs_password",
                           *(f"output_name_{o}" for o in main.ALL_OUTPUTS),
                           *main.CHANNEL_NAME_KEYS.values()})
@@ -1036,6 +1036,45 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.strips["Mic"].offsets, {0: -10.0}, "A2 back to the mic's own level")
         game.on_route_clicked("A1", False)
         self.assertTrue(vm.strip[5].A2, "no mirror without a second output")
+
+    def test_the_hear_switch_keeps_a_volume_per_output(self):
+        vm, window = self.sandbox.vm, self.window
+        window.window_settings.setValue("second_bus", "A2")
+        window.window_settings.setValue("hear_mode", "switch")
+        window.copy_listen_routes()  # as Settings does
+        window.apply_stream_mix()
+        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True), "one plays")
+        first, second = window.listen_buttons
+        self.assertTrue(second.isHidden())
+        self.assertEqual(first.text(), core.route_name(vm, "A1")[0])
+
+        game = window.strips["Game"]
+        game.fader.setValue(-500)  # speakers -5 dB
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, 0.0))
+        first.click()  # to the headphones
+        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (True, False))
+        self.assertEqual(game.fader.value(), 0, "the fader shows the headphones")
+        game.fader.setValue(-1000)
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+        profile = window.current_profile_state()
+        window.set_active_profile("Mine", profile)
+        window.on_hotkey(44)  # back to the speakers
+        self.assertEqual(game.fader.value(), -500)
+        self.assertFalse(window.profile_is_changed(), "a switch is not a change")
+
+        game.set_duck(6)
+        game.set_duck(0)
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+        game.fader.setValue(-200)
+        game.apply_profile(profile["Game"])
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+
+        window.apply_hear_preset("both")
+        self.assertTrue(vm.bus[1].mute, "a switch never plays both")
+        window.window_settings.setValue("hear_mode", "both")
+        window.apply_stream_mix()
+        self.assertEqual(game.held, ())
+        self.assertFalse(second.isHidden())
 
     def test_clip_guard_limits_the_virtual_channels_and_warns(self):
         vm, window = self.sandbox.vm, self.window

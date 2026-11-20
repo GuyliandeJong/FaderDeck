@@ -9,7 +9,7 @@ for the least work first.
 Release rule: every merge to main is released as the next minor version.
 
 **Status:** 1–7 shipped in v1.16.0 (tested by hand on the developer's PC).
-11 shipped in v1.18.0. Open: 8, 9 and 10.
+11 shipped in v1.18.0; its switch mode (11b) is on `feat/hear-switch`. Open: 8, 9 and 10.
 
 | # | Feature | Effort | New dependency |
 |---|---|---|---|
@@ -328,3 +328,26 @@ run against the mixer: A2 found as "Focusrite USB ASIO (outputs 3, 4)",
 buttons "Hear" and "A2" both on, mirror A1 -> A2.
 
 **Effort.** One session. No new dependency.
+
+## 11b. One switch, and a volume per output
+
+**Ask.** Choose between the two buttons and one switch; with the switch,
+each channel has its own volume per output (Media -10 dB on headphones,
+-5 dB on speakers) and the fader moves on a switch.
+
+**How.** Setting `hear_mode` ("both" default, "switch"), Settings,
+Microphone, "Buttons at the top". The volumes live in VoiceMeeter's gain
+layers, not in settings: in switch mode every channel but the Mic gets
+`StripWidget.listen_buses` and `held` (the bus switched off). The fader
+writes every layer except `held` and reads the playing output's layer, so
+a switch only moves `held` and re-reads. Ducking also moves the held layer.
+Profiles store `gain` (first output) and `second_gain`, whichever plays, so
+a switch is not a change; old profiles set both to `gain`. Switch mode
+never plays both: entering it with both on plays the first; preset and
+hotkey "both" do nothing. Hotkey 44 switches.
+
+**Limits.** Outputs other than the two (B1, say) take the level of the one
+that plays. In two-button mode both outputs stay linked. The Mic's level
+on both is the monitor level. Not on the phone remote or Stream Deck.
+
+**Tests.** `test_the_hear_switch_keeps_a_volume_per_output`.

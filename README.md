@@ -88,7 +88,9 @@ Settings, General, Backup: **Save to file** writes your profiles, presets, names
 
 ### Speakers and Headphones
 
-For speakers and headphones on two outputs of your interface. Settings, Microphone, **Also hear on**: pick the second output. Two buttons at the top switch each output on or off on its own; right-click them for "only speakers", "only headphones" or "both". The tray menu and three hotkeys do the same. The buttons follow VoiceMeeter, so they stay right when you mute an output there. Every channel you send to your monitor output also goes to the second one.
+For speakers and headphones on two outputs of your interface. Settings, Microphone, **Also hear on**: pick the second output. Two buttons at the top switch each output on or off on its own; right-click them for "only speakers", "only headphones" or "both". The tray menu and hotkeys do the same. The buttons follow VoiceMeeter, so they stay right when you mute an output there. Every channel you send to your monitor output also goes to the second one.
+
+Prefer one at a time? Set **Buttons at the top** to **One switch**. One button then shows the output that plays; click it, or press the Switch output hotkey, to go to the other. With the switch, every channel keeps its own volume on each output: put Media at -10 dB on your headphones and -5 dB on your speakers, and the fader moves when you switch. Profiles store both volumes.
 
 With an ASIO interface on A1, the second output can be other outputs of the same interface: in VoiceMeeter's System Settings, patch A2 to, for example, outputs 3 and 4, and route those to your headphones in your interface's own software. Rename the outputs in Settings, General to see "Speakers" and "Headphones" on the buttons.
 

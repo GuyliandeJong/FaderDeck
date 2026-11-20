@@ -472,10 +472,19 @@ class SettingsDialog(QDialog):
         self.second_bus.setCurrentIndex(max(0, self.second_bus.findData(current["second_bus"])))
         self.form.addRow("Also hear on", self.second_bus)
         self.add_note(
-            "For speakers and headphones on two outputs: buttons at the top "
-            "switch each one on or off; right-click them for presets. Every "
+            "For speakers and headphones on two outputs. Every "
             "channel you send to the monitor output also goes here. An output "
             "patched to A1's ASIO device in VoiceMeeter's System Settings counts too."
+        )
+        self.hear_mode = QComboBox()
+        self.hear_mode.addItem("Two buttons, each on or off", "both")
+        self.hear_mode.addItem("One switch, one plays at a time", "switch")
+        self.hear_mode.setCurrentIndex(max(0, self.hear_mode.findData(current["hear_mode"])))
+        self.form.addRow("Buttons at the top", self.hear_mode)
+        self.add_note(
+            "With the switch, every channel keeps its own volume on each "
+            "output: set Media to -10 dB on headphones and -5 dB on speakers, "
+            "and the faders move when you switch. Right-click the buttons for presets."
         )
         self.update_monitor_button()
         self.original_monitor_level = current["monitor_level"]
@@ -1353,6 +1362,7 @@ class SettingsDialog(QDialog):
             "mic_strip": int(self.mic_input.currentData()),
             "listen_bus": self.listen_bus.currentData(),
             "second_bus": self.second_bus.currentData(),
+            "hear_mode": self.hear_mode.currentData(),
             "monitor_level": self.monitor_level.value(),
             "stream_bus": ",".join(
                 output for output, box in self.stream_outputs.items() if box.isChecked()
