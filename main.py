@@ -2191,15 +2191,24 @@ class MainWindow(QMainWindow):
             self._shown_outputs = outputs
             for strip in self.strips.values():
                 strip.place_routes(outputs)
-        names = [route_name(self.vm, output)[0] for output in listen]
         for strip in self.strips.values():
             strip.rename_routes()
-            if listen:
-                button = strip.route_buttons[listen[0]]
-                button.setText("Hear")
-                button.setToolTip(f"Plays on {names[0]} or {names[1]}, whichever "
-                                  "the switch at the top picks.")
             strip.update_gain_label()
+        self.label_switch_routes()
+
+    def label_switch_routes(self):
+        """With the switch, each channel's one route button for both
+        outputs is named after the output that plays."""
+        listen = self.listen_outputs() if self.switching() else ()
+        if not listen or not self.connected:
+            return
+        names = [route_name(self.vm, output)[0] for output in listen]
+        playing = names[1] if not self.output_heard(listen[0]) else names[0]
+        for strip in self.strips.values():
+            button = strip.route_buttons[listen[0]]
+            button.setText(playing)
+            button.setToolTip(f"Plays on {names[0]} or {names[1]}, whichever "
+                              "the switch at the top picks.")
 
     def stream_mix_buses(self):
         """VoiceMeeter bus indexes of the stream's outputs."""
@@ -2898,6 +2907,7 @@ class MainWindow(QMainWindow):
         for strip in self.strips.values():
             if strip.listen_buses and strip.held != held:
                 strip.set_held(held)
+        self.label_switch_routes()
         for index in range(2):
             if hasattr(self, "listen_buttons"):
                 button = self.listen_buttons[index]

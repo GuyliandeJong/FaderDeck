@@ -1048,7 +1048,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "one button: both")
         game_routes = window.strips["Game"].route_buttons
         self.assertTrue(game_routes["A2"].isHidden())
-        self.assertEqual(game_routes["A1"].text(), "Hear")
+        self.assertEqual(game_routes["A1"].text(), core.route_name(vm, "A1")[0])
         self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True), "one plays")
         first, second = window.listen_buttons
         self.assertTrue(second.isHidden())
@@ -1060,6 +1060,7 @@ class MainWindowTest(unittest.TestCase):
         first.click()  # to the headphones
         self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (True, False))
         self.assertEqual(game.fader.value(), 0, "the fader shows the headphones")
+        self.assertEqual(game_routes["A1"].text(), core.route_name(vm, "A2")[0])
         game.fader.setValue(-1000)
         self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
         profile = window.current_profile_state()

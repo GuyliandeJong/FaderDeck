@@ -344,7 +344,9 @@ a switch only moves `held` and re-reads. Ducking also moves the held layer.
 Profiles store `gain` (first output) and `second_gain`, whichever plays, so
 a switch is not a change; old profiles set both to `gain`. Switch mode
 never plays both: entering it with both on plays the first; preset and
-hotkey "both" do nothing. Hotkey 44 switches.
+hotkey "both" do nothing. Hotkey 44 switches. Each channel shows one route
+button for both outputs, named after the one that plays; turning the switch
+on sends a channel on either output to both.
 
 **Limits.** Outputs other than the two (B1, say) take the level of the one
 that plays. In two-button mode both outputs stay linked. The Mic's level
