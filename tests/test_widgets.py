@@ -1042,7 +1042,13 @@ class MainWindowTest(unittest.TestCase):
         window.window_settings.setValue("second_bus", "A2")
         window.window_settings.setValue("hear_mode", "switch")
         window.copy_listen_routes()  # as Settings does
+        vm.strip[5].A1, vm.strip[5].A2 = False, True  # Game on the headphones only
+        window.refresh_outputs()
         window.apply_stream_mix()
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "one button: both")
+        game_routes = window.strips["Game"].route_buttons
+        self.assertTrue(game_routes["A2"].isHidden())
+        self.assertEqual(game_routes["A1"].text(), "Hear")
         self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True), "one plays")
         first, second = window.listen_buttons
         self.assertTrue(second.isHidden())

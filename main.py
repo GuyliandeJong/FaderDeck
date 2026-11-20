@@ -2183,12 +2183,22 @@ class MainWindow(QMainWindow):
         if self.vm is None or not self.strips:
             return
         outputs = available_outputs(self.vm)
+        # With the switch, the second output always follows the first: one button.
+        listen = self.listen_outputs() if self.switching() else ()
+        if listen:
+            outputs = [output for output in outputs if output != listen[1]]
         if outputs != getattr(self, "_shown_outputs", None):
             self._shown_outputs = outputs
             for strip in self.strips.values():
                 strip.place_routes(outputs)
+        names = [route_name(self.vm, output)[0] for output in listen]
         for strip in self.strips.values():
             strip.rename_routes()
+            if listen:
+                button = strip.route_buttons[listen[0]]
+                button.setText("Hear")
+                button.setToolTip(f"Plays on {names[0]} or {names[1]}, whichever "
+                                  "the switch at the top picks.")
             strip.update_gain_label()
 
     def stream_mix_buses(self):
@@ -2781,6 +2791,9 @@ class MainWindow(QMainWindow):
             strip.listen_buses = buses if name != "Mic" else ()
             if not strip.listen_buses and strip.held:
                 strip.set_held(())
+        if buses:
+            # One route button for both: a channel on either output goes to both.
+            self.copy_listen_routes(both_ways=True)
         if buses and self.connected and all(self.output_heard(o) for o in outputs):
             self.apply_hear_preset("first")  # a switch plays one at a time
         else:
@@ -2792,21 +2805,29 @@ class MainWindow(QMainWindow):
         else:
             self.set_output_heard(index, checked)
 
-    def copy_listen_routes(self):
+    def copy_listen_routes(self, both_ways=False):
         """Send every VoiceMeeter strip that reaches the monitor output to
         the second output as well, so both play the same; also the inputs
         FaderDeck shows no channel for. Only adds: a route the second
-        output already had stays."""
+        output already had stays. both_ways: one on the second output also
+        goes to the first."""
         outputs = self.listen_outputs()
         if not outputs or not self.connected:
             return
         first, second = outputs
+        changed = False
         for index, strip in enumerate(self.vm.strip):
             try:
-                if getattr(strip, first):
-                    setattr(strip, second, True)
+                on = (bool(getattr(strip, first)), bool(getattr(strip, second)))
+                if on[0] or (both_ways and on[1]):
+                    for output, was_on in zip(outputs, on):
+                        if not was_on:
+                            setattr(strip, output, True)
+                            changed = True
             except Exception as e:
                 log.error(f"Failed to copy the Strip[{index}] route to {second}: {type(e).__name__}: {e}")
+        if not changed:
+            return
         for strip in self.strips.values():
             strip.sync_routes()
         log.info(f"Channels on {first} now also go to {second}")
