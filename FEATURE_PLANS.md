@@ -336,7 +336,7 @@ each channel has its own volume per output (Media -10 dB on headphones,
 -5 dB on speakers) and the fader moves on a switch.
 
 **How.** Setting `hear_mode` ("both" default, "switch"), Settings,
-Microphone, "Buttons at the top". The volumes live in VoiceMeeter's gain
+General, "Buttons at the top". The volumes live in VoiceMeeter's gain
 layers, not in settings: in switch mode every channel but the Mic gets
 `StripWidget.listen_buses` and `held` (the bus switched off). The fader
 writes every layer except `held` and reads the playing output's layer, so
