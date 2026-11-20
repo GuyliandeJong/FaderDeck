@@ -572,7 +572,7 @@ ALL_OUTPUTS = ("A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3")
 HARDWARE_OUTPUTS = ALL_OUTPUTS[:5]
 VIRTUAL_OUTPUTS = ALL_OUTPUTS[5:]
 ROUTE_BUS = {output: bus for bus, output in enumerate(ALL_OUTPUTS)}
-OUTPUT_NAME_MAX = 8  # more does not fit a routing button
+OUTPUT_NAME_MAX = 10  # "Headphones"; more does not fit a routing button
 CLASSIC_OUTPUTS = ("A1", "A2", "A3", "B1", "B2", "B3")  # when the mixer cannot say
 
 

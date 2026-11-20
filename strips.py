@@ -391,7 +391,8 @@ class StripWidget(QWidget):
         button.setCheckable(True)
         button.setFixedHeight(ROUTING_BUTTON_HEIGHT)
         button.setStyleSheet(
-            "QPushButton { padding: 1px 4px; }" + outline_toggle_style(accent)
+            # 11px: a name of OUTPUT_NAME_MAX characters fits a button.
+            "QPushButton { padding: 1px 4px; font-size: 11px; }" + outline_toggle_style(accent)
         )
         button.clicked.connect(
             lambda checked, name=output: self.on_route_clicked(name, checked)

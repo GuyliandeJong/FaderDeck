@@ -818,7 +818,7 @@ class MainWindowTest(unittest.TestCase):
         vm.bus[5].label = "Stream"
         self.assertEqual(core.route_name(vm, "B1")[0], "Stream")
         vm.bus[0].label = "Headphones Left"
-        self.assertEqual(core.route_name(vm, "A1")[0], "Headpho\u2026")
+        self.assertEqual(core.route_name(vm, "A1")[0], "Headphone\u2026")
         settings.setValue("output_name_B1", "Discord")
         self.assertEqual(core.route_name(vm, "B1")[0], "Discord", "yours comes first")
         self.assertIn("B1", core.route_name(vm, "B1")[1], "the code stays in the tooltip")
