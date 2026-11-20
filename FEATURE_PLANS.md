@@ -9,8 +9,7 @@ for the least work first.
 Release rule: every merge to main is released as the next minor version.
 
 **Status:** 1–7 shipped in v1.16.0 (tested by hand on the developer's PC).
-Open: 8, 9 and 10. 11 is built on `feat/listen-outputs`, waiting for a
-test with speakers connected.
+11 shipped in v1.18.0. Open: 8, 9 and 10.
 
 | # | Feature | Effort | New dependency |
 |---|---|---|---|
