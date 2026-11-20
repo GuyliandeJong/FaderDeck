@@ -9,7 +9,7 @@ for the least work first.
 Release rule: every merge to main is released as the next minor version.
 
 **Status:** 1–7 shipped in v1.16.0 (tested by hand on the developer's PC).
-11 shipped in v1.18.0; its switch mode (11b) is on `feat/hear-switch`. Open: 8, 9 and 10.
+11 shipped in v1.18.0; its per-channel mode (11b) is on `feat/hear-switch`. Open: 8, 9 and 10.
 
 | # | Feature | Effort | New dependency |
 |---|---|---|---|
@@ -329,27 +329,31 @@ buttons "Hear" and "A2" both on, mirror A1 -> A2.
 
 **Effort.** One session. No new dependency.
 
-## 11b. One switch, and a volume per output
+## 11b. Speakers or headphones per channel, with a volume per output
 
-**Ask.** Choose between the two buttons and one switch; with the switch,
-each channel has its own volume per output (Media -10 dB on headphones,
--5 dB on speakers) and the fader moves on a switch.
+**Ask.** Next to the two buttons at the top, an option where each channel
+uses its own routing button to switch between speakers and headphones,
+and has its own volume per output (Media -10 dB on headphones, -5 dB on
+speakers); the fader moves on a switch. A first version had one global
+switch at the top; the user preferred it per channel.
 
-**How.** Setting `hear_mode` ("both" default, "switch"), Settings,
-General, "Buttons at the top". The volumes live in VoiceMeeter's gain
-layers, not in settings: in switch mode every channel but the Mic gets
-`StripWidget.listen_buses` and `held` (the bus switched off). The fader
-writes every layer except `held` and reads the playing output's layer, so
-a switch only moves `held` and re-reads. Ducking also moves the held layer.
-Profiles store `gain` (first output) and `second_gain`, whichever plays, so
-a switch is not a change; old profiles set both to `gain`. Switch mode
-never plays both: entering it with both on plays the first; preset and
-hotkey "both" do nothing. Hotkey 44 switches. Each channel shows one route
-button for both outputs, named after the one that plays; turning the switch
-on sends a channel on either output to both.
+**How.** Setting `hear_mode` ("both" default, "channel"), Settings, General,
+Speakers and Headphones, "Switch". Per channel both buses play (unmuted on
+entering); the header buttons, tray submenu and hear presets step aside.
+Every channel but the Mic gets `StripWidget.switch_outputs`: the first
+output's route button is the switch (named after the output the channel
+plays on, "Both" when on both, lit when on either), the second's is hidden.
+A click moves the channel: on the first (or both) to the second, else to
+the first. `route_on` reads those two routes from VoiceMeeter, because the
+lit button no longer says which. The volumes live in VoiceMeeter's gain
+layers: `held` is the output the channel is not on; the fader writes every
+layer but that one and reads the other, so a switch only moves `held`.
+Ducking also moves the held layer. Profiles store `gain` (first output) and
+`second_gain`; the routes are compared without the two-button mirror.
 
 **Limits.** Outputs other than the two (B1, say) take the level of the one
-that plays. In two-button mode both outputs stay linked. The Mic's level
-on both is the monitor level. Not on the phone remote or Stream Deck.
+the channel plays on. Two-button mode keeps both outputs linked. Profiles
+from 1.18 have channels on both outputs ("Both") until saved again. Not
+on the phone remote or Stream Deck.
 
-**Tests.** `test_the_hear_switch_keeps_a_volume_per_output`.
+**Tests.** `test_each_channel_switches_between_the_outputs_with_its_own_volume`.

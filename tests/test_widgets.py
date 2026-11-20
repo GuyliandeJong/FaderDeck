@@ -1037,53 +1037,63 @@ class MainWindowTest(unittest.TestCase):
         game.on_route_clicked("A1", False)
         self.assertTrue(vm.strip[5].A2, "no mirror without a second output")
 
-    def test_the_hear_switch_keeps_a_volume_per_output(self):
+    def test_each_channel_switches_between_the_outputs_with_its_own_volume(self):
         vm, window = self.sandbox.vm, self.window
+        speakers, headphones = core.route_name(vm, "A1")[0], core.route_name(vm, "A2")[0]
         window.window_settings.setValue("second_bus", "A2")
-        window.window_settings.setValue("hear_mode", "switch")
-        window.copy_listen_routes()  # as Settings does
-        vm.strip[5].A1, vm.strip[5].A2 = False, True  # Game on the headphones only
-        window.refresh_outputs()
+        window.window_settings.setValue("hear_mode", "channel")
+        vm.bus[1].mute = True
+        vm.strip[5].A1, vm.strip[5].A2 = False, True  # Game on the headphones
+        vm.strip[7].A1, vm.strip[7].A2 = True, False  # Media on the speakers
         window.apply_stream_mix()
-        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "one button: both")
-        game_routes = window.strips["Game"].route_buttons
-        self.assertTrue(game_routes["A2"].isHidden())
-        self.assertEqual(game_routes["A1"].text(), core.route_name(vm, "A1")[0])
-        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True), "one plays")
-        first, second = window.listen_buttons
-        self.assertTrue(second.isHidden())
-        self.assertEqual(first.text(), core.route_name(vm, "A1")[0])
+        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, False), "both play")
+        self.assertTrue(window.listen_box.isHidden(), "no buttons at the top")
+        game, media = window.strips["Game"], window.strips["Media"]
+        switch = game.route_buttons["A1"]
+        self.assertTrue(game.route_buttons["A2"].isHidden())
+        self.assertFalse(window.strips["Mic"].route_buttons["A2"].isHidden(), "the Mic keeps both")
+        self.assertEqual((switch.text(), switch.isChecked()), (headphones, True))
+        self.assertEqual(media.route_buttons["A1"].text(), speakers)
 
-        game = window.strips["Game"]
-        game.fader.setValue(-500)  # speakers -5 dB
-        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, 0.0))
-        first.click()  # to the headphones
-        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (True, False))
-        self.assertEqual(game.fader.value(), 0, "the fader shows the headphones")
-        self.assertEqual(game_routes["A1"].text(), core.route_name(vm, "A2")[0])
-        game.fader.setValue(-1000)
+        game.fader.setValue(-1000)  # headphones -10 dB
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (0.0, -10.0))
+        switch.click()  # Game to the speakers
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, False))
+        self.assertEqual((switch.text(), switch.isChecked()), (speakers, True))
+        self.assertEqual(game.fader.value(), 0, "the fader shows the speakers")
+        game.fader.setValue(-500)
         self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+        self.assertEqual(media.route_buttons["A1"].text(), speakers, "Media did not move")
+
         profile = window.current_profile_state()
+        self.assertEqual((profile["Game"]["gain"], profile["Game"]["second_gain"]), (-5.0, -10.0))
+        self.assertEqual(profile["Game"]["routes"]["A1"], True)
         window.set_active_profile("Mine", profile)
-        window.on_hotkey(44)  # back to the speakers
-        self.assertEqual(game.fader.value(), -500)
-        self.assertFalse(window.profile_is_changed(), "a switch is not a change")
+        switch.click()  # back to the headphones
+        self.assertEqual(game.fader.value(), -1000)
+        self.assertTrue(window.profile_is_changed(), "the route changed")
+        game.apply_profile(profile["Game"])
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, False))
+        self.assertEqual(switch.text(), speakers)
+        self.assertFalse(window.profile_is_changed())
 
         game.set_duck(6)
         game.set_duck(0)
         self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
-        game.fader.setValue(-200)
-        game.apply_profile(profile["Game"])
-        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+        vm.strip[5].A1, vm.strip[5].A2 = False, True  # moved in VoiceMeeter
+        window.on_vm_event("pdirty")
+        self.assertEqual((switch.text(), game.fader.value()), (headphones, -1000))
 
-        window.apply_hear_preset("both")
-        self.assertTrue(vm.bus[1].mute, "a switch never plays both")
+        window.apply_hear_preset("first")
+        self.assertFalse(vm.bus[1].mute, "no output presets per channel")
         window.window_settings.setValue("hear_mode", "both")
         window.apply_stream_mix()
         self.assertEqual(game.held, ())
-        self.assertFalse(second.isHidden())
-        game.apply_profile(profile["Game"])
-        self.assertFalse(window.profile_is_changed(), "saved with the switch, still the same")
+        self.assertFalse(game.route_buttons["A2"].isHidden())
+        self.assertFalse(window.listen_box.isHidden())
+        for name, strip in window.strips.items():
+            strip.apply_profile(profile[name])
+        self.assertFalse(window.profile_is_changed(), "saved per channel, still the same")
 
     def test_clip_guard_limits_the_virtual_channels_and_warns(self):
         vm, window = self.sandbox.vm, self.window

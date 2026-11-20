@@ -383,6 +383,7 @@ class StripWidget(QWidget):
             text, tooltip = route_name(self.vm, output)
             button.setText(text)
             button.setToolTip(tooltip)
+        self.show_switch()
 
     def _add_route_button(self, layout, output, row, column, accent):
         text, tooltip = route_name(self.vm, output)
@@ -395,7 +396,7 @@ class StripWidget(QWidget):
             "QPushButton { padding: 1px 4px; font-size: 11px; }" + outline_toggle_style(accent)
         )
         button.clicked.connect(
-            lambda checked, name=output: self.on_route_clicked(name, checked)
+            lambda checked, name=output: self.on_route_button(name, checked)
         )
         layout.addWidget(button, row, column)
         self.route_buttons[output] = button
@@ -536,7 +537,7 @@ class StripWidget(QWidget):
             "solo": self.solo_button.isChecked(),
             "mono": self.mono_button.isChecked(),
             "routes": {
-                output: button.isChecked()
+                output: self.route_on(output)
                 for output, button in self.route_buttons.items()
             },
         }
@@ -629,7 +630,7 @@ class StripWidget(QWidget):
                     routes[second] = routes[first]
             for output, wanted in routes.items():
                 button = self.route_buttons.get(output)
-                if button is not None and button.isChecked() != bool(wanted):
+                if button is not None and self.route_on(output) != bool(wanted):
                     button.setChecked(bool(wanted))
                     self.on_route_clicked(output, bool(wanted))
             return True
@@ -639,6 +640,57 @@ class StripWidget(QWidget):
             )
             self.sync_from_voicemeeter()
             return False
+
+    # Speakers and headphones per channel: ("A1", "A2"). The first output's
+    # button then moves the channel between the two; the second's is hidden.
+    switch_outputs = ()
+
+    def on_route_button(self, output, checked):
+        if not (self.switch_outputs and output == self.switch_outputs[0]):
+            self.on_route_clicked(output, checked)
+            return
+        first, second = self.switch_outputs
+        to_second = self.route_on(first)  # on the first (or both): go to the second
+        try:
+            setattr(self.strip, first, not to_second)
+            setattr(self.strip, second, to_second)
+        except Exception as exc:
+            log.error(f"Failed to switch {self.name}: {type(exc).__name__}: {exc}")
+        self.sync_routes()
+
+    def show_switch(self):
+        """Name the switch after the output the channel plays on, and let
+        the fader set that output's volume only."""
+        if not self.switch_outputs:
+            return
+        first, second = self.switch_outputs
+        on = (self.route_on(first), self.route_on(second))
+        button = self.route_buttons[first]
+        button.setText(route_name(self.vm, second if on == (False, True) else first)[0])
+        if on == (True, True):
+            button.setText("Both")
+        button.setToolTip(
+            f"Plays on {route_name(self.vm, first)[0]} or "
+            f"{route_name(self.vm, second)[0]}: click to switch."
+        )
+        button.blockSignals(True)
+        button.setChecked(any(on))
+        button.blockSignals(False)
+        held = ()
+        if on.count(True) == 1:
+            held = (ROUTE_BUS[second if on[0] else first],)
+        if held != self.held:
+            self.set_held(held)
+
+    def route_on(self, output):
+        """Whether the channel goes to this output. The switch's button is
+        lit for either output, so those two are read from VoiceMeeter."""
+        if output in self.switch_outputs:
+            try:
+                return bool(getattr(self.strip, output))
+            except Exception:
+                return False
+        return self.route_buttons[output].isChecked()
 
     def on_route_clicked(self, output, checked):
         try:
@@ -651,6 +703,8 @@ class StripWidget(QWidget):
                     button.blockSignals(True)
                     button.setChecked(bool(checked))
                     button.blockSignals(False)
+            if output in self.switch_outputs:
+                self.show_switch()
             self.update_gain_label()  # the stream mix may now reach this channel
         except Exception as exc:
             log.error(
@@ -669,6 +723,7 @@ class StripWidget(QWidget):
                 pass
             finally:
                 button.blockSignals(False)
+        self.show_switch()
         self.update_gain_label()
 
 

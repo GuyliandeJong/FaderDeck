@@ -682,14 +682,15 @@ class SettingsDialog(QDialog):
             "patched to A1's ASIO device in VoiceMeeter's System Settings counts too."
         )
         self.hear_mode = QComboBox()
-        self.hear_mode.addItem("Two buttons, each on or off", "both")
-        self.hear_mode.addItem("One switch, one plays at a time", "switch")
+        self.hear_mode.addItem("Two buttons at the top, each output on or off", "both")
+        self.hear_mode.addItem("Per channel, with its routing button", "channel")
         self.hear_mode.setCurrentIndex(max(0, self.hear_mode.findData(current["hear_mode"])))
-        self.form.addRow("Buttons at the top", self.hear_mode)
+        self.form.addRow("Switch", self.hear_mode)
         self.add_note(
-            "With the switch, every channel keeps its own volume on each "
-            "output: set Media to -10 dB on headphones and -5 dB on speakers, "
-            "and the faders move when you switch. Right-click the buttons for presets."
+            "Per channel, each channel plays on one of the two: click its "
+            "routing button to move it. It keeps its own volume on each: Media "
+            "at -10 dB on headphones and -5 dB on speakers, and its fader moves "
+            "when you switch. Two buttons: right-click them for presets."
         )
 
         self.add_heading("WINDOW")

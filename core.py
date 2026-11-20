@@ -307,7 +307,6 @@ def _hotkey_actions():
         (41, "hotkey_hear_first", "Monitor output only", "first"),
         (42, "hotkey_hear_second", "Second output only", "second"),
         (43, "hotkey_hear_both", "Both outputs", "both"),
-        (44, "hotkey_hear_switch", "Switch output", "switch"),
     ):
         actions.append(HotkeyAction(
             hotkey_id, key, "HEAR ON", label, "", False, "hear", preset,
