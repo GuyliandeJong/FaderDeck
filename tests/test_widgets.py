@@ -398,7 +398,7 @@ class MainWindowTest(unittest.TestCase):
                           "ducking", "ducking_db", "ducking_channels",
                           "soundboard",
                           "mute_overlay", "tray_mute_icon",
-                          "mute_sound_device", "listen_bus", "second_bus", "hear_mode", "stream_bus", "monitor_level",
+                          "mute_sound_device", "listen_bus", "second_bus", "stream_bus", "monitor_level",
                           "remote_enabled", "remote_port", "remote_forget", "obs_enabled", "obs_port", "obs_password",
                           *(f"output_name_{o}" for o in main.ALL_OUTPUTS),
                           *main.CHANNEL_NAME_KEYS.values()})
@@ -986,69 +986,16 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(core.output_device(vm, "A2"), "Speakers (outputs 3, 4)")
         self.assertIn("A2", core.available_outputs(vm))
 
-    def test_hear_buttons_switch_the_monitor_and_the_second_output(self):
-        vm, window = self.sandbox.vm, self.window
-        window.apply_stream_mix()
-        self.assertTrue(window.listen_box.isHidden(), "no second output set")
-        window.window_settings.setValue("second_bus", "A2")
-        window.copy_listen_routes()
-        self.assertEqual([vm.strip[i].A2 for i in range(8)], [vm.strip[i].A1 for i in range(8)])
-        window.apply_stream_mix()
-        self.assertFalse(window.listen_box.isHidden())
-        first, second = window.listen_buttons
-        self.assertTrue(first.isChecked() and second.isChecked())
-
-        second.click()  # only the headphones go off
-        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True))
-        window.on_hotkey(41)  # monitor output only
-        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, True))
-        window.apply_hear_preset("second")
-        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (True, False))
-        self.assertEqual((first.isChecked(), second.isChecked()), (False, True))
-        vm.bus[0].mute = False  # clicked in VoiceMeeter
-        window.on_vm_event("pdirty")
-        self.assertTrue(first.isChecked())
-
-        game = window.strips["Game"]
-        game.on_route_clicked("A1", False)  # the route follows to A2
-        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (False, False))
-        self.assertFalse(game.route_buttons["A2"].isChecked())
-
-        game.on_route_clicked("A1", True)
-        old = window.current_profile_state()  # as saved before A2 was set
-        for state in old.values():
-            if "routes" in state:
-                state["routes"]["A2"] = False
-        for name, strip in window.strips.items():
-            strip.apply_profile(old.get(name, {}))
-        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "A2 follows A1")
-        window.set_active_profile("Old", old)
-        self.assertFalse(window.profile_is_changed(), "an older profile is not changed")
-
-        window.window_settings.setValue("monitor_level", -10)
-        window.set_monitor_level()
-        self.assertEqual(window.strips["Mic"].offsets, {0: -10.0, 1: -10.0})
-        self.assertEqual(vm.strip[0].gainlayer[1].gain, vm.strip[0].gainlayer[0].gain)
-
-        window.window_settings.setValue("second_bus", "")
-        window.apply_stream_mix()
-        self.assertTrue(window.listen_box.isHidden())
-        self.assertEqual(window.strips["Mic"].offsets, {0: -10.0}, "A2 back to the mic's own level")
-        game.on_route_clicked("A1", False)
-        self.assertTrue(vm.strip[5].A2, "no mirror without a second output")
-
     def test_each_channel_switches_between_the_outputs_with_its_own_volume(self):
         vm, window = self.sandbox.vm, self.window
         speakers, headphones = core.route_name(vm, "A1")[0], core.route_name(vm, "A2")[0]
+        game, media = window.strips["Game"], window.strips["Media"]
+        window.apply_stream_mix()
+        self.assertFalse(game.route_buttons["A2"].isHidden(), "no second output set")
         window.window_settings.setValue("second_bus", "A2")
-        window.window_settings.setValue("hear_mode", "channel")
-        vm.bus[1].mute = True
         vm.strip[5].A1, vm.strip[5].A2 = False, True  # Game on the headphones
         vm.strip[7].A1, vm.strip[7].A2 = True, False  # Media on the speakers
         window.apply_stream_mix()
-        self.assertEqual((vm.bus[0].mute, vm.bus[1].mute), (False, False), "both play")
-        self.assertTrue(window.listen_box.isHidden(), "no buttons at the top")
-        game, media = window.strips["Game"], window.strips["Media"]
         switch = game.route_buttons["A1"]
         self.assertTrue(game.route_buttons["A2"].isHidden())
         self.assertFalse(window.strips["Mic"].route_buttons["A2"].isHidden(), "the Mic keeps both")
@@ -1057,20 +1004,24 @@ class MainWindowTest(unittest.TestCase):
 
         game.fader.setValue(-1000)  # headphones -10 dB
         self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (0.0, -10.0))
+        switch.click()  # Game on both
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True))
+        self.assertEqual(switch.text(), "Both")
+        self.assertEqual(game.fader.value(), 0, "the fader shows the speakers")
+        game.fader.setValue(-200)  # both 2 dB down, headphones still 10 dB under
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-2.0, -12.0))
         switch.click()  # Game to the speakers
         self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, False))
         self.assertEqual((switch.text(), switch.isChecked()), (speakers, True))
-        self.assertEqual(game.fader.value(), 0, "the fader shows the speakers")
         game.fader.setValue(-500)
-        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -12.0))
         self.assertEqual(media.route_buttons["A1"].text(), speakers, "Media did not move")
 
         profile = window.current_profile_state()
-        self.assertEqual((profile["Game"]["gain"], profile["Game"]["second_gain"]), (-5.0, -10.0))
-        self.assertEqual(profile["Game"]["routes"]["A1"], True)
+        self.assertEqual((profile["Game"]["gain"], profile["Game"]["second_gain"]), (-5.0, -12.0))
         window.set_active_profile("Mine", profile)
-        switch.click()  # back to the headphones
-        self.assertEqual(game.fader.value(), -1000)
+        switch.click()  # to the headphones
+        self.assertEqual((switch.text(), game.fader.value()), (headphones, -1200))
         self.assertTrue(window.profile_is_changed(), "the route changed")
         game.apply_profile(profile["Game"])
         self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, False))
@@ -1079,18 +1030,21 @@ class MainWindowTest(unittest.TestCase):
 
         game.set_duck(6)
         game.set_duck(0)
-        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -10.0))
+        self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-5.0, -12.0))
         vm.strip[5].A1, vm.strip[5].A2 = False, True  # moved in VoiceMeeter
         window.on_vm_event("pdirty")
-        self.assertEqual((switch.text(), game.fader.value()), (headphones, -1000))
+        self.assertEqual((switch.text(), game.fader.value()), (headphones, -1200))
 
-        window.apply_hear_preset("first")
-        self.assertFalse(vm.bus[1].mute, "no output presets per channel")
-        window.window_settings.setValue("hear_mode", "both")
+        window.window_settings.setValue("monitor_level", -10)
+        window.set_monitor_level()
+        self.assertEqual(window.strips["Mic"].offsets, {0: -10.0, 1: -10.0}, "you hear yourself on both")
+
+        window.window_settings.setValue("second_bus", "")
         window.apply_stream_mix()
         self.assertEqual(game.held, ())
         self.assertFalse(game.route_buttons["A2"].isHidden())
-        self.assertFalse(window.listen_box.isHidden())
+        self.assertEqual(game.route_buttons["A1"].text(), speakers)
+        self.assertEqual(window.strips["Mic"].offsets, {0: -10.0}, "A2 back to the mic's own level")
         for name, strip in window.strips.items():
             strip.apply_profile(profile[name])
         self.assertFalse(window.profile_is_changed(), "saved per channel, still the same")

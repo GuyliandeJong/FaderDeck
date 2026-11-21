@@ -331,29 +331,26 @@ buttons "Hear" and "A2" both on, mirror A1 -> A2.
 
 ## 11b. Speakers or headphones per channel, with a volume per output
 
-**Ask.** Next to the two buttons at the top, an option where each channel
-uses its own routing button to switch between speakers and headphones,
-and has its own volume per output (Media -10 dB on headphones, -5 dB on
-speakers); the fader moves on a switch. A first version had one global
-switch at the top; the user preferred it per channel.
+**Ask.** Each channel chooses speakers, headphones or both with its own
+routing button, and has its own volume per output (Media -10 dB on
+headphones, -5 dB on speakers); the fader moves on a switch. First built as
+one global switch, then as an option next to the 1.18 buttons at the top;
+the user preferred per channel only, so the top buttons, the "Hear on" tray
+menu and hotkeys 41-43 are gone.
 
-**How.** Setting `hear_mode` ("both" default, "channel"), Settings, General,
-Speakers and Headphones, "Switch". Per channel both buses play (unmuted on
-entering); the header buttons, tray submenu and hear presets step aside.
-Every channel but the Mic gets `StripWidget.switch_outputs`: the first
-output's route button is the switch (named after the output the channel
-plays on, "Both" when on both, lit when on either), the second's is hidden.
-A click moves the channel: on the first (or both) to the second, else to
-the first. `route_on` reads those two routes from VoiceMeeter, because the
-lit button no longer says which. The volumes live in VoiceMeeter's gain
-layers: `held` is the output the channel is not on; the fader writes every
-layer but that one and reads the other, so a switch only moves `held`.
-Ducking also moves the held layer. Profiles store `gain` (first output) and
-`second_gain`; the routes are compared without the two-button mirror.
+**How.** With a second output (`second_bus`) every channel but the Mic gets
+`StripWidget.switch_outputs`: the first output's route button is the switch
+(named after the output the channel plays on, "Both" on both, lit when on
+either), the second's is hidden. A click cycles first -> second -> both ->
+first. `route_on` reads those two routes from VoiceMeeter, because the lit
+button no longer says which. The volumes live in VoiceMeeter's gain layers:
+`held` is the output the channel is not on; the fader writes every layer
+but that one and reads the other, so a switch only moves `held`. On both,
+the second output keeps its difference. Ducking also moves the held layer.
+Profiles store `gain` (first output) and `second_gain`.
 
 **Limits.** Outputs other than the two (B1, say) take the level of the one
-the channel plays on. Two-button mode keeps both outputs linked. Profiles
-from 1.18 have channels on both outputs ("Both") until saved again. Not
-on the phone remote or Stream Deck.
+the channel plays on. A bus muted with the 1.18 buttons stays muted: unmute
+it in VoiceMeeter. Not on the phone remote or Stream Deck.
 
 **Tests.** `test_each_channel_switches_between_the_outputs_with_its_own_volume`.

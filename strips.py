@@ -356,8 +356,6 @@ class StripWidget(QWidget):
         routing_layout.setHorizontalSpacing(5)
         routing_layout.setVerticalSpacing(2)
         self.route_buttons = {}
-        # {"A1": "A2"}: a route to A1 also goes to A2 (MainWindow.listen_outputs).
-        self.route_mirror = {}
         self.routing_layout = routing_layout
         self.visible_routes = []
         for output in ALL_OUTPUTS:
@@ -522,11 +520,16 @@ class StripWidget(QWidget):
             for bus in self.stream_buses:
                 self.strip.gainlayer[bus].gain = min(12.0, max(-60.0, gain + self.duck))
         else:
+            # On both listen outputs, the second keeps its difference.
+            extra = {}
+            if self.listen_buses and not self.held:
+                second = self.listen_buses[1]
+                extra[second] = self.bus_gain(second) - self.mix_gain("you")
             # shortcut: outputs other than the two listen outputs (B1, say)
             # take the level of the one that plays; per output if asked.
             for bus, layer in enumerate(self.strip.gainlayer):
                 if bus not in self.stream_buses and bus not in self.held:
-                    level = gain + self.offsets.get(bus, 0.0) + self.duck
+                    level = gain + self.offsets.get(bus, 0.0) + extra.get(bus, 0.0) + self.duck
                     layer.gain = min(12.0, max(-60.0, level))
 
     def profile_state(self):
@@ -581,18 +584,13 @@ class StripWidget(QWidget):
             wanted = {"you": float(state["gain"])}
             if self.stream_buses and "stream_gain" in state:
                 wanted["stream"] = float(state["stream_gain"])
-            held = {}  # the switched-off output's own volume
+            levels = {}  # each listen output's own volume
             if self.listen_buses:
                 first, second = self.listen_buses
                 # A profile without "second_gain" has one volume for both.
                 levels = {first: wanted["you"],
                           second: float(state.get("second_gain", wanted["you"]))}
-                for bus, gain in levels.items():
-                    if bus in self.held:
-                        held[bus] = gain
-                    else:
-                        wanted["you"] = gain
-            for gain in (*wanted.values(), *held.values()):
+            for gain in (*wanted.values(), *levels.values()):
                 if not math.isfinite(gain):
                     return False
             for mix, gain in wanted.items():
@@ -600,7 +598,7 @@ class StripWidget(QWidget):
                 # Only what differs is sent to VoiceMeeter.
                 if round(self.mix_gain(mix), 2) != round(gain, 2):
                     self.set_mix_gain(gain, mix)
-            for bus, gain in held.items():
+            for bus, gain in levels.items():
                 gain = min(12.0, max(-60.0, gain))
                 if round(self.bus_gain(bus), 2) != round(gain, 2):
                     self.set_bus_gain(bus, gain)
@@ -623,11 +621,6 @@ class StripWidget(QWidget):
                     if self.eq_value(band) != round(float(db), 1):
                         self.set_eq(band, db)
             routes = dict(state.get("routes") or {})
-            for first, second in self.route_mirror.items():
-                if first in routes:
-                    # A profile saved before the second output was set has
-                    # it off; it follows the first output instead.
-                    routes[second] = routes[first]
             for output, wanted in routes.items():
                 button = self.route_buttons.get(output)
                 if button is not None and self.route_on(output) != bool(wanted):
@@ -650,10 +643,12 @@ class StripWidget(QWidget):
             self.on_route_clicked(output, checked)
             return
         first, second = self.switch_outputs
-        to_second = self.route_on(first)  # on the first (or both): go to the second
+        on = (self.route_on(first), self.route_on(second))
+        # Speakers -> Headphones -> both -> Speakers; off goes to Speakers.
+        wanted = {(True, False): (False, True), (False, True): (True, True)}.get(on, (True, False))
         try:
-            setattr(self.strip, first, not to_second)
-            setattr(self.strip, second, to_second)
+            setattr(self.strip, first, wanted[0])
+            setattr(self.strip, second, wanted[1])
         except Exception as exc:
             log.error(f"Failed to switch {self.name}: {type(exc).__name__}: {exc}")
         self.sync_routes()
@@ -695,14 +690,6 @@ class StripWidget(QWidget):
     def on_route_clicked(self, output, checked):
         try:
             setattr(self.strip, output, bool(checked))
-            mirror = self.route_mirror.get(output)
-            if mirror:
-                setattr(self.strip, mirror, bool(checked))
-                button = self.route_buttons.get(mirror)
-                if button is not None:
-                    button.blockSignals(True)
-                    button.setChecked(bool(checked))
-                    button.blockSignals(False)
             if output in self.switch_outputs:
                 self.show_switch()
             self.update_gain_label()  # the stream mix may now reach this channel

@@ -83,7 +83,6 @@ from core import (
     PYCAW_AVAILABLE,
     resource_path,
     ROUTE_BUS,
-    route_name,
     set_mic_strip,
     setting_bool,
     setup_logging,
@@ -385,34 +384,6 @@ class MainWindow(QMainWindow):
         header.addWidget(
             self.status_label
         )
-        header.addSpacing(8)
-        # Speakers and headphones: shown once a second output is set.
-        self.listen_buttons = []
-        listen_box = QWidget()
-        listen_layout = QHBoxLayout(listen_box)
-        listen_layout.setContentsMargins(0, 0, 0, 0)
-        listen_layout.setSpacing(0)
-        for index in range(2):
-            button = QPushButton()
-            button.setCheckable(True)
-            button.setFixedHeight(26)
-            button.setToolTip("Hear sound on this output. Right-click for presets.")
-            button.setStyleSheet(
-                "QPushButton { background: #18232e; border: 1px solid #314558; "
-                "padding: 0 10px; font-weight: bold; color: #8ba0b5; }"
-                "QPushButton:checked { color: #ffffff; border-color: #3fb950; "
-                "background: #238636; }"
-            )
-            button.clicked.connect(lambda checked, i=index: self.set_output_heard(i, checked))
-            button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            button.customContextMenuRequested.connect(
-                lambda pos, b=button: self.hear_presets_menu().exec(b.mapToGlobal(pos))
-            )
-            listen_layout.addWidget(button)
-            self.listen_buttons.append(button)
-        self.listen_box = listen_box
-        listen_box.setVisible(False)
-        header.addWidget(listen_box)
         header.addSpacing(8)
         # Which mix the faders set; shown once the stream has an output.
         self.mix_buttons = {}
@@ -908,7 +879,6 @@ class MainWindow(QMainWindow):
             for widget in self.strips.values():
                 widget.sync_from_voicemeeter()
             self.sync_processing_controls()
-            self.sync_listen_buttons()
 
         except Exception as e:
             log.error(
@@ -948,7 +918,6 @@ class MainWindow(QMainWindow):
         it and are reused when VoiceMeeter comes back.
         """
         self.connected = False
-        self.sync_listen_buttons()  # hides them
         self.stop_mic_level_worker()
         if self.vm is None:
             return
@@ -1250,26 +1219,20 @@ class MainWindow(QMainWindow):
         if not isinstance(self._profile_reference, dict):
             return False
         return not profile_states_match(
-            self.with_listen_mirror(self._profile_reference),
+            self.without_second_gain(self._profile_reference),
             self.current_profile_state(),
         )
 
-    def with_listen_mirror(self, profile):
-        """The profile as loading it sets the mixer: the second output's
-        routes follow the first output's (see StripWidget.apply_profile),
-        unless each channel switches between them; "second_gain" counts
-        only while channels keep a volume per output."""
-        outputs = self.listen_outputs() if not self.switching() else ()
+    def without_second_gain(self, profile):
+        """The profile as the mixer can match it: "second_gain" counts only
+        for channels that switch between two outputs."""
         result = dict(profile)
         for name, state in profile.items():
-            if not isinstance(state, dict):
-                continue
             strip = self.strips.get(name)
-            if "second_gain" in state and (strip is None or not strip.listen_buses):
-                state = result[name] = {k: v for k, v in state.items() if k != "second_gain"}
-            routes = state.get("routes")
-            if outputs and isinstance(routes, dict) and outputs[0] in routes:
-                result[name] = {**state, "routes": {**routes, outputs[1]: routes[outputs[0]]}}
+            if isinstance(state, dict) and "second_gain" in state and (
+                strip is None or not strip.listen_buses
+            ):
+                result[name] = {k: v for k, v in state.items() if k != "second_gain"}
         return result
 
     def refresh_profile_state(self):
@@ -1824,20 +1787,6 @@ class MainWindow(QMainWindow):
         self.tray_stream_action = menu.addAction("Mute stream (voice chat still hears you)")
         self.tray_stream_action.setCheckable(True)
         self.tray_stream_action.triggered.connect(self.toggle_stream_mute)
-        self.tray_hear_menu = menu.addMenu("Hear on")
-        self.tray_hear_toggles = []
-        for index in range(2):
-            action = self.tray_hear_menu.addAction("")
-            action.setCheckable(True)
-            action.triggered.connect(lambda checked, i=index: self.set_output_heard(i, checked))
-            self.tray_hear_toggles.append(action)
-        self.tray_hear_menu.addSeparator()
-        self.tray_hear_presets = {}
-        for preset in ("first", "second", "both"):
-            action = self.tray_hear_menu.addAction("")
-            action.triggered.connect(lambda _checked=False, p=preset: self.apply_hear_preset(p))
-            self.tray_hear_presets[preset] = action
-        self.tray_hear_menu.menuAction().setVisible(False)
         menu.addSeparator()
         menu.addAction("Quit").triggered.connect(self.quit_application)
 
@@ -1970,7 +1919,6 @@ class MainWindow(QMainWindow):
             "mic_strip": mic_strip,
             "listen_bus": self.listen_bus_setting(),
             "second_bus": self.second_bus_setting(),
-            "hear_mode": self.hear_mode_setting(),
             "monitor_level": self.monitor_level_setting(),
             "stream_bus": ",".join(self.stream_outputs_setting()),
             "theme": theme_settings(settings),
@@ -2312,7 +2260,6 @@ class MainWindow(QMainWindow):
     def apply_settings(self, values):
         """Store the settings and apply those that can change while running."""
         values = dict(values)
-        second_before = self.second_bus_setting()
         if values.pop("remote_forget", False):
             self.window_settings.setValue("remote_devices", "[]")
             log.info("Phone remote: forgot every paired device")
@@ -2323,8 +2270,6 @@ class MainWindow(QMainWindow):
         self.window_settings.sync()
         apply_theme(values["theme"])
         self.set_mic_input(values["mic_strip"])
-        if self.second_bus_setting() not in ("", second_before):
-            self.copy_listen_routes()  # a new second output plays what the first does
         self.refresh_outputs()
         self.apply_stream_mix()
         self.sync_tray()
@@ -2705,8 +2650,6 @@ class MainWindow(QMainWindow):
                 self.hold_mic_mute(action, muted=True)
             elif action.action == "stream_mute":
                 self.toggle_stream_mute()
-            elif action.action == "hear":
-                self.apply_hear_preset(action.argument)
 
     # The microphone: held keys, listening and the stream.
 
@@ -2767,126 +2710,20 @@ class MainWindow(QMainWindow):
         second = self.second_bus_setting()
         return (self.listen_bus_setting(), second) if second else ()
 
-    def hear_mode_setting(self):
-        """"both": two buttons at the top, each output on or off; "channel":
-        each channel plays on one of the two, chosen with its own routing
-        button, with its own volume on each."""
-        mode = str(self.window_settings.value("hear_mode", "both") or "")
-        return mode if mode in ("both", "channel") else "both"
-
-    def switching(self):
-        return bool(self.listen_outputs()) and self.hear_mode_setting() == "channel"
-
     def apply_listen_outputs(self):
-        """Two buttons: mirror routes to the monitor output onto the second
-        one. Per channel: give every channel but the Mic its switch."""
+        """Give every channel but the Mic its switch between the monitor
+        output and the second output (StripWidget.switch_outputs)."""
         outputs = self.listen_outputs()
-        switching = self.switching()
-        mirror = {outputs[0]: outputs[1]} if outputs and not switching else {}
         for name, strip in self.strips.items():
-            strip.route_mirror = mirror
             # The Mic's level on both is the monitor level (set_monitor_level).
-            on = switching and name != "Mic"
+            on = bool(outputs) and name != "Mic"
             strip.switch_outputs = outputs if on else ()
             strip.listen_buses = tuple(ROUTE_BUS[o] for o in outputs) if on else ()
             if on and self.connected:
                 strip.sync_routes()  # names the switch and holds the other output
             elif not on and strip.held:
                 strip.set_held(())
-        if switching and self.connected:
-            for index, output in enumerate(outputs):
-                if not self.output_heard(output):
-                    self.set_output_heard(index, True)  # both play; channels choose
         self.refresh_outputs()
-        self.sync_listen_buttons()
-
-    def copy_listen_routes(self):
-        """Send every VoiceMeeter strip that reaches the monitor output to
-        the second output as well, so both play the same; also the inputs
-        FaderDeck shows no channel for. Only adds: a route the second
-        output already had stays."""
-        outputs = self.listen_outputs()
-        if not outputs or not self.connected:
-            return
-        first, second = outputs
-        changed = False
-        for index, strip in enumerate(self.vm.strip):
-            try:
-                if getattr(strip, first) and not getattr(strip, second):
-                    setattr(strip, second, True)
-                    changed = True
-            except Exception as e:
-                log.error(f"Failed to copy the Strip[{index}] route to {second}: {type(e).__name__}: {e}")
-        if not changed:
-            return
-        for strip in self.strips.values():
-            strip.sync_routes()
-        log.info(f"Channels on {first} now also go to {second}")
-
-    def output_heard(self, output):
-        try:
-            return not bool(self.vm.bus[ROUTE_BUS[output]].mute)
-        except Exception:
-            return True
-
-    def set_output_heard(self, index, heard):
-        outputs = self.listen_outputs()
-        if outputs and self.connected:
-            output = outputs[index]
-            try:
-                self.vm.bus[ROUTE_BUS[output]].mute = not heard
-                log.info(f"{output} {'on' if heard else 'off'}")
-            except Exception as e:
-                log.error(f"Failed to switch {output}: {type(e).__name__}: {e}")
-        self.sync_listen_buttons()
-
-    def apply_hear_preset(self, preset):
-        """"first", "second" or "both": which of the two outputs play."""
-        if self.switching():
-            return  # per channel, both play and each channel chooses
-        self.set_output_heard(0, preset != "second")
-        self.set_output_heard(1, preset != "first")
-
-    def hear_preset_labels(self):
-        first, second = (route_name(self.vm, output)[0] for output in self.listen_outputs())
-        return {"first": f"Only {first}", "second": f"Only {second}", "both": "Both"}
-
-    def hear_presets_menu(self):
-        menu = QMenu(self)
-        if self.listen_outputs():
-            for preset, text in self.hear_preset_labels().items():
-                menu.addAction(text).triggered.connect(
-                    lambda _checked=False, p=preset: self.apply_hear_preset(p)
-                )
-        return menu
-
-    def sync_listen_buttons(self):
-        """Show both outputs' names and whether they play, in the header and
-        in the tray menu."""
-        # Per channel, the channels' routing buttons are the switches.
-        outputs = self.listen_outputs() if self.connected and not self.switching() else ()
-        if hasattr(self, "listen_box"):
-            self.listen_box.setVisible(bool(outputs))
-        tray = self.tray is not None and hasattr(self, "tray_hear_menu")
-        if tray:
-            self.tray_hear_menu.menuAction().setVisible(bool(outputs))
-        if not outputs:
-            return
-        for index, output in enumerate(outputs):
-            text = route_name(self.vm, output)[0]
-            heard = self.output_heard(output)
-            if hasattr(self, "listen_buttons"):
-                button = self.listen_buttons[index]
-                button.setText(text)
-                button.blockSignals(True)
-                button.setChecked(heard)
-                button.blockSignals(False)
-            if tray:
-                self.tray_hear_toggles[index].setText(text)
-                self.tray_hear_toggles[index].setChecked(heard)
-        if tray:
-            for preset, text in self.hear_preset_labels().items():
-                self.tray_hear_presets[preset].setText(text)
 
     def stream_outputs_setting(self):
         """The outputs the stream hears, such as ["B2", "B3"]: comma-separated
@@ -3031,7 +2868,6 @@ class MainWindow(QMainWindow):
                 self.sync_processing_controls()
             self.update_processing_summary()
             self.sync_tray()
-            self.sync_listen_buttons()
             # Checked a moment later: during a drag or a load VoiceMeeter
             # sends many events and reports in-between values.
             self._profile_check_timer.start()

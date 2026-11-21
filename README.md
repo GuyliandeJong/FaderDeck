@@ -88,9 +88,7 @@ Settings, General, Backup: **Save to file** writes your profiles, presets, names
 
 ### Speakers and Headphones
 
-For speakers and headphones on two outputs of your interface. Settings, General, Speakers and Headphones, **Also hear on**: pick the second output. Two buttons at the top switch each output on or off on its own; right-click them for "only speakers", "only headphones" or "both". The tray menu and hotkeys do the same. The buttons follow VoiceMeeter, so they stay right when you mute an output there. Every channel you send to your monitor output also goes to the second one.
-
-Prefer to choose per channel? Set **Switch** to **Per channel**. Both outputs then play, the buttons at the top go away, and each channel's routing button moves that channel between the two: it shows Speakers or Headphones, wherever the channel plays now. Game can be on your headphones while Media plays on your speakers. Every channel keeps its own volume on each output: put Media at -10 dB on your headphones and -5 dB on your speakers, and its fader moves when you switch it. Profiles store both volumes. The Mic keeps both routing buttons.
+For speakers and headphones on two outputs of your interface. Settings, General, Speakers and Headphones, **Also hear on**: pick the second output. Each channel's routing button then moves that channel between your monitor output and the second one: click it for Speakers, Headphones, both, and Speakers again, and it shows where the channel plays now. Game can be on your headphones while Media plays on your speakers. Every channel keeps its own volume on each output: put Media at -10 dB on your headphones and -5 dB on your speakers, and its fader moves when you switch it. On both, the fader moves both and keeps the difference. Profiles store both volumes. The Mic keeps a button for each output, and you hear yourself as loud on both.
 
 With an ASIO interface on A1, the second output can be other outputs of the same interface: in VoiceMeeter's System Settings, patch A2 to, for example, outputs 3 and 4, and route those to your headphones in your interface's own software. Rename the outputs in Settings, General to see "Speakers" and "Headphones" on the buttons.
 
@@ -155,7 +153,7 @@ A hotkey is taken from every other program while FaderDeck runs, so pick combina
 ### System Tray
 
 - Closing the window keeps FaderDeck running in the tray; click the icon to show it again
-- The tray menu has Show, Mute microphone, Hear on (with a second output set) and Quit
+- The tray menu has Show, Mute microphone and Quit
 - The tray icon gets a red dot while the microphone is muted, orange while only the stream is muted (can be turned off in Settings, Microphone)
 - Hold Shift while closing the window to quit at once
 - Optional: start minimised to the tray

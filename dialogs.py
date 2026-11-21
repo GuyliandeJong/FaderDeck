@@ -677,20 +677,11 @@ class SettingsDialog(QDialog):
         self.second_bus.setCurrentIndex(max(0, self.second_bus.findData(current["second_bus"])))
         self.form.addRow("Also hear on", self.second_bus)
         self.add_note(
-            "For speakers and headphones on two outputs. Every channel you "
-            "send to the monitor output (Microphone, Monitor on) also goes here. An output "
-            "patched to A1's ASIO device in VoiceMeeter's System Settings counts too."
-        )
-        self.hear_mode = QComboBox()
-        self.hear_mode.addItem("Two buttons at the top, each output on or off", "both")
-        self.hear_mode.addItem("Per channel, with its routing button", "channel")
-        self.hear_mode.setCurrentIndex(max(0, self.hear_mode.findData(current["hear_mode"])))
-        self.form.addRow("Switch", self.hear_mode)
-        self.add_note(
-            "Per channel, each channel plays on one of the two: click its "
-            "routing button to move it. It keeps its own volume on each: Media "
-            "at -10 dB on headphones and -5 dB on speakers, and its fader moves "
-            "when you switch. Two buttons: right-click them for presets."
+            "For speakers and headphones on two outputs: each channel's "
+            "routing button then moves it between the monitor output "
+            "(Microphone, Monitor on) and this one, or plays on both, with its "
+            "own volume on each. An output patched to A1's ASIO device in "
+            "VoiceMeeter's System Settings counts too."
         )
 
         self.add_heading("WINDOW")
@@ -1365,7 +1356,6 @@ class SettingsDialog(QDialog):
             "mic_strip": int(self.mic_input.currentData()),
             "listen_bus": self.listen_bus.currentData(),
             "second_bus": self.second_bus.currentData(),
-            "hear_mode": self.hear_mode.currentData(),
             "monitor_level": self.monitor_level.value(),
             "stream_bus": ",".join(
                 output for output, box in self.stream_outputs.items() if box.isChecked()

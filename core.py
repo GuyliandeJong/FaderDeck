@@ -302,15 +302,6 @@ def _hotkey_actions():
         actions.append(HotkeyAction(
             hotkey_id, key, "MICROPHONE", label, "", False, action, "Mic",
         ))
-    # Speakers and headphones on two outputs (MainWindow.listen_outputs).
-    for hotkey_id, key, label, preset in (
-        (41, "hotkey_hear_first", "Monitor output only", "first"),
-        (42, "hotkey_hear_second", "Second output only", "second"),
-        (43, "hotkey_hear_both", "Both outputs", "both"),
-    ):
-        actions.append(HotkeyAction(
-            hotkey_id, key, "HEAR ON", label, "", False, "hear", preset,
-        ))
     actions.append(HotkeyAction(
         31, "hotkey_profile_next", "SETUP PROFILES",
         "Next profile", "", False, "profile", 1,
