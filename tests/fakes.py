@@ -253,7 +253,7 @@ class Sandbox:
         self._patch("recording_devices", lambda: ["Voicemeeter Out B1 (VB-Audio Vo", "Microphone (USB)"])
         self._patch(
             "play_mute_sound",
-            lambda muted, device="": self.mute_sounds.append((muted, device)),
+            lambda muted, device="", vm=None, outputs=(): self.mute_sounds.append((muted, device)),
         )
         self.install_state = "potato"
         self._patch("voicemeeter_install_state", lambda: self.install_state)

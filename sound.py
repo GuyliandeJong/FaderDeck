@@ -6,11 +6,14 @@ import math
 import array
 import ctypes
 import ctypes.wintypes
+import os
 import re
+import tempfile
 import time
 import threading
+import wave
 
-from core import log
+from core import ALL_OUTPUTS, log
 from PySide6.QtCore import QObject, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
@@ -276,12 +279,53 @@ def sound_check(device, seconds, play_on):
     return "Playing back what voice chat and your stream hear."
 
 
-def play_mute_sound(muted, device=""):
+# "Hear it on" for the mute chime: VoiceMeeter's own player (the cassette),
+# which reaches outputs no Windows device does, such as headphones on an
+# ASIO interface's outputs 3-4.
+VOICEMEETER_PLAYER = "voicemeeter"
+
+
+def play_mute_sound(muted, device="", vm=None, outputs=()):
+    """Play the chime on a Windows device by name, or with VoiceMeeter's
+    player on these outputs ("A1", "A2")."""
     if muted not in _mute_sounds:
         _mute_sounds[muted] = chime_samples(
             MUTE_SOUND_NOTES[muted], **MUTE_SOUND_SHAPE
         )
-    play_samples(_mute_sounds[muted], device)
+    if device == VOICEMEETER_PLAYER and vm is not None:
+        play_on_voicemeeter(vm, _mute_sounds[muted], outputs,
+                            f"faderdeck-{'muted' if muted else 'unmuted'}.wav")
+    else:
+        play_samples(_mute_sounds[muted], device)
+
+
+def play_on_voicemeeter(vm, data, outputs, name):
+    """Play mono samples with VoiceMeeter's player on these outputs only.
+    The player keeps the outputs: shortcut, a file of the user's own then
+    plays there too; restore them after the chime if that bothers someone."""
+    path = os.path.join(tempfile.gettempdir(), name)
+    try:
+        if path not in _written:
+            mono = array.array("h", data)
+            frames = array.array("h", (s for s in mono for _ in (0, 1)))
+            with wave.open(path, "wb") as file:
+                file.setnchannels(2)  # mono could play on the left only
+                file.setsampwidth(2)
+                file.setframerate(SOUND_RATE)
+                file.writeframes(frames.tobytes())
+            _written.add(path)
+        recorder = vm.recorder
+        for output in ALL_OUTPUTS:
+            wanted = output in outputs
+            if bool(getattr(recorder, output)) != wanted:
+                setattr(recorder, output, wanted)
+        recorder.mode.playonload = True
+        recorder.load(path)
+    except Exception as e:
+        log.debug(f"Could not play a sound with VoiceMeeter's player: {e}")
+
+
+_written = set()  # chime files written this run
 
 # The soundboard: short clips at a hotkey, played on the Media channel's
 # VoiceMeeter input so the routing decides who hears them.

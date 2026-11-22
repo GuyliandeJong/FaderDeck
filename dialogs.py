@@ -64,6 +64,7 @@ from themes import (
 from updates import APP_VERSION
 from sound import (
     play_mute_sound,
+    VOICEMEETER_PLAYER,
     recording_devices,
     sound_check,
     sound_check_device,
@@ -586,6 +587,12 @@ class SettingsDialog(QDialog):
         )
         self.sound_device = QComboBox()
         self.sound_device.addItem("Windows default output", "")
+        # Both listen outputs, also one no Windows device reaches.
+        player = [route_name(vm, o)[0]
+                  for o in (current["listen_bus"], current["second_bus"]) if o]
+        self.sound_device.addItem(
+            f"{' and '.join(player)} (VoiceMeeter's player)", VOICEMEETER_PLAYER
+        )
         try:
             devices = sound_devices()
         except Exception:
@@ -603,7 +610,9 @@ class SettingsDialog(QDialog):
         self.preview_chime.setToolTip("Play the mute chime on this device")
         self.preview_chime.setStyleSheet("QPushButton { padding: 4px 10px; }")
         self.preview_chime.clicked.connect(
-            lambda: play_mute_sound(True, self.sound_device.currentData())
+            lambda: play_mute_sound(True, self.sound_device.currentData(), vm, [
+                o for o in (self.listen_bus.currentData(), self.second_bus.currentData()) if o
+            ])
         )
         sound_row = QHBoxLayout()
         sound_row.addWidget(self.sound_device, 1)
@@ -1172,6 +1181,13 @@ class SettingsDialog(QDialog):
         device = self.sound_device.currentData() or ""
         if not on:
             text, color = "", "#8ba0b5"
+        elif device == VOICEMEETER_PLAYER:
+            text, color = (
+                "Plays on your monitor output and the second output (Also hear "
+                "on), with VoiceMeeter's player. Your stream does not hear it. "
+                "The player keeps these outputs for files you play in it.",
+                "#8ba0b5",
+            )
         elif "voicemeeter" in device.casefold():
             text, color = (
                 "This is a VoiceMeeter input: the chime goes into your mix "

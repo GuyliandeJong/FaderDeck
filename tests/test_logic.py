@@ -270,6 +270,27 @@ class MuteSoundTest(unittest.TestCase):
         self.assertLess(frames / 44100, 0.5)  # a short cue, not a jingle
         self.assertLess(max(abs(v) for v in samples[-200:]), 200)  # no click at the end
 
+    def test_voicemeeter_player_plays_the_chime_on_both_outputs(self):
+        import types
+        import wave
+        loaded = []
+        recorder = types.SimpleNamespace(
+            **{o: o == "B3" for o in core.ALL_OUTPUTS},  # the user's earlier choice
+            mode=types.SimpleNamespace(playonload=False), load=loaded.append,
+        )
+        vm = types.SimpleNamespace(recorder=recorder)
+        settings = {"listen_bus": "A1", "second_bus": "A2"}
+        outputs = core.chime_outputs(types.SimpleNamespace(value=lambda k, d=None: settings.get(k, d)))
+        self.assertEqual(outputs, ["A1", "A2"])
+        sound.play_mute_sound(True, sound.VOICEMEETER_PLAYER, vm, outputs)
+        self.assertEqual([o for o in core.ALL_OUTPUTS if getattr(recorder, o)], ["A1", "A2"])
+        self.assertTrue(recorder.mode.playonload)
+        with wave.open(loaded[0], "rb") as file:
+            self.assertEqual((file.getnchannels(), file.getframerate()), (2, sound.SOUND_RATE))
+        settings["second_bus"] = ""
+        self.assertEqual(core.chime_outputs(types.SimpleNamespace(
+            value=lambda k, d=None: settings.get(k, d))), ["A1"])
+
 
 class FirewallTest(unittest.TestCase):
     def test_rule_allows_one_program_one_port_on_private_networks(self):

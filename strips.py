@@ -39,6 +39,7 @@ from core import (
     route_name,
     ROUTING_BUTTON_HEIGHT,
     ROUTING_LABEL_HEIGHT,
+    chime_outputs,
     setting_bool,
     SMALL_HEADING_STYLE,
     STRIP_COLORS,
@@ -768,7 +769,8 @@ class StripWidget(QWidget):
         settings = app_settings()
         if chime and self.name == "Mic" and setting_bool(settings, "mute_sound", True):
             play_mute_sound(
-                checked, str(settings.value("mute_sound_device", "") or "")
+                checked, str(settings.value("mute_sound_device", "") or ""),
+                self.vm, chime_outputs(settings),
             )
 
     def on_solo_clicked(self, checked):

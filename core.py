@@ -229,6 +229,14 @@ def setting_bool(settings, key, default):
     return bool(value)
 
 
+def chime_outputs(settings):
+    """Where VoiceMeeter's player plays the mute chime: the monitor output
+    and the second output, such as ["A1", "A2"]."""
+    first = str(settings.value("listen_bus", "A1") or "A1")
+    second = str(settings.value("second_bus", "") or "")
+    return [output for output in (first, second) if output in HARDWARE_OUTPUTS]
+
+
 # The channels the user may rename. The built-in name stays the key for
 # settings, profiles, hotkeys and the local API.
 CHANNEL_NAME_KEYS = {

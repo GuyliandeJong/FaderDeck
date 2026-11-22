@@ -35,7 +35,7 @@ Control your four VoiceMeeter channels directly from FaderDeck: Microphone, Game
 - Mute, Solo and Mono
 - Bass, mid and treble for Game, Chat and Media: right-click the channel's coloured header
 - Make Game, Chat or Media Windows' default output in one click: right-click the channel's header
-- A soft sound when the microphone is muted or unmuted, so you hear it without looking. Choose the device it plays on, such as your headphones, so your stream does not pick it up; or switch it off
+- A soft sound when the microphone is muted or unmuted, so you hear it without looking. Choose the device it plays on, such as your headphones, so your stream does not pick it up, or "Speakers and Headphones (VoiceMeeter's player)" to hear it on both outputs, also headphones that have no Windows device of their own; or switch it off
 - Output routing A1–A3 and B1–B3, shown with the bus names you gave them in VoiceMeeter
 - Your own names for Game, Chat and Media (Settings, General), for example "Music" instead of "Media"
 - Reconnects by itself when VoiceMeeter is closed and started again
