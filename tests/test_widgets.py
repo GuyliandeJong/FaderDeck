@@ -1004,12 +1004,20 @@ class MainWindowTest(unittest.TestCase):
 
         game.fader.setValue(-1000)  # headphones -10 dB
         self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (0.0, -10.0))
-        switch.click()  # Game on both
-        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True))
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QContextMenuEvent
+        from PySide6.QtTest import QTest
+        main.QApplication.sendEvent(switch, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(1, 1), switch.mapToGlobal(QPoint(1, 1))))
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "right click: both")
         self.assertEqual(switch.text(), "Both")
         self.assertEqual(game.fader.value(), 0, "the fader shows the speakers")
         game.fader.setValue(-200)  # both 2 dB down, headphones still 10 dB under
         self.assertEqual((vm.strip[5].gainlayer[0].gain, vm.strip[5].gainlayer[1].gain), (-2.0, -12.0))
+        switch.click()  # from both to the headphones
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (False, True))
+        QTest.mouseDClick(switch, Qt.MouseButton.LeftButton)
+        self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, True), "double click: both")
+        switch.click()
         switch.click()  # Game to the speakers
         self.assertEqual((vm.strip[5].A1, vm.strip[5].A2), (True, False))
         self.assertEqual((switch.text(), switch.isChecked()), (speakers, True))

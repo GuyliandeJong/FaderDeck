@@ -4,7 +4,7 @@ their levels."""
 import math
 import time
 
-from PySide6.QtCore import Qt, Signal, QObject, QTimer, Slot
+from PySide6.QtCore import Qt, Signal, QObject, QTimer, Slot, QEvent
 from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
@@ -397,6 +397,7 @@ class StripWidget(QWidget):
         button.clicked.connect(
             lambda checked, name=output: self.on_route_button(name, checked)
         )
+        button.installEventFilter(self)  # the switch's right and double click
         layout.addWidget(button, row, column)
         self.route_buttons[output] = button
 
@@ -644,9 +645,23 @@ class StripWidget(QWidget):
             self.on_route_clicked(output, checked)
             return
         first, second = self.switch_outputs
-        on = (self.route_on(first), self.route_on(second))
-        # Speakers -> Headphones -> both -> Speakers; off goes to Speakers.
-        wanted = {(True, False): (False, True), (False, True): (True, True)}.get(on, (True, False))
+        # A click swaps Headphones and Speakers; from both or off it goes to
+        # the headphones. Both is a right or double click (eventFilter).
+        on_second = self.route_on(second) and not self.route_on(first)
+        self.set_switch((True, False) if on_second else (False, True))
+
+    def eventFilter(self, obj, event):
+        if (
+            self.switch_outputs
+            and obj is self.route_buttons.get(self.switch_outputs[0])
+            and event.type() in (QEvent.Type.MouseButtonDblClick, QEvent.Type.ContextMenu)
+        ):
+            self.set_switch((True, True))
+            return True
+        return super().eventFilter(obj, event)
+
+    def set_switch(self, wanted):
+        first, second = self.switch_outputs
         try:
             setattr(self.strip, first, wanted[0])
             setattr(self.strip, second, wanted[1])
@@ -667,7 +682,8 @@ class StripWidget(QWidget):
             button.setText("Both")
         button.setToolTip(
             f"Plays on {route_name(self.vm, first)[0]} or "
-            f"{route_name(self.vm, second)[0]}: click to switch."
+            f"{route_name(self.vm, second)[0]}: click to switch, "
+            "right or double click for both."
         )
         button.blockSignals(True)
         button.setChecked(any(on))
