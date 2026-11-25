@@ -677,20 +677,27 @@ class SettingsDialog(QDialog):
 
         self.add_heading("SPEAKERS AND HEADPHONES")
         self.second_bus = QComboBox()
-        self.second_bus.addItem("None", "")
+        self.second_bus.addItem("Off (a button for each output)", "")
         for output in HARDWARE_OUTPUTS:
             if output == current["listen_bus"]:
                 continue  # the monitor output itself
             if output in shown or output == current["second_bus"]:
                 self.second_bus.addItem(route_name(vm, output)[0], output)
         self.second_bus.setCurrentIndex(max(0, self.second_bus.findData(current["second_bus"])))
-        self.form.addRow("Also hear on", self.second_bus)
+        first = QLabel()
+        def name_first():
+            name = route_name(vm, self.listen_bus.currentData() or "A1")[0]
+            first.setText(f"{name} (Microphone tab, Monitor on) and")
+        name_first()
+        self.listen_bus.currentIndexChanged.connect(name_first)
+        self.form.addRow("Switch between", first)
+        self.form.addRow("", self.second_bus)
         self.add_note(
-            "For speakers and headphones on two outputs: each channel's "
-            "routing button then moves it between the monitor output "
-            "(Microphone, Monitor on) and this one, or plays on both, with its "
-            "own volume on each. An output patched to A1's ASIO device in "
-            "VoiceMeeter's System Settings counts too."
+            "Pick the output your headphones are on. Each channel then has one "
+            "button instead of two: click it to move the channel between the "
+            "two outputs, right or double click it to play on both. The fader "
+            "keeps its own volume for each output. An output patched to A1's "
+            "ASIO device in VoiceMeeter's System Settings counts too."
         )
 
         self.add_heading("WINDOW")
