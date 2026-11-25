@@ -1745,6 +1745,11 @@ class CloseToTrayTest(unittest.TestCase):
         self.assertFalse(window.connected)
         self.assertFalse(self.sandbox.vm.logged_in, "a proper quit logs out")
 
+    def test_hiding_to_the_tray_saves_the_window_position(self):
+        FakeSettings.store.pop("geometry_v2", None)
+        self.window.close()
+        self.assertIn("geometry_v2", FakeSettings.store)
+
     def test_closing_without_shift_still_hides(self):
         window = self.window
         window.shift_is_held = lambda: False

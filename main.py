@@ -2898,6 +2898,9 @@ class MainWindow(QMainWindow):
             self._quitting = True
         if self.close_to_tray_enabled() and not self._quitting:
             event.ignore()
+            # Saved now: a closed terminal or Windows ending the program
+            # later skips the save below.
+            self.save_window_geometry()
             self.hide()
             if not setting_bool(self.window_settings, "tray_hint_shown", False):
                 self.window_settings.setValue("tray_hint_shown", True)
